@@ -1374,12 +1374,23 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "anyrepair",
+ "clap",
+ "dirs",
  "env_logger",
+ "flate2",
  "log",
  "pulldown-cmark 0.9.6",
+ "reqwest",
+ "semver",
  "serde",
  "serde_json",
+ "sha2",
+ "tar",
+ "tempfile",
  "thiserror 2.0.18",
+ "tokio",
+ "toml",
+ "zip",
 ]
 
 [[package]]

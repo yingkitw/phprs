@@ -9,42 +9,23 @@ use crate::engine::types::{ClassEntry, ClassMethod, Visibility};
 
 use super::parse_statement;
 
-/// Compile a class definition: class Foo { public $x = 0; public function bar() { ... } }
-pub(crate) fn compile_class(
+/// Parse a class/trait body: visibility, static, methods, properties, use TraitName
+fn parse_class_body(
     lexer: &mut Lexer,
     context: &mut CompileContext,
-) -> Result<Token, String> {
-    // Expect class name
-    let name_token = lexer.next_token()?;
-    let class_name = name_token.value.as_ref()
-        .ok_or("Expected class name")?
-        .as_str()
-        .to_string();
-
-    let mut ce = ClassEntry::new(&class_name);
-
-    // Optional: extends ParentClass
+    ce: &mut ClassEntry,
+) -> Result<(), String> {
     let mut next = lexer.next_token()?;
-    if next.token_type == TokenType::T_EXTENDS {
-        let parent_token = lexer.next_token()?;
-        ce.parent_name = Some(parent_token.value.as_ref()
-            .ok_or("Expected parent class name")?
-            .as_str()
-            .to_string());
-        next = lexer.next_token()?;
-    }
-
-    // Expect opening brace
-    if !token_is_punct(&next, "{") {
-        return Err("Expected '{' after class declaration".to_string());
-    }
-
-    // Parse class body
-    next = lexer.next_token()?;
     loop {
         if token_is_punct(&next, "}") { break; }
         if next.token_type == TokenType::T_EOF {
-            return Err("Unexpected EOF in class body".to_string());
+            return Err("Unexpected EOF in class/trait body".to_string());
+        }
+
+        // Handle `use TraitName;` inside class body
+        if next.token_type == TokenType::T_USE {
+            next = compile_use_trait(lexer, context, ce)?;
+            continue;
         }
 
         // Parse visibility modifier
@@ -64,14 +45,140 @@ pub(crate) fn compile_class(
         };
 
         if next.token_type == TokenType::T_FUNCTION {
-            next = compile_class_method(lexer, &mut ce, visibility, is_static)?;
+            next = compile_class_method(lexer, ce, visibility, is_static)?;
         } else if next.token_type == TokenType::T_VARIABLE {
-            next = compile_class_property(lexer, context, &mut ce, &next)?;
+            next = compile_class_property(lexer, context, ce, &next)?;
         } else {
             next = lexer.next_token()?;
         }
     }
+    Ok(())
+}
 
+/// Compile `use TraitName;` inside a class body — copies trait methods into the class
+fn compile_use_trait(
+    lexer: &mut Lexer,
+    context: &CompileContext,
+    ce: &mut ClassEntry,
+) -> Result<Token, String> {
+    let trait_name_token = lexer.next_token()?;
+    let trait_name = trait_name_token.value.as_ref()
+        .ok_or("Expected trait name after 'use'")?
+        .as_str()
+        .to_string();
+
+    // Look up the trait in the class table (stored with __trait_ prefix)
+    let trait_key = format!("__trait_{}", trait_name);
+    if let Some(trait_ce) = context.class_table.get(&trait_key) {
+        // Copy trait methods into the class
+        for (method_name, method) in &trait_ce.methods {
+            if !ce.methods.contains_key(method_name) {
+                // Clone the method's op array
+                let mut new_ops = Vec::new();
+                for op in &method.op_array.ops {
+                    new_ops.push(crate::engine::vm::Op::new(
+                        op.opcode,
+                        crate::engine::vm::execute_data::clone_val(&op.op1),
+                        crate::engine::vm::execute_data::clone_val(&op.op2),
+                        crate::engine::vm::execute_data::clone_val(&op.result),
+                        op.extended_value,
+                    ));
+                }
+                let mut new_op_array = crate::engine::vm::OpArray::new(format!("{}::{}", ce.name, method_name));
+                new_op_array.ops = new_ops;
+                ce.methods.insert(method_name.clone(), ClassMethod {
+                    name: method.name.clone(),
+                    visibility: method.visibility,
+                    is_static: method.is_static,
+                    params: method.params.clone(),
+                    op_array: new_op_array,
+                });
+            }
+        }
+        // Copy trait properties
+        for (prop_name, prop_val) in &trait_ce.default_properties {
+            if !ce.default_properties.contains_key(prop_name) {
+                ce.default_properties.insert(prop_name.clone(), crate::engine::vm::execute_data::clone_val(prop_val));
+            }
+        }
+    }
+
+    let next = lexer.next_token()?;
+    if token_is_punct(&next, ";") {
+        Ok(lexer.next_token()?)
+    } else {
+        Ok(next)
+    }
+}
+
+/// Compile a class definition: class Foo { public $x = 0; public function bar() { ... } }
+pub(crate) fn compile_class(
+    lexer: &mut Lexer,
+    context: &mut CompileContext,
+) -> Result<Token, String> {
+    let name_token = lexer.next_token()?;
+    let class_name = name_token.value.as_ref()
+        .ok_or("Expected class name")?
+        .as_str()
+        .to_string();
+
+    let mut ce = ClassEntry::new(&class_name);
+
+    // Optional: extends ParentClass
+    let mut next = lexer.next_token()?;
+    if next.token_type == TokenType::T_EXTENDS {
+        let parent_token = lexer.next_token()?;
+        ce.parent_name = Some(parent_token.value.as_ref()
+            .ok_or("Expected parent class name")?
+            .as_str()
+            .to_string());
+        next = lexer.next_token()?;
+    }
+
+    // Optional: implements Interface1, Interface2
+    if next.token_type == TokenType::T_IMPLEMENTS {
+        // Skip interface names (just parse past them for now)
+        next = lexer.next_token()?;
+        while next.token_type == TokenType::T_STRING {
+            next = lexer.next_token()?;
+            if token_is_punct(&next, ",") {
+                next = lexer.next_token()?;
+            }
+        }
+    }
+
+    if !token_is_punct(&next, "{") {
+        return Err("Expected '{' after class declaration".to_string());
+    }
+
+    parse_class_body(lexer, context, &mut ce)?;
+    context.register_class(ce);
+    Ok(lexer.next_token()?)
+}
+
+/// Compile a trait definition: trait Foo { public function bar() { ... } }
+pub(crate) fn compile_trait(
+    lexer: &mut Lexer,
+    context: &mut CompileContext,
+) -> Result<Token, String> {
+    let name_token = lexer.next_token()?;
+    let trait_name = name_token.value.as_ref()
+        .ok_or("Expected trait name")?
+        .as_str()
+        .to_string();
+
+    let mut ce = ClassEntry::new(&trait_name);
+
+    let next = lexer.next_token()?;
+    if !token_is_punct(&next, "{") {
+        return Err("Expected '{' after trait name".to_string());
+    }
+
+    parse_class_body(lexer, context, &mut ce)?;
+
+    // Store trait with __trait_ prefix so it doesn't collide with classes
+    let trait_key = format!("__trait_{}", trait_name);
+    ce.name = trait_key.clone();
     context.register_class(ce);
     Ok(lexer.next_token()?)
 }

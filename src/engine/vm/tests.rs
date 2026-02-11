@@ -397,3 +397,28 @@ fn test_compile_and_execute_typed_closure() {
     assert!(matches!(result, PhpResult::Success));
     assert_eq!(output, "hello");
 }
+
+#[test]
+fn test_compile_namespace_and_use() {
+    let code = "<?php\nnamespace App\\Models;\nuse App\\Services\\Logger as Log;\necho 'ok';\n";
+    let (result, output) = run_php_code(code);
+    assert!(matches!(result, PhpResult::Success));
+    assert_eq!(output, "ok");
+}
+
+#[test]
+fn test_compile_trait_definition() {
+    // Trait definition should parse without error
+    let code = "<?php\ntrait Greetable {\n  public function greet() { echo 'hello'; }\n}\necho 'ok';\n";
+    let (result, output) = run_php_code(code);
+    assert!(matches!(result, PhpResult::Success));
+    assert_eq!(output, "ok");
+}
+
+#[test]
+fn test_compile_trait_use_in_class() {
+    let code = "<?php\ntrait Greetable {\n  public function greet() { echo 'hi'; }\n}\nclass Person {\n  use Greetable;\n}\n$p = new Person();\n$p->greet();\n";
+    let (result, output) = run_php_code(code);
+    assert!(matches!(result, PhpResult::Success));
+    assert_eq!(output, "hi");
+}

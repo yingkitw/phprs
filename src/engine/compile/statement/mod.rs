@@ -85,7 +85,10 @@ pub fn parse_statement(
         TokenType::T_THROW => compile_throw(lexer, context),
         TokenType::T_FUNCTION => compile_function(lexer, context),
         TokenType::T_CLASS => oop::compile_class(lexer, context),
+        TokenType::T_TRAIT => oop::compile_trait(lexer, context),
         TokenType::T_RETURN => compile_return(lexer, context),
+        TokenType::T_NAMESPACE => compile_namespace(lexer, context),
+        TokenType::T_USE => compile_use(lexer, context),
         _ => Ok(lexer.next_token()?),
     }
 }
@@ -240,6 +243,88 @@ fn compile_include(
     context.update_jump_target(idx, include_type);
     let next = lexer.next_token()?;
     skip_semicolon(lexer, next)
+}
+
+/// Compile namespace declaration: namespace Foo\Bar;
+fn compile_namespace(
+    lexer: &mut Lexer,
+    context: &mut CompileContext,
+) -> Result<Token, String> {
+    // Read namespace name parts: Foo\Bar\Baz
+    let mut parts = Vec::new();
+    let mut tok = lexer.next_token()?;
+    loop {
+        if tok.token_type == TokenType::T_STRING {
+            parts.push(tok.value.as_ref().unwrap().as_str().to_string());
+        } else {
+            break;
+        }
+        tok = lexer.next_token()?;
+        if tok.token_type == TokenType::T_NS_SEPARATOR {
+            tok = lexer.next_token()?;
+        } else {
+            break;
+        }
+    }
+    let ns = parts.join("\\");
+    context.current_namespace = Some(ns);
+    // tok should be ';' or '{'
+    if token_is_punct(&tok, "{") {
+        // Bracketed namespace — parse until '}'
+        let mut brace_count = 1;
+        let mut current = lexer.next_token()?;
+        loop {
+            if current.token_type == TokenType::T_EOF {
+                return Err("Unexpected EOF in namespace block".to_string());
+            }
+            if token_is_punct(&current, "}") {
+                brace_count -= 1;
+                if brace_count == 0 {
+                    return Ok(lexer.next_token()?);
+                }
+            } else if token_is_punct(&current, "{") {
+                brace_count += 1;
+            }
+            current = parse_statement(lexer, context, current)?;
+        }
+    }
+    skip_semicolon(lexer, tok)
+}
+
+/// Compile use statement: use Foo\Bar\Baz; or use Foo\Bar\Baz as Alias;
+fn compile_use(
+    lexer: &mut Lexer,
+    context: &mut CompileContext,
+) -> Result<Token, String> {
+    // Read fully qualified name parts
+    let mut parts = Vec::new();
+    let mut tok = lexer.next_token()?;
+    loop {
+        if tok.token_type == TokenType::T_STRING {
+            parts.push(tok.value.as_ref().unwrap().as_str().to_string());
+        } else {
+            break;
+        }
+        tok = lexer.next_token()?;
+        if tok.token_type == TokenType::T_NS_SEPARATOR {
+            tok = lexer.next_token()?;
+        } else {
+            break;
+        }
+    }
+    let fqn = parts.join("\\");
+    // Check for `as Alias`
+    let short_name = if tok.token_type == TokenType::T_AS {
+        let alias_tok = lexer.next_token()?;
+        let alias = alias_tok.value.as_ref().unwrap().as_str().to_string();
+        tok = lexer.next_token()?;
+        alias
+    } else {
+        // Default short name is the last segment
+        parts.last().cloned().unwrap_or_default()
+    };
+    context.use_imports.insert(short_name, fqn);
+    skip_semicolon(lexer, tok)
 }
 
 /// Compile return statement

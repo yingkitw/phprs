@@ -587,6 +587,8 @@ fn execute_do_method_call(op: &Op, execute_data: &mut ExecuteData) -> Result<Exe
             });
 
         if let Some((params, ops)) = method_info {
+            let saved_current_op = execute_data.current_op;
+            let saved_op_array = execute_data.op_array.take();
             // Set up $this
             execute_data.set_var("this", clone_val(&obj_val));
 
@@ -605,6 +607,8 @@ fn execute_do_method_call(op: &Op, execute_data: &mut ExecuteData) -> Result<Exe
             if method_result == crate::engine::types::PhpResult::Failure {
                 return Err(format!("Method {}::{} failed", class_name, method_name.as_str()));
             }
+            execute_data.op_array = saved_op_array;
+            execute_data.current_op = saved_current_op;
         }
     }
 

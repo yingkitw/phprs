@@ -120,6 +120,7 @@ pub enum TokenType {
     T_COALESCE = 308,                 // ??
     T_AMPERSAND_FOLLOWED_BY_VAR_OR_VARARG = 309,
     T_AMPERSAND_NOT_FOLLOWED_BY_VAR_OR_VARARG = 310,
+    T_PAAMAYIM_NEKUDOTAYIM = 400,     // :: (double colon / scope resolution)
 
     // Literals
     T_LNUMBER = 311,

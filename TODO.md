@@ -26,11 +26,15 @@
 - [x] Expression parsing (arithmetic, comparison, logical, bitwise)
 - [x] Ternary operator (`?:` and short `?:`)
 - [x] Null coalescing (`??`)
+- [x] Closures / anonymous functions (`function() use () { ... }`)
+- [x] Callable variables (`$fn()`)
+- [x] Type declarations (parameter types, return types, nullable)
+- [x] Function return values (`return expr;`)
 - [x] Statement parsing (echo, assign, return, include)
 - [x] Control flow (if/else, while, for, foreach)
 - [x] Function compilation and calls
 - [x] Class compilation (properties, methods, constructors)
-- [x] VM execution (63 opcodes)
+- [x] VM execution (64 opcodes)
 - [x] Built-in functions (40+ functions)
 
 ### Tools
@@ -42,8 +46,6 @@
 ## In Progress 🚧
 
 ### Language Features
-- [ ] Closures / anonymous functions
-- [ ] Type declarations
 - [ ] Namespaces
 - [ ] Traits
 
@@ -85,7 +87,7 @@
 
 - **36 source files** in engine/
 - **12 source files** in php/
-- **252 tests** passing
-- **63 opcodes** implemented
+- **257 tests** passing
+- **64 opcodes** implemented
 - **40+ built-in functions**
 

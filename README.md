@@ -19,14 +19,14 @@ cargo build --release
 cargo test
 
 # Run a PHP file
-cargo run --bin phprs -- run examples/basic_types.php
+cargo run -- run examples/basic_types.php
 
 # Start web playground
-cargo run --bin phprs -- serve
+cargo run -- serve
 # Open http://localhost:3080
 
 # Package manager
-cargo run --bin phprs -- pkg init
+cargo run -- pkg init
 ```
 
 ## Project Structure

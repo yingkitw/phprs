@@ -316,10 +316,14 @@ impl Lexer {
                 self.advance();
                 if self.current_char() == Some(b':') {
                     self.advance();
-                    Ok((TokenType::T_NS_SEPARATOR, "::".to_string()))
+                    Ok((TokenType::T_PAAMAYIM_NEKUDOTAYIM, "::".to_string()))
                 } else {
                     Ok((TokenType::T_STRING, ":".to_string()))
                 }
+            }
+            b'\\' => {
+                self.advance();
+                Ok((TokenType::T_NS_SEPARATOR, "\\".to_string()))
             }
             b'(' | b')' | b'{' | b'}' | b';' | b',' | b'[' | b']' => {
                 self.advance();

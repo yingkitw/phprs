@@ -19,6 +19,10 @@ pub struct CompileContext {
     next_temp_var: u32,
     // Class table for storing compiled class definitions
     pub class_table: std::collections::HashMap<String, crate::engine::types::ClassEntry>,
+    // Current namespace (e.g. "App\\Models")
+    pub current_namespace: Option<String>,
+    // Use imports: short name → fully qualified name
+    pub use_imports: std::collections::HashMap<String, String>,
 }
 
 impl CompileContext {
@@ -31,6 +35,8 @@ impl CompileContext {
             function_table: FunctionTable::new(),
             next_temp_var: 0,
             class_table: std::collections::HashMap::new(),
+            current_namespace: None,
+            use_imports: std::collections::HashMap::new(),
         }
     }
 
