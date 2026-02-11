@@ -136,4 +136,12 @@ impl ExecuteData {
             let _ = crate::engine::hash::hash_add_or_update(st, Some(&*key_box), 0, val, 0);
         }
     }
+
+    /// Remove a variable from the symbol table
+    pub fn remove_var(&mut self, name: &str) {
+        if let Some(ref mut st) = self.symbol_table {
+            let key = crate::engine::string::string_init(name, false);
+            let _ = crate::engine::hash::hash_del(st, &key);
+        }
+    }
 }

@@ -52,35 +52,42 @@ impl Default for OutputBuffer {
     }
 }
 
-/// Output buffer stack (thread-safe)
-static OUTPUT_BUFFERS: std::sync::Mutex<Vec<OutputBuffer>> = std::sync::Mutex::new(Vec::new());
+/// Output buffer stack (thread-local to avoid races between parallel tests)
+thread_local! {
+    static OUTPUT_BUFFERS: std::cell::RefCell<Vec<OutputBuffer>> = std::cell::RefCell::new(Vec::new());
+}
 
 /// Start output buffering
 pub fn php_output_start() -> Result<(), String> {
-    let mut buffers = OUTPUT_BUFFERS.lock().map_err(|e| e.to_string())?;
-    buffers.push(OutputBuffer::new());
-    Ok(())
+    OUTPUT_BUFFERS.with(|buffers| {
+        buffers.borrow_mut().push(OutputBuffer::new());
+        Ok(())
+    })
 }
 
 /// End output buffering and get contents
 pub fn php_output_end() -> Result<String, String> {
-    let mut buffers = OUTPUT_BUFFERS.lock().map_err(|e| e.to_string())?;
-    if let Some(buffer) = buffers.pop() {
-        Ok(buffer.get_contents_string())
-    } else {
-        Err("No output buffer to end".to_string())
-    }
+    OUTPUT_BUFFERS.with(|buffers| {
+        let mut bufs = buffers.borrow_mut();
+        if let Some(buffer) = bufs.pop() {
+            Ok(buffer.get_contents_string())
+        } else {
+            Err("No output buffer to end".to_string())
+        }
+    })
 }
 
 /// Write to current output buffer
 pub fn php_output_write(data: &[u8]) -> Result<usize, String> {
-    let mut buffers = OUTPUT_BUFFERS.lock().map_err(|e| e.to_string())?;
-    if let Some(buffer) = buffers.last_mut() {
-        buffer.write(data)
-    } else {
-        // No buffer, write directly (would go to stdout in real implementation)
-        Ok(data.len())
-    }
+    OUTPUT_BUFFERS.with(|buffers| {
+        let mut bufs = buffers.borrow_mut();
+        if let Some(buffer) = bufs.last_mut() {
+            buffer.write(data)
+        } else {
+            // No buffer, write directly (would go to stdout in real implementation)
+            Ok(data.len())
+        }
+    })
 }
 
 /// Write string to output

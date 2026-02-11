@@ -324,3 +324,51 @@ fn test_compile_and_execute_assoc_array_access() {
     assert!(matches!(result, PhpResult::Success));
     assert_eq!(output, "hello");
 }
+
+#[test]
+fn test_compile_and_execute_ternary() {
+    let code = "<?php\n$x = 10;\n$y = $x > 5 ? 'big' : 'small';\necho $y;\n";
+    let (result, output) = run_php_code(code);
+    assert!(matches!(result, PhpResult::Success));
+    assert_eq!(output, "big");
+}
+
+#[test]
+fn test_compile_and_execute_ternary_false() {
+    let code = "<?php\n$x = 2;\n$y = $x > 5 ? 'big' : 'small';\necho $y;\n";
+    let (result, output) = run_php_code(code);
+    assert!(matches!(result, PhpResult::Success));
+    assert_eq!(output, "small");
+}
+
+#[test]
+fn test_compile_and_execute_null_coalesce() {
+    let code = "<?php\n$x = null;\n$y = $x ?? 'default';\necho $y;\n";
+    let (result, output) = run_php_code(code);
+    assert!(matches!(result, PhpResult::Success));
+    assert_eq!(output, "default");
+}
+
+#[test]
+fn test_compile_and_execute_null_coalesce_non_null() {
+    let code = "<?php\n$x = 'hello';\n$y = $x ?? 'default';\necho $y;\n";
+    let (result, output) = run_php_code(code);
+    assert!(matches!(result, PhpResult::Success));
+    assert_eq!(output, "hello");
+}
+
+#[test]
+fn test_compile_and_execute_closure_basic() {
+    let code = "<?php\n$greet = function() { echo 'hi'; };\n$greet();\n";
+    let (result, output) = run_php_code(code);
+    assert!(matches!(result, PhpResult::Success));
+    assert_eq!(output, "hi");
+}
+
+#[test]
+fn test_compile_and_execute_closure_with_args() {
+    let code = "<?php\n$add = function($a, $b) { echo $a + $b; };\n$add(3, 4);\n";
+    let (result, output) = run_php_code(code);
+    assert!(matches!(result, PhpResult::Success));
+    assert_eq!(output, "7");
+}

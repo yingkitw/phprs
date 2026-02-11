@@ -21,7 +21,7 @@ pub fn parse_expression(
     lexer: &mut Lexer,
     context: &mut CompileContext,
 ) -> Result<(Val, Token), String> {
-    operators::parse_logical_or_expr(lexer, context)
+    operators::parse_ternary_expr(lexer, context)
 }
 
 /// Parse additive expression with a pre-consumed initial token (public API)

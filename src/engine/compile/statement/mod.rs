@@ -14,7 +14,6 @@ use super::expression::helpers::token_is_punct;
 use super::function::compile_function;
 use crate::engine::facade::{null_val, long_val, result_val, string_val, string_val_copy, zero_val, clone_val, StdValFactory, ValFactory};
 use crate::engine::lexer::{Token, Lexer, TokenType};
-use crate::engine::types::Val;
 use crate::engine::vm::Opcode;
 
 /// Helper: consume semicolon if present, return next token

@@ -53,8 +53,8 @@ impl TokenParser for Lexer {
         // We need to clone the current state, peek, then restore
         // This is a simplified implementation
         // A more efficient implementation would buffer tokens
-        let current_pos = self.position();
-        let current_lineno = self.lineno();
+        let _current_pos = self.position();
+        let _current_lineno = self.lineno();
         let token = self.next_token()?;
         // Restore position
         // Note: This requires access to private fields, so in practice

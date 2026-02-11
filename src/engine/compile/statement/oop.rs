@@ -5,7 +5,7 @@ use crate::engine::compile::expression::parse_expression;
 use crate::engine::compile::expression::helpers::token_is_punct;
 use crate::engine::facade::null_val;
 use crate::engine::lexer::{Token, Lexer, TokenType};
-use crate::engine::types::{ClassEntry, ClassMethod, Visibility, Val};
+use crate::engine::types::{ClassEntry, ClassMethod, Visibility};
 
 use super::parse_statement;
 

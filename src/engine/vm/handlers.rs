@@ -3,12 +3,23 @@
 //! Each handler resolves operands, performs the operation, and stores the result.
 
 use crate::engine::types::{PhpType, PhpValue, Val};
+use crate::engine::facade::{bool_val, long_val};
 use super::opcodes::{Op, OpArray, Opcode};
 use super::execute_data::{
     clone_val, is_temp_ref, is_var_ref, resolve_operand, result_slot,
     ExecResult, ExecuteData,
 };
 use super::builtins::execute_builtin_function;
+
+/// Extract variable name from a Val (for get_var/remove_var calls)
+fn val_to_var_name(val: &Val) -> Option<String> {
+    if let PhpValue::String(ref s) = val.value {
+        let name = s.as_str();
+        Some(if name.starts_with('$') { name[1..].to_string() } else { name.to_string() })
+    } else {
+        None
+    }
+}
 
 /// Execute a single opcode
 pub(crate) fn execute_opcode(op: &Op, execute_data: &mut ExecuteData) -> Result<ExecResult, String> {
@@ -194,6 +205,165 @@ pub(crate) fn execute_opcode(op: &Op, execute_data: &mut ExecuteData) -> Result<
             Ok(ExecResult::Continue)
         }
         Opcode::DoMethodCall => execute_do_method_call(op, execute_data),
+
+        // Variable type checking
+        Opcode::TypeCheck => {
+            let var = resolve_operand(&op.op1, execute_data);
+            let result = Val::new(PhpValue::Long(var.get_type() as i64), PhpType::Long);
+            if let Some(slot) = result_slot(op) {
+                execute_data.set_temp(slot, result);
+            }
+            Ok(ExecResult::Continue)
+        }
+
+        // IsSet/IsEmpty/Unset operations
+        Opcode::IsSet => {
+            let var = resolve_operand(&op.op1, execute_data);
+            let is_set = if let Some(name) = val_to_var_name(&var) {
+                let v = execute_data.get_var(&name);
+                bool_val(v.get_type() != PhpType::Null && v.get_type() != PhpType::Undef)
+            } else {
+                bool_val(false)
+            };
+            if let Some(slot) = result_slot(op) {
+                execute_data.set_temp(slot, is_set);
+            }
+            Ok(ExecResult::Continue)
+        }
+
+        Opcode::Empty => {
+            let var = resolve_operand(&op.op1, execute_data);
+            let is_empty = if let Some(name) = val_to_var_name(&var) {
+                let v = execute_data.get_var(&name);
+                bool_val(v.get_type() == PhpType::Null || v.get_type() == PhpType::Undef)
+            } else {
+                bool_val(true)
+            };
+            if let Some(slot) = result_slot(op) {
+                execute_data.set_temp(slot, is_empty);
+            }
+            Ok(ExecResult::Continue)
+        }
+
+        Opcode::Unset => {
+            let var = resolve_operand(&op.op1, execute_data);
+            if let Some(name) = val_to_var_name(&var) {
+                execute_data.remove_var(&name);
+            }
+            Ok(ExecResult::Continue)
+        }
+
+        // Array/Count operations
+        Opcode::Count => {
+            let arr = resolve_operand(&op.op1, execute_data);
+            let count = match &arr.value {
+                PhpValue::Array(a) => long_val(a.n_num_of_elements as i64),
+                PhpValue::String(s) => long_val(s.len as i64),
+                _ => long_val(0),
+            };
+            if let Some(slot) = result_slot(op) {
+                execute_data.set_temp(slot, count);
+            }
+            Ok(ExecResult::Continue)
+        }
+
+        Opcode::Keys => {
+            let arr = resolve_operand(&op.op1, execute_data);
+            match &arr.value {
+                PhpValue::Array(a) => {
+                    let mut result_arr = crate::engine::types::PhpArray::new();
+                    for bucket in &a.ar_data {
+                        if let Some(key) = &bucket.key {
+                            let key_val = Val::new(PhpValue::String(Box::new(crate::engine::string::string_init(key.as_str(), false))), PhpType::String);
+                            let idx = result_arr.n_num_of_elements as u64;
+                            let _ = crate::engine::hash::hash_add_or_update(&mut result_arr, None, idx, key_val, 0);
+                        }
+                    }
+                    let result = Val::new(PhpValue::Array(Box::new(result_arr)), PhpType::Array);
+                    if let Some(slot) = result_slot(op) {
+                        execute_data.set_temp(slot, result);
+                    }
+                    Ok(ExecResult::Continue)
+                }
+                _ => Err("Keys() requires an array".into()),
+            }
+        }
+
+        Opcode::Values => {
+            let arr = resolve_operand(&op.op1, execute_data);
+            match &arr.value {
+                PhpValue::Array(a) => {
+                    let mut result_arr = crate::engine::types::PhpArray::new();
+                    for bucket in &a.ar_data {
+                        let cloned = clone_val(&bucket.val);
+                        let idx = result_arr.n_num_of_elements as u64;
+                        let _ = crate::engine::hash::hash_add_or_update(&mut result_arr, None, idx, cloned, 0);
+                    }
+                    let result = Val::new(PhpValue::Array(Box::new(result_arr)), PhpType::Array);
+                    if let Some(slot) = result_slot(op) {
+                        execute_data.set_temp(slot, result);
+                    }
+                    Ok(ExecResult::Continue)
+                }
+                _ => Err("Values() requires an array".into()),
+            }
+        }
+
+        Opcode::ArrayDiff => {
+            // For simplicity, compute whether arrays are equal (can be extended later)
+            let arr1 = resolve_operand(&op.op1, execute_data);
+            let arr2 = resolve_operand(&op.op2, execute_data);
+            let result = match (&arr1.value, &arr2.value) {
+                (PhpValue::Array(a), PhpValue::Array(b)) => {
+                    let is_equal = a.n_num_of_elements == b.n_num_of_elements;
+                    bool_val(is_equal)
+                }
+                _ => bool_val(false),
+            };
+            if let Some(slot) = result_slot(op) {
+                execute_data.set_temp(slot, result);
+            }
+            Ok(ExecResult::Continue)
+        }
+
+        // Null coalescing: if op1 is not null, result=op1, else result=op2
+        Opcode::Coalesce => {
+            let left = resolve_operand(&op.op1, execute_data);
+            let result = if left.get_type() != PhpType::Null && left.get_type() != PhpType::Undef {
+                left
+            } else {
+                resolve_operand(&op.op2, execute_data)
+            };
+            if let Some(slot) = result_slot(op) {
+                execute_data.set_temp(slot, result);
+            }
+            Ok(ExecResult::Continue)
+        }
+
+        // Jump if null (for ?? short-circuit)
+        Opcode::JmpNullZ => {
+            let val = resolve_operand(&op.op1, execute_data);
+            if val.get_type() == PhpType::Null || val.get_type() == PhpType::Undef {
+                if let PhpValue::Long(target) = &op.op2.value {
+                    return Ok(ExecResult::Jump(*target as u32));
+                }
+            } else {
+                // Not null — store value in result temp
+                if let Some(slot) = result_slot(op) {
+                    execute_data.set_temp(slot, val);
+                }
+            }
+            Ok(ExecResult::Continue)
+        }
+
+        // Ternary assign: resolve op1, store in result temp slot
+        Opcode::QmAssign => {
+            let val = resolve_operand(&op.op1, execute_data);
+            if let Some(slot) = result_slot(op) {
+                execute_data.set_temp(slot, val);
+            }
+            Ok(ExecResult::Continue)
+        }
 
         _ => Ok(ExecResult::Continue),
     }

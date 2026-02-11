@@ -58,6 +58,17 @@ pub enum Opcode {
     AssignObjProp = 49, // Assign to object property (op1=obj var, op2=prop name, result=value)
     InitMethodCall = 50, // Init method call (op1=obj, op2=method name)
     DoMethodCall = 51,  // Execute method call (op1=method name, result=temp)
+    TypeCheck = 52,     // Check type of operand
+    IsSet = 53,         // Check if variable is set
+    Empty = 54,         // Check if variable is empty
+    Unset = 55,         // Unset a variable
+    Count = 56,         // Count elements in array/string
+    Keys = 57,          // Get array keys
+    Values = 58,        // Get array values
+    ArrayDiff = 59,     // Compare arrays
+    Coalesce = 60,      // Null coalescing: if op1 is not null, result=op1, else result=op2
+    JmpNullZ = 61,      // Jump if op1 is null (for ?? short-circuit)
+    QmAssign = 62,      // Ternary assign: resolve op1, store in result temp slot
 }
 
 /// Operation structure
@@ -131,6 +142,15 @@ pub fn get_opcode_name(opcode: Opcode) -> &'static str {
         Opcode::Assign => "ASSIGN",
         Opcode::InitFCall => "INIT_FCALL",
         Opcode::DoFCall => "DO_FCALL",
+        Opcode::IsSet => "ISSET",
+        Opcode::Empty => "EMPTY",
+        Opcode::Unset => "UNSET",
+        Opcode::Count => "COUNT",
+        Opcode::Keys => "KEYS",
+        Opcode::Values => "VALUES",
+        Opcode::ArrayDiff => "ARRAY_DIFF",
+        Opcode::Coalesce => "COALESCE",
+        Opcode::JmpNullZ => "JMP_NULLZ",
         _ => "UNKNOWN",
     }
 }

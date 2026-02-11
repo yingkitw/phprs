@@ -49,10 +49,10 @@ pub unsafe fn pemalloc(size: usize, persistent: bool) -> *mut u8 {
     let aligned_size = align_size(size);
     let layout = match Layout::from_size_align(aligned_size, ALIGNMENT) {
         Ok(l) => l,
-        Err(_) => handle_alloc_error(Layout::from_size_align_unchecked(aligned_size, ALIGNMENT)),
+        Err(_) => unsafe { handle_alloc_error(Layout::from_size_align_unchecked(aligned_size, ALIGNMENT)) },
     };
 
-    let ptr = alloc(layout);
+    let ptr = unsafe { alloc(layout) };
     if ptr.is_null() {
         handle_alloc_error(layout);
     }
@@ -102,8 +102,10 @@ pub unsafe fn pefree(ptr: *mut u8, persistent: bool) {
     if persistent {
         let mut allocs = persistent_allocs().lock().unwrap();
         if let Some(size) = allocs.remove(&(ptr as usize)) {
-            let layout = Layout::from_size_align_unchecked(size, ALIGNMENT);
-            dealloc(ptr, layout);
+            unsafe {
+                let layout = Layout::from_size_align_unchecked(size, ALIGNMENT);
+                dealloc(ptr, layout);
+            }
         }
     } else {
         // For non-persistent, we need to track sizes

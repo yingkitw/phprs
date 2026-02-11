@@ -158,7 +158,7 @@ pub fn php_is_writable(path: &str) -> bool {
     } else {
         // Check if parent directory is writable
         p.parent()
-            .map(|parent| {
+            .map(|_parent| {
                 fs::OpenOptions::new()
                     .write(true)
                     .create(true)

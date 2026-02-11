@@ -76,6 +76,11 @@ pub(crate) fn parse_access_chain(
             let (new_result, new_next) = parse_object_access(lexer, context, result)?;
             result = new_result;
             next = new_next;
+        } else if token_is_punct(&next, "(") {
+            // Callable variable: $var(args...)
+            let (call_result, call_next) = parse_callable_var(lexer, context, result)?;
+            result = call_result;
+            next = call_next;
         } else {
             break;
         }
@@ -134,6 +139,45 @@ pub(crate) fn parse_method_call(
 
     let call_slot = context.alloc_temp();
     context.emit_opcode(Opcode::DoMethodCall, member_zval, obj, temp_var_ref(call_slot));
+    Ok((temp_var_ref(call_slot), lexer.next_token()?))
+}
+
+/// Parse callable variable: $var(args...) — the opening '(' has already been consumed
+fn parse_callable_var(
+    lexer: &mut Lexer,
+    context: &mut CompileContext,
+    callable: Val,
+) -> Result<(Val, Token), String> {
+    let mut args = Vec::new();
+    let mut current_token = lexer.next_token()?;
+
+    if !token_is_punct(&current_token, ")") {
+        let (arg_val, next_token) = super::operators::parse_additive_expr_with_initial(lexer, context, current_token)?;
+        args.push(arg_val);
+        current_token = next_token;
+
+        while token_is_punct(&current_token, ",") {
+            let (arg_val, next_token) = super::parse_expression(lexer, context)?;
+            args.push(arg_val);
+            current_token = next_token;
+        }
+
+        if !token_is_punct(&current_token, ")") {
+            return Err("Expected ',' or ')' after callable argument".to_string());
+        }
+    }
+
+    // Emit InitFCall
+    context.emit_opcode(Opcode::InitFCall, facade::null_val(), facade::null_val(), facade::null_val());
+
+    // Emit SendVal for each argument
+    for arg in args {
+        context.emit_opcode(Opcode::SendVal, arg, facade::null_val(), facade::null_val());
+    }
+
+    // Emit DoFCall with the callable variable as the function name
+    let call_slot = context.alloc_temp();
+    context.emit_opcode(Opcode::DoFCall, callable, facade::null_val(), temp_var_ref(call_slot));
     Ok((temp_var_ref(call_slot), lexer.next_token()?))
 }
 

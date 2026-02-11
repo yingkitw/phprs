@@ -77,7 +77,3 @@ cargo test --test php_examples # PHP examples
 - [ARCHITECTURE.md](ARCHITECTURE.md) - Detailed architecture
 - [TODO.md](TODO.md) - Migration roadmap
 - [examples/README.md](examples/README.md) - Example guide
-
-## License
-
-PHP License 3.01

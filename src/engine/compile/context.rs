@@ -85,6 +85,20 @@ impl CompileContext {
         self.op_array.ops.len()
     }
 
+    /// Patch op1 of an opcode at the given index
+    pub fn patch_op_op1(&mut self, op_index: usize, val: Val) {
+        if op_index < self.op_array.ops.len() {
+            self.op_array.ops[op_index].op1 = val;
+        }
+    }
+
+    /// Patch op2 of an opcode at the given index
+    pub fn patch_op_op2(&mut self, op_index: usize, val: Val) {
+        if op_index < self.op_array.ops.len() {
+            self.op_array.ops[op_index].op2 = val;
+        }
+    }
+
     /// Set current line number
     pub fn set_line(&mut self, line: u32) {
         self.current_line = line;

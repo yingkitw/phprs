@@ -77,21 +77,29 @@ Output
 
 ## Virtual Machine
 
-### Opcodes (52 total)
+### Opcodes (62 total)
 - Arithmetic: Add, Sub, Mul, Div, Mod, Pow
-- Comparison: IsEqual, IsSmaller, IsIdentical
-- Logical: BoolAnd, BoolOr, BoolXor, BoolNot
-- Bitwise: BwAnd, BwOr, BwXor, BwNot, Shift
-- String: Concat, StrLen, StrPos, StrReplace
-- Control: Jmp, JmpZ, JmpNZ, Return
-- Variables: FetchVar, Assign, SendVal, InitFCall
-- OOP: NewObj, FetchObjProp, InitMethodCall
+- Comparison: IsEqual, IsNotEqual, IsSmaller, IsSmallerOrEqual, IsIdentical, IsNotIdentical
+- Logical: BoolNot, BoolXor
+- Bitwise: BwAnd, BwOr, BwXor, BwNot, Sl, Sr
+- String: Concat
+- Control: Jmp, JmpZ, JmpNZ, JmpNullZ, Return
+- Variables: FetchVar, Assign, SendVal, InitFCall, IsSet, Empty, Unset
+- Arrays: InitArray, AddArrayElement, FetchDim, Count, Keys, Values, ArrayDiff
+- Type: TypeCheck
+- Null coalescing: Coalesce
+- OOP: NewObj, FetchObjProp, InitMethodCall, AssignObjProp, DoMethodCall
+- Functions: DoFCall, Include
+- Other: Nop, Echo, AssignDim, AssignObj, AssignStaticProp, AssignOp, InitArray,
+          NewObj, Throw, TryCatchBegin, TryCatchEnd, CatchBegin, CatchEnd,
+          FinallyBegin, FinallyEnd, TypeCheck
 
 ### Built-in Functions (40+)
-- **String**: strlen, strpos, substr, str_replace, strtolower, strtoupper, trim
-- **Array**: explode, implode, array_merge, count, in_array
-- **Type**: isset, empty, is_int, is_string, is_array, var_dump
-- **I/O**: file_get_contents, file_exists, echo, print
+- **String**: strlen, strpos, substr, str_replace, strtolower, strtoupper, trim, explode, implode, sprintf
+- **Array**: count, sizeof, in_array, array_key_exists, array_merge, array_push
+- **Type**: isset, empty, is_int, is_integer, is_long, is_string, is_float, is_double, is_bool, is_null, is_array, intval, floatval, doubleval, strval
+- **I/O**: echo, file_get_contents, file_exists
+- **Debug**: var_dump, print_r
 - **JSON**: json_encode, json_decode
 
 ## Binary Tools

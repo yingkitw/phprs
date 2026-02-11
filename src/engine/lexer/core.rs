@@ -2,7 +2,7 @@
 
 use super::tokens::{Token, TokenType};
 use super::keywords::keyword_to_token;
-use super::readers::{read_number, read_string, read_identifier, read_variable, skip_whitespace, skip_whitespace_with_lineno};
+use super::readers::{read_number, read_string, read_identifier, read_variable, skip_whitespace_with_lineno};
 use crate::engine::string::string_init;
 
 /// Lexer state
@@ -121,7 +121,7 @@ impl Lexer {
     fn read_token(&mut self, ch: u8) -> Result<(TokenType, String), String> {
         match ch {
             b'$' => {
-                let start = self.position;
+                let _start = self.position;
                 self.read_with(|lexer| read_variable(&lexer.input, &mut lexer.position))
             }
             b'"' | b'\'' => {
@@ -132,7 +132,7 @@ impl Lexer {
             }
             b'a'..=b'z' | b'A'..=b'Z' | b'_' => {
                 self.read_with(|lexer| {
-                    let (token_type, value) = read_identifier(&lexer.input, &mut lexer.position)?;
+                    let (_token_type, value) = read_identifier(&lexer.input, &mut lexer.position)?;
                     let kw_token = keyword_to_token(&value);
                     Ok((kw_token, value))
                 })
@@ -291,6 +291,34 @@ impl Lexer {
                     Ok((TokenType::T_CONCAT_EQUAL, ".=".to_string()))
                 } else {
                     Ok((TokenType::T_CONCAT, ".".to_string()))
+                }
+            }
+            b'?' => {
+                self.advance();
+                if self.current_char() == Some(b'?') {
+                    self.advance();
+                    if self.current_char() == Some(b'=') {
+                        self.advance();
+                        Ok((TokenType::T_COALESCE_EQUAL, "??=".to_string()))
+                    } else {
+                        Ok((TokenType::T_COALESCE, "??".to_string()))
+                    }
+                } else if self.current_char() == Some(b'-') && self.input.get(self.position + 1) == Some(&b'>') {
+                    self.advance(); // skip -
+                    self.advance(); // skip >
+                    Ok((TokenType::T_NULLSAFE_OBJECT_OPERATOR, "?->".to_string()))
+                } else {
+                    // Bare ? used for ternary
+                    Ok((TokenType::T_STRING, "?".to_string()))
+                }
+            }
+            b':' => {
+                self.advance();
+                if self.current_char() == Some(b':') {
+                    self.advance();
+                    Ok((TokenType::T_NS_SEPARATOR, "::".to_string()))
+                } else {
+                    Ok((TokenType::T_STRING, ":".to_string()))
                 }
             }
             b'(' | b')' | b'{' | b'}' | b';' | b',' | b'[' | b']' => {
