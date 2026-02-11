@@ -633,17 +633,70 @@ fn execute_do_fcall(op: &Op, execute_data: &mut ExecuteData) -> Result<ExecResul
             Ok(ExecResult::Continue)
         }
         None => {
-            // Try user-defined function table
-            if let Some(ref function_table) = execute_data.function_table {
-                if let Some(ft) = function_table.downcast_ref::<crate::engine::compile::function_table::FunctionTable>() {
-                    if let Some(func_op_array) = ft.lookup_function(&func_name) {
-                        let mut child = ExecuteData::new();
-                        child.function_table = execute_data.function_table.clone();
-                        let _result = super::execute::execute_ex(&mut child, func_op_array);
-                        return Ok(ExecResult::Continue);
+            // Try user-defined function table — clone needed data to avoid borrow conflict
+            let func_data: Option<(Vec<String>, super::opcodes::OpArray)> = execute_data.function_table.as_ref()
+                .and_then(|ft| ft.downcast_ref::<crate::engine::compile::function_table::FunctionTable>())
+                .and_then(|ft| ft.lookup_function(&func_name))
+                .map(|func_op_array| {
+                    // Extract param names from vars
+                    let param_names: Vec<String> = func_op_array.vars.iter().map(|v| {
+                        if let PhpValue::String(ref s) = v.value {
+                            let name = s.as_str();
+                            if name.starts_with('$') { name[1..].to_string() } else { name.to_string() }
+                        } else {
+                            String::new()
+                        }
+                    }).collect();
+                    // Clone the op array
+                    let mut cloned = super::opcodes::OpArray::new(func_op_array.filename.clone().unwrap_or_default());
+                    cloned.function_name = func_op_array.function_name.clone();
+                    for op in &func_op_array.ops {
+                        cloned.add_op(super::opcodes::Op::new(
+                            op.opcode, clone_val(&op.op1), clone_val(&op.op2), clone_val(&op.result), op.extended_value,
+                        ));
+                    }
+                    (param_names, cloned)
+                });
+
+            if let Some((param_names, func_op_array)) = func_data {
+                // Save current execution state
+                let saved_op = execute_data.current_op;
+                let saved_op_array = execute_data.op_array.take();
+                let saved_temps = std::mem::take(&mut execute_data.temp_vars);
+                let saved_symbol_table = execute_data.symbol_table.take();
+
+                // Set up fresh symbol table for function scope
+                execute_data.symbol_table = Some(crate::engine::types::PhpArray::new());
+
+                // Bind arguments to parameter names
+                for (i, arg) in args.iter().enumerate() {
+                    if let Some(name) = param_names.get(i) {
+                        if !name.is_empty() {
+                            let clean = if name.starts_with('$') { &name[1..] } else { name.as_str() };
+                            execute_data.set_var(clean, clone_val(arg));
+                        }
                     }
                 }
+
+                // Execute the function and capture return value
+                let (_status, return_val) = super::execute::execute_ex_returning(execute_data, &func_op_array);
+
+                // Restore execution state
+                execute_data.symbol_table = saved_symbol_table;
+                execute_data.temp_vars = saved_temps;
+                execute_data.op_array = saved_op_array;
+                execute_data.current_op = saved_op;
+
+                // Store return value in result temp slot
+                if let Some(ret) = return_val {
+                    if let Some(slot) = result_slot(op) {
+                        execute_data.set_temp(slot, ret);
+                    }
+                }
+
+                return Ok(ExecResult::Continue);
             }
+
             eprintln!("Warning: Call to undefined function {}()", func_name);
             Ok(ExecResult::Continue)
         }

@@ -21,10 +21,15 @@ use statement::parse_statement;
 
 /// Compile PHP code string to opcodes
 pub fn compile_string(code: &str, filename: &str) -> Result<OpArray, String> {
+    let (op_array, _) = compile_string_with_functions(code, filename)?;
+    Ok(op_array)
+}
+
+/// Compile PHP code string to opcodes and return the function table
+pub fn compile_string_with_functions(code: &str, filename: &str) -> Result<(OpArray, function_table::FunctionTable), String> {
     let mut context = CompileContext::new();
     context.set_filename(filename);
 
-    // Tokenize the code
     let mut lexer = Lexer::new(code);
 
     // Skip opening tag if present
@@ -33,12 +38,12 @@ pub fn compile_string(code: &str, filename: &str) -> Result<OpArray, String> {
         token = lexer.next_token()?;
     }
 
-    // Basic compilation: tokenize and emit simple opcodes
     while token.token_type != TokenType::T_EOF {
         token = parse_statement(&mut lexer, &mut context, token)?;
     }
 
-    Ok(context.finalize())
+    let ft = std::mem::replace(&mut context.function_table, function_table::FunctionTable::new());
+    Ok((context.finalize(), ft))
 }
 
 /// Compile file to opcodes

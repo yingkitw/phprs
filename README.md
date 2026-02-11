@@ -18,12 +18,15 @@ cargo build --release
 # Run tests
 cargo test
 
-# Compile and run PHP files
-cargo run --bin php -- examples/basic_types.php
+# Run a PHP file
+cargo run --bin phprs -- run examples/basic_types.php
 
 # Start web playground
-cargo run --bin php-server
+cargo run --bin phprs -- serve
 # Open http://localhost:3080
+
+# Package manager
+cargo run --bin phprs -- pkg init
 ```
 
 ## Project Structure
@@ -34,9 +37,7 @@ phprs/
 │   ├── engine/       # Core engine: compiler, VM, types, memory
 │   └── php/          # PHP runtime: streams, filesystem, SAPI
 ├── bin/
-│   ├── php           # CLI interpreter
-│   ├── php-server    # Web playground
-│   └── php-pkg       # Package manager (in development)
+│   └── phprs         # Unified CLI (run, serve, pkg)
 ├── examples/       # PHP and Rust examples
 └── tests/          # Comprehensive test suite
 ```
@@ -60,14 +61,14 @@ execute_ex(&mut exec_data, &op_array);
 - ✅ Core engine (types, strings, hash tables, memory, GC)
 - ✅ PHP runtime (streams, filesystem, output)
 - ✅ Compiler (expressions, statements, functions, classes)
-- ✅ VM (52 opcodes, 40+ built-in functions)
+- ✅ VM (63 opcodes, 40+ built-in functions)
 - ✅ SAPI (CLI, built-in web server)
 - 🚧 Package manager (in development)
 
 ## Tests
 
 ```bash
-cargo test                    # All tests (248 passing)
+cargo test                    # All tests
 cargo test --lib             # Library only
 cargo test --test php_examples # PHP examples
 ```

@@ -2,8 +2,8 @@
 //!
 //! Interacts with the Packagist.org registry
 
-use crate::composer::{ComposerJson, StringOrArray};
-use crate::error::Result;
+use super::super::composer::Autoload;
+use super::super::error::Result;
 use reqwest::Client;
 use serde::Deserialize;
 use sha2::{Digest, Sha256};
@@ -21,7 +21,7 @@ impl PackagistClient {
         let mut headers = reqwest::header::HeaderMap::new();
         headers.insert(
             reqwest::header::USER_AGENT,
-            reqwest::header::HeaderValue::from_static("php-pkg/0.1.0"),
+            reqwest::header::HeaderValue::from_static("phprs-pkg/0.1.0"),
         );
 
         let client = Client::builder()
@@ -49,20 +49,20 @@ impl PackagistClient {
             .get(&url)
             .send()
             .await
-            .map_err(crate::error::PkgError::Network)?;
+            .map_err(super::super::error::PkgError::Network)?;
 
         if !response.status().is_success() {
-            return Err(crate::error::PkgError::PackageNotFound(package_name.to_string()));
+            return Err(super::super::error::PkgError::PackageNotFound(package_name.to_string()));
         }
 
         let response_text = response.text().await
-            .map_err(crate::error::PkgError::Network)?;
+            .map_err(super::super::error::PkgError::Network)?;
 
         let packagist_response: PackagistResponse = serde_json::from_str(&response_text)
             .map_err(|e| {
                 log::error!("Failed to parse JSON: {}", e);
                 log::debug!("Response text: {}", &response_text[..response_text.len().min(500)]);
-                crate::error::PkgError::Config(format!("JSON parse error: {}", e))
+                super::super::error::PkgError::Config(format!("JSON parse error: {}", e))
             })?;
 
         Ok(PackageMetadata::from_packagist(packagist_response))
@@ -93,11 +93,11 @@ impl PackagistClient {
             .get(&dist.url)
             .send()
             .await
-            .map_err(crate::error::PkgError::Network)?;
+            .map_err(super::super::error::PkgError::Network)?;
 
         // Check if we got a successful response
         if !response.status().is_success() {
-            return Err(crate::error::PkgError::ArchiveExtraction(
+            return Err(super::super::error::PkgError::ArchiveExtraction(
                 format!("Failed to download package: HTTP {}", response.status())
             ));
         }
@@ -105,7 +105,7 @@ impl PackagistClient {
         let bytes = response
             .bytes()
             .await
-            .map_err(crate::error::PkgError::Network)?;
+            .map_err(super::super::error::PkgError::Network)?;
 
         log::debug!("Downloaded {} bytes for {}={}", bytes.len(), package_name, version);
 
@@ -114,7 +114,7 @@ impl PackagistClient {
             if !shasum.is_empty() {
                 let computed = format!("{:x}", Sha256::digest(&bytes));
                 if computed != *shasum {
-                    return Err(crate::error::PkgError::ChecksumMismatch {
+                    return Err(super::super::error::PkgError::ChecksumMismatch {
                         package: package_name.to_string(),
                         expected: shasum.clone(),
                         actual: computed,
@@ -141,7 +141,7 @@ impl PackagistClient {
             "zip" => self.extract_zip(bytes, dest),
             "tar" => self.extract_tar(bytes, dest),
             "gzip" | "tgz" => self.extract_targz(bytes, dest),
-            _ => Err(crate::error::PkgError::ArchiveExtraction(format!(
+            _ => Err(super::super::error::PkgError::ArchiveExtraction(format!(
                 "Unsupported archive type: {}",
                 archive_type
             ))),
@@ -155,11 +155,11 @@ impl PackagistClient {
 
         let reader = Cursor::new(bytes);
         let mut archive = ZipArchive::new(reader)
-            .map_err(|e| crate::error::PkgError::ArchiveExtraction(e.to_string()))?;
+            .map_err(|e| super::super::error::PkgError::ArchiveExtraction(e.to_string()))?;
 
         archive
             .extract(dest)
-            .map_err(|e| crate::error::PkgError::ArchiveExtraction(e.to_string()))?;
+            .map_err(|e| super::super::error::PkgError::ArchiveExtraction(e.to_string()))?;
 
         Ok(())
     }
@@ -174,7 +174,7 @@ impl PackagistClient {
 
         archive
             .unpack(dest)
-            .map_err(|e| crate::error::PkgError::ArchiveExtraction(e.to_string()))?;
+            .map_err(|e| super::super::error::PkgError::ArchiveExtraction(e.to_string()))?;
 
         Ok(())
     }
@@ -191,7 +191,7 @@ impl PackagistClient {
 
         archive
             .unpack(dest)
-            .map_err(|e| crate::error::PkgError::ArchiveExtraction(e.to_string()))?;
+            .map_err(|e| super::super::error::PkgError::ArchiveExtraction(e.to_string()))?;
 
         Ok(())
     }
@@ -223,7 +223,7 @@ pub struct VersionMetadata {
     #[serde(default)]
     pub require_dev: Option<serde_json::Value>,
     #[serde(default)]
-    pub autoload: Option<crate::composer::Autoload>,
+    pub autoload: Option<Autoload>,
     #[serde(default)]
     pub time: Option<String>,
     #[serde(rename = "type", default)]

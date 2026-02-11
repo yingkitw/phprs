@@ -2,7 +2,7 @@
 //!
 //! 100% compatible with Composer's composer.json format
 
-use crate::error::Result;
+use super::super::error::Result;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::Path;
@@ -242,10 +242,10 @@ impl ComposerJson {
     /// Load composer.json from file
     pub fn load<P: AsRef<Path>>(path: P) -> Result<Self> {
         let content = std::fs::read_to_string(path.as_ref())
-            .map_err(crate::error::PkgError::ComposerJsonRead)?;
+            .map_err(super::super::error::PkgError::ComposerJsonRead)?;
 
         let composer: ComposerJson = serde_json::from_str(&content)
-            .map_err(crate::error::PkgError::ComposerJsonParse)?;
+            .map_err(super::super::error::PkgError::ComposerJsonParse)?;
 
         Ok(composer)
     }
@@ -253,10 +253,10 @@ impl ComposerJson {
     /// Save composer.json to file
     pub fn save<P: AsRef<Path>>(&self, path: P) -> Result<()> {
         let content = serde_json::to_string_pretty(self)
-            .map_err(|e| crate::error::PkgError::Config(e.to_string()))?;
+            .map_err(|e| super::super::error::PkgError::Config(e.to_string()))?;
 
         std::fs::write(path.as_ref(), content)
-            .map_err(crate::error::PkgError::ComposerJsonWrite)?;
+            .map_err(super::super::error::PkgError::ComposerJsonWrite)?;
 
         Ok(())
     }

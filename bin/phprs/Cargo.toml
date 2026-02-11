@@ -1,13 +1,13 @@
 [package]
-name = "php-pkg"
+name = "phprs-cli"
 version = "0.1.0"
 authors = ["Ying kit WONG"]
 license = "Apache-2.0"
 edition = "2024"
-description = "Composer-compatible package manager for phprs"
+description = "PHP-RS unified CLI: interpreter, server, and package manager"
 
 [[bin]]
-name = "php-pkg"
+name = "phprs"
 path = "src/main.rs"
 
 [dependencies]
@@ -24,7 +24,7 @@ serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 toml = "0.8"
 
-# HTTP Client
+# HTTP Client (for pkg)
 reqwest = { version = "0.12", features = ["json"] }
 tokio = { version = "1.0", features = ["full"] }
 

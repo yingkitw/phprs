@@ -1,7 +1,7 @@
 //! Init command - Initialize a new PHP project
 
 use clap::Args;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 #[derive(Args)]
 pub struct Init {
@@ -44,7 +44,7 @@ impl Init {
         }
 
         // Create composer.json
-        let mut composer = crate::composer::ComposerJson::new(self.name.clone());
+        let mut composer = super::super::composer::ComposerJson::new(self.name.clone());
 
         // Set optional fields
         if let Some(ref desc) = self.description {
@@ -54,11 +54,11 @@ impl Init {
         composer.type_ = Some(self.type_.clone());
 
         if let Some(ref license) = self.license {
-            composer.license = Some(crate::composer::StringOrArray::Single(license.clone()));
+            composer.license = Some(super::super::composer::StringOrArray::Single(license.clone()));
         }
 
         // Add default autoload
-        composer.autoload = Some(crate::composer::Autoload {
+        composer.autoload = Some(super::super::composer::Autoload {
             psr_4: Some({
                 let mut map = std::collections::HashMap::new();
                 if let Some(ref name) = self.name {
@@ -76,12 +76,12 @@ impl Init {
                         .join("\\");
                     map.insert(
                         format!("{}\\", namespace),
-                        crate::composer::StringOrArray::Single("src/".to_string())
+                        super::super::composer::StringOrArray::Single("src/".to_string())
                     );
                 } else {
                     map.insert(
                         "App\\".to_string(),
-                        crate::composer::StringOrArray::Single("src/".to_string())
+                        super::super::composer::StringOrArray::Single("src/".to_string())
                     );
                 }
                 map
@@ -92,13 +92,13 @@ impl Init {
         // Save composer.json
         composer.save(&composer_json_path)?;
 
-        log::info!("✓ Created composer.json");
+        log::info!("Created composer.json");
 
         // Create directory structure
         let src_dir = project_dir.join("src");
         if !src_dir.exists() {
             std::fs::create_dir_all(&src_dir)?;
-            log::info!("✓ Created src/ directory");
+            log::info!("Created src/ directory");
         }
 
         // Create .gitignore
@@ -112,16 +112,15 @@ impl Init {
 .DS_Store
 "#;
             std::fs::write(&gitignore_path, gitignore_content)?;
-            log::info!("✓ Created .gitignore");
+            log::info!("Created .gitignore");
         }
 
         log::info!("");
-        log::info!("✨ Project initialized successfully!");
+        log::info!("Project initialized successfully!");
         log::info!("");
         log::info!("Next steps:");
-        log::info!("  1. Add dependencies: php-pkg require <package>");
-        log::info!("  2. Install dependencies: php-pkg install");
-        log::info!("  3. Build project: php-pkg build");
+        log::info!("  1. Add dependencies: phprs pkg install");
+        log::info!("  2. Build project: phprs pkg build");
 
         Ok(())
     }

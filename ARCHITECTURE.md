@@ -102,30 +102,25 @@ Output
 - **Debug**: var_dump, print_r
 - **JSON**: json_encode, json_decode
 
-## Binary Tools
+## CLI (`phprs`)
 
-### php (CLI)
+Single binary with three subcommands:
+
 ```bash
-php file.php              # Compile and display info
+phprs run file.php        # Execute a PHP file
+phprs serve               # Start web playground on http://localhost:3080
+phprs serve --port 8080   # Custom port
+phprs pkg init            # Initialize project (composer.json)
+phprs pkg install         # Install dependencies
+phprs pkg build           # Build project
 ```
 
-### php-server (Web Playground)
-```bash
-php-server                  # Start on http://localhost:3080
-```
-
-Features:
+### Web Playground (`phprs serve`)
 - Execute PHP via HTTP API
 - Code editor with syntax highlighting
 - Opcode viewer
 - Dark/light theme
 - Multi-language (EN/中文/日本語)
-
-### php-pkg (Package Manager)
-```bash
-php-pkg init              # Initialize project
-php-pkg install           # Install dependencies
-```
 
 ## Comparison with C PHP
 

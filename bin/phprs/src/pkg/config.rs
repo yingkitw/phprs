@@ -1,6 +1,6 @@
-//! Configuration management for php-pkg
+//! Configuration management for pkg
 
-use crate::error::Result;
+use super::error::Result;
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 
@@ -44,7 +44,7 @@ impl Config {
         if config_file.exists() {
             let content = std::fs::read_to_string(&config_file)?;
             let config: Config = toml::from_str(&content)
-                .map_err(|e| crate::error::PkgError::Config(e.to_string()))?;
+                .map_err(|e| super::error::PkgError::Config(e.to_string()))?;
             Ok(config)
         } else {
             Ok(Self::default())

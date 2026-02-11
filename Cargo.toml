@@ -38,7 +38,5 @@ strip = true
 [workspace]
 members = [
     ".",
-    "bin/php",
-    "bin/php-pkg",
-    "bin/php-server",
+    "bin/phprs",
 ]

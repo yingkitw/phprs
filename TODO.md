@@ -34,9 +34,9 @@
 - [x] Built-in functions (40+ functions)
 
 ### Tools
-- [x] CLI interpreter (`bin/php`)
-- [x] Web playground (`bin/php-server`)
-- [x] Test suite (252 tests passing)
+- [x] Unified CLI (`bin/phprs`) with `run`, `serve`, `pkg` subcommands
+- [x] Web playground (`phprs serve`)
+- [x] Test suite
 - [x] Comprehensive examples
 
 ## In Progress 🚧

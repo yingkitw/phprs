@@ -43,17 +43,17 @@ impl Install {
             ));
         }
 
-        let composer = crate::composer::ComposerJson::load(&composer_json_path)?;
+        let composer = super::super::composer::ComposerJson::load(&composer_json_path)?;
         log::info!("Loaded composer.json: {:?}", composer.name);
 
         // Load configuration
-        let config = crate::config::Config::load(&project_dir)?;
+        let config = super::super::config::Config::load(&project_dir)?;
 
         // Create vendor directory
         let vendor_dir = project_dir.join(config.vendor_dir());
         if !vendor_dir.exists() {
             std::fs::create_dir_all(&vendor_dir)?;
-            log::info!("✓ Created vendor directory");
+            log::info!("Created vendor directory");
         }
 
         // Create autoload cache directory
@@ -61,7 +61,7 @@ impl Install {
 
         // Phase 1: Install packages without dependency resolution
         if let Some(ref require) = composer.require {
-            let client = crate::registry::PackagistClient::new(Some(config.registry_url.clone()));
+            let client = super::super::registry::PackagistClient::new(Some(config.registry_url.clone()));
 
             log::info!("Installing {} package(s)...", require.len());
 
@@ -74,7 +74,7 @@ impl Install {
                 log::info!("Installing {} ({})...", package_name, version_constraint);
 
                 match self.install_package(&client, package_name, version_constraint, &vendor_dir, &config).await {
-                    Ok(_) => log::info!("✓ Installed {}", package_name),
+                    Ok(_) => log::info!("Installed {}", package_name),
                     Err(e) => log::error!("Failed to install {}: {}", package_name, e),
                 }
             }
@@ -84,7 +84,7 @@ impl Install {
         self.generate_autoloader(&composer, &vendor_dir)?;
 
         log::info!("");
-        log::info!("✨ Installation complete!");
+        log::info!("Installation complete!");
 
         Ok(())
     }
@@ -92,11 +92,11 @@ impl Install {
     /// Install a single package
     async fn install_package(
         &self,
-        client: &crate::registry::PackagistClient,
+        client: &super::super::registry::PackagistClient,
         package_name: &str,
-        version_constraint: &str,
+        _version_constraint: &str,
         vendor_dir: &std::path::Path,
-        config: &crate::config::Config,
+        config: &super::super::config::Config,
     ) -> anyhow::Result<()> {
         // Fetch package metadata
         let metadata = client.get_package_metadata(package_name).await?;
@@ -131,11 +131,11 @@ impl Install {
                 // Single directory (typical for GitHub archives)
                 let extracted_dir = entries[0].path();
                 std::fs::create_dir_all(target_dir.parent().unwrap())?;
-                crate::composer::copy_dir_all(&extracted_dir, &target_dir)?;
+                super::super::composer::copy_dir_all(&extracted_dir, &target_dir)?;
             } else {
                 // Multiple files/directories at root
                 std::fs::create_dir_all(&target_dir)?;
-                crate::composer::copy_dir_all(&package_dir, &target_dir)?;
+                super::super::composer::copy_dir_all(&package_dir, &target_dir)?;
             }
         }
 
@@ -145,7 +145,7 @@ impl Install {
     /// Generate PSR-4 autoloader
     fn generate_autoloader(
         &self,
-        composer: &crate::composer::ComposerJson,
+        composer: &super::super::composer::ComposerJson,
         vendor_dir: &std::path::Path,
     ) -> anyhow::Result<()> {
         let mut autoload_mappings = std::collections::HashMap::new();
@@ -155,8 +155,8 @@ impl Install {
             if let Some(ref psr4) = autoload.psr_4 {
                 for (namespace, path) in psr4 {
                     let path_str = match path {
-                        crate::composer::StringOrArray::Single(p) => p.clone(),
-                        crate::composer::StringOrArray::Multiple(paths) => {
+                        super::super::composer::StringOrArray::Single(p) => p.clone(),
+                        super::super::composer::StringOrArray::Multiple(paths) => {
                             paths.join(",")
                         }
                     };
@@ -168,7 +168,7 @@ impl Install {
         // TODO: Phase 2 - Collect autoload mappings from installed packages
 
         if !autoload_mappings.is_empty() {
-            crate::composer::generate_autoloader(vendor_dir, &autoload_mappings)?;
+            super::super::composer::generate_autoloader(vendor_dir, &autoload_mappings)?;
         }
 
         Ok(())

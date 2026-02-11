@@ -16,8 +16,18 @@ fn is_punct(token: &Token, ch: &str) -> bool {
     token.token_type == TokenType::T_STRING && token.value.as_ref().map(|s| s.as_str()) == Some(ch)
 }
 
+/// Check if a token is a type hint keyword
+fn is_type_hint(token: &Token) -> bool {
+    if token.token_type == TokenType::T_STRING {
+        if let Some(ref val) = token.value {
+            return matches!(val.as_str(), "int" | "string" | "float" | "bool" | "array" | "object" | "mixed" | "void" | "never" | "self" | "static" | "iterable");
+        }
+    }
+    token.token_type == TokenType::T_ARRAY || token.token_type == TokenType::T_CALLABLE
+}
+
 /// Parse parameter list (the opening '(' has already been consumed)
-/// Returns the list of parameter names
+/// Returns the list of parameter names. Supports type declarations.
 fn parse_params(
     lexer: &mut Lexer,
     context: &mut CompileContext,
@@ -30,8 +40,18 @@ fn parse_params(
     }
 
     loop {
+        // Skip nullable type hint: ?type
+        if is_punct(&current_token, "?") {
+            current_token = lexer.next_token()?;
+        }
+
+        // Skip type hint: int, string, float, bool, array, etc.
+        if is_type_hint(&current_token) {
+            current_token = lexer.next_token()?;
+        }
+
         if current_token.token_type != TokenType::T_VARIABLE {
-            return Err("Expected variable parameter in function definition".to_string());
+            return Err(format!("Expected variable parameter in function definition, got {:?}", current_token.token_type));
         }
 
         let param_name = current_token.value.as_ref().unwrap().as_str();
@@ -57,6 +77,24 @@ fn parse_params(
     }
 
     Ok(params)
+}
+
+/// Skip return type declaration after ')' if present: ): type
+/// Returns the next meaningful token (either '{' or whatever follows)
+fn skip_return_type(lexer: &mut Lexer) -> Result<Token, String> {
+    let token = lexer.next_token()?;
+    if is_punct(&token, ":") {
+        // Skip the return type
+        let type_token = lexer.next_token()?;
+        // Handle nullable return type: ?type
+        if is_punct(&type_token, "?") {
+            let _actual_type = lexer.next_token()?;
+        }
+        // The type token itself is consumed, get next
+        lexer.next_token()
+    } else {
+        Ok(token)
+    }
 }
 
 /// Parse `use ($var1, $var2, ...)` clause for closures
@@ -93,6 +131,7 @@ fn parse_use_clause(lexer: &mut Lexer) -> Result<Vec<String>, String> {
 }
 
 /// Compile function body into a separate context and return the finalized OpArray
+/// Handles optional return type declaration before the opening brace
 fn compile_function_body(
     lexer: &mut Lexer,
     context: &CompileContext,
@@ -104,7 +143,8 @@ fn compile_function_body(
     func_context.set_line(lineno);
     func_context.op_array.function_name = Some(function_name.to_string());
 
-    let brace_token = lexer.next_token()?;
+    // Skip optional return type declaration (: type) and find '{'
+    let brace_token = skip_return_type(lexer)?;
     if !is_punct(&brace_token, "{") {
         return Err("Expected '{' after function parameters".to_string());
     }
@@ -137,8 +177,10 @@ pub fn compile_function(
         return Err("Expected '(' after function name".to_string());
     }
 
-    let _params = parse_params(lexer, context)?;
-    let func_op_array = compile_function_body(lexer, context, function_name, name_token.lineno)?;
+    let params = parse_params(lexer, context)?;
+    let mut func_op_array = compile_function_body(lexer, context, function_name, name_token.lineno)?;
+    // Store param names so the VM can bind arguments
+    func_op_array.vars = params.iter().map(|p| crate::engine::vm::var_ref(p)).collect();
 
     context
         .function_table
@@ -170,50 +212,39 @@ fn compile_closure_inner(
 ) -> Result<(Val, Token), String> {
     let params = parse_params(lexer, context)?;
 
+    // After params, we may see: `: returnType`, `use (...)`, or `{`
+    let mut next = lexer.next_token()?;
+
+    // Skip optional return type declaration
+    if is_punct(&next, ":") {
+        let type_token = lexer.next_token()?;
+        if is_punct(&type_token, "?") {
+            let _actual_type = lexer.next_token()?;
+        }
+        next = lexer.next_token()?;
+    }
+
     // Check for `use` clause
-    let next = lexer.next_token()?;
     let captures = if next.token_type == TokenType::T_USE {
         let caps = parse_use_clause(lexer)?;
+        next = lexer.next_token()?;
         caps
-    } else if is_punct(&next, "{") {
-        // No use clause, but we consumed '{' — need to handle this
-        // Put it back by compiling body directly
-        let closure_name = format!("__closure_{}", CLOSURE_COUNTER.fetch_add(1, Ordering::Relaxed));
-        let mut func_context = CompileContext::new();
-        func_context.set_filename(context.filename.as_deref().unwrap_or(""));
-        func_context.set_line(lineno);
-        func_context.op_array.function_name = Some(closure_name.clone());
-        func_context.op_array.vars = params.iter().map(|p| {
-            crate::engine::vm::var_ref(p)
-        }).collect();
-
-        parse_statement_block(lexer, &mut func_context)?;
-        let func_op_array = func_context.finalize();
-        context.function_table.store_function(&closure_name, func_op_array);
-
-        let val = crate::engine::facade::string_val(&closure_name);
-        let next_token = lexer.next_token()?;
-        return Ok((val, next_token));
     } else {
-        return Err(format!("Expected 'use' or '{{' after closure parameters, got {:?}", next.token_type));
+        Vec::new()
     };
 
-    let closure_name = format!("__closure_{}", CLOSURE_COUNTER.fetch_add(1, Ordering::Relaxed));
+    if !is_punct(&next, "{") {
+        return Err(format!("Expected '{{' in closure, got {:?}", next.token_type));
+    }
 
-    // Store captured variable names in the op_array vars field
+    let closure_name = format!("__closure_{}", CLOSURE_COUNTER.fetch_add(1, Ordering::Relaxed));
     let mut func_context = CompileContext::new();
     func_context.set_filename(context.filename.as_deref().unwrap_or(""));
     func_context.set_line(lineno);
     func_context.op_array.function_name = Some(closure_name.clone());
-    // Store params + captures as vars metadata
     func_context.op_array.vars = params.iter().chain(captures.iter()).map(|p| {
         crate::engine::vm::var_ref(p)
     }).collect();
-
-    let brace_token = lexer.next_token()?;
-    if !is_punct(&brace_token, "{") {
-        return Err("Expected '{' after closure use clause".to_string());
-    }
 
     parse_statement_block(lexer, &mut func_context)?;
     let func_op_array = func_context.finalize();

@@ -1369,15 +1369,21 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9b4f627cb1b25917193a259e49bdad08f671f8d9708acfd5fe0a8c1455d87220"
 
 [[package]]
-name = "php"
+name = "phprs"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "phprs",
+ "anyrepair",
+ "env_logger",
+ "log",
+ "pulldown-cmark 0.9.6",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
 ]
 
 [[package]]
-name = "php-pkg"
+name = "phprs-cli"
 version = "0.1.0"
 dependencies = [
  "anyhow",
@@ -1399,29 +1405,6 @@ dependencies = [
  "tokio-test",
  "toml",
  "zip",
-]
-
-[[package]]
-name = "php-server"
-version = "0.1.0"
-dependencies = [
- "phprs",
- "serde",
- "serde_json",
-]
-
-[[package]]
-name = "phprs"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "anyrepair",
- "env_logger",
- "log",
- "pulldown-cmark 0.9.6",
- "serde",
- "serde_json",
- "thiserror 2.0.18",
 ]
 
 [[package]]

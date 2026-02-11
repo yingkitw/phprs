@@ -11,9 +11,10 @@ static OUTPUT_TEST_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
 fn run_php_code(code: &str) -> (PhpResult, String) {
     let _lock = OUTPUT_TEST_LOCK.lock().unwrap();
-    let op_array = crate::engine::compile::compile_string(code, "test.php").unwrap();
+    let (op_array, ft) = crate::engine::compile::compile_string_with_functions(code, "test.php").unwrap();
     crate::php::output::php_output_start().unwrap();
     let mut ed = ExecuteData::new();
+    ed.function_table = Some(std::sync::Arc::new(ft));
     let result = execute_ex(&mut ed, &op_array);
     let output = crate::php::output::php_output_end().unwrap();
     (result, output)
@@ -371,4 +372,28 @@ fn test_compile_and_execute_closure_with_args() {
     let (result, output) = run_php_code(code);
     assert!(matches!(result, PhpResult::Success));
     assert_eq!(output, "7");
+}
+
+#[test]
+fn test_compile_and_execute_function_return() {
+    let code = "<?php\nfunction double($x) { return $x * 2; }\necho double(5);\n";
+    let (result, output) = run_php_code(code);
+    assert!(matches!(result, PhpResult::Success));
+    assert_eq!(output, "10");
+}
+
+#[test]
+fn test_compile_and_execute_typed_function() {
+    let code = "<?php\nfunction add(int $a, int $b): int { return $a + $b; }\necho add(3, 4);\n";
+    let (result, output) = run_php_code(code);
+    assert!(matches!(result, PhpResult::Success));
+    assert_eq!(output, "7");
+}
+
+#[test]
+fn test_compile_and_execute_typed_closure() {
+    let code = "<?php\n$fn = function(string $s): string { return $s; };\necho $fn('hello');\n";
+    let (result, output) = run_php_code(code);
+    assert!(matches!(result, PhpResult::Success));
+    assert_eq!(output, "hello");
 }

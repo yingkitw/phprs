@@ -1,4 +1,4 @@
-//! Error types for php-pkg
+//! Error types for pkg
 
 use thiserror::Error;
 

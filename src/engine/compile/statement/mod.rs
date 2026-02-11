@@ -117,10 +117,28 @@ fn compile_variable_stmt(
 
     if next_token.token_type == TokenType::T_EQUAL {
         // Variable assignment: $var = expression
-        let (value_zval, _) = parse_expression(lexer, context)?;
+        let (value_zval, after_expr) = parse_expression(lexer, context)?;
         let var_name_zval = string_val(var_name);
         let value_zval_op2 = StdValFactory::clone_val(&value_zval);
         context.emit_opcode(Opcode::Assign, var_name_zval, value_zval, value_zval_op2);
+        skip_semicolon(lexer, after_expr)
+    } else if token_is_punct(&next_token, "(") {
+        // Callable variable: $var(args...)
+        let var_zval = crate::engine::vm::var_ref(var_name);
+        context.emit_opcode(Opcode::InitFCall, null_val(), null_val(), null_val());
+        // Parse args using the same pattern as function calls
+        let mut arg_token = lexer.next_token()?;
+        while !token_is_punct(&arg_token, ")") {
+            let (arg_val, after_arg) = crate::engine::compile::expression::parse_additive_expr_with_initial(lexer, context, arg_token)?;
+            context.emit_opcode(Opcode::SendVal, arg_val, null_val(), null_val());
+            if token_is_punct(&after_arg, ",") {
+                arg_token = lexer.next_token()?;
+            } else {
+                arg_token = after_arg;
+            }
+        }
+        let call_slot = context.alloc_temp();
+        context.emit_opcode(Opcode::DoFCall, var_zval, null_val(), crate::engine::vm::temp_var_ref(call_slot));
         let next = lexer.next_token()?;
         skip_semicolon(lexer, next)
     } else if next_token.token_type == TokenType::T_OBJECT_OPERATOR {
@@ -229,17 +247,14 @@ fn compile_return(
     lexer: &mut Lexer,
     context: &mut CompileContext,
 ) -> Result<Token, String> {
-    let next_token = lexer.next_token()?;
-    let return_value = match next_token.token_type {
-        TokenType::T_LNUMBER => {
-            let num_val = next_token.value.as_ref().unwrap().as_str().parse::<i64>().unwrap_or(0);
-            long_val(num_val)
-        }
-        _ => long_val(0),
-    };
-    let z1 = long_val(0);
-    let z2 = long_val(0);
-    context.emit_opcode(Opcode::Return, return_value, z1, z2);
-    let next = lexer.next_token()?;
-    skip_semicolon(lexer, next)
+    let peek = lexer.next_token()?;
+    // Check for bare `return;` (no expression)
+    if token_is_punct(&peek, ";") {
+        context.emit_opcode(Opcode::Return, null_val(), null_val(), null_val());
+        return lexer.next_token().map(Ok)?;
+    }
+    // Parse the return expression
+    let (return_value, after) = crate::engine::compile::expression::parse_additive_expr_with_initial(lexer, context, peek)?;
+    context.emit_opcode(Opcode::Return, return_value, null_val(), null_val());
+    skip_semicolon(lexer, after)
 }

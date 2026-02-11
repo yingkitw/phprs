@@ -42,7 +42,9 @@ pub(crate) fn resolve_operand(operand: &Val, execute_data: &ExecuteData) -> Val 
     }
     if is_var_ref(operand) {
         if let PhpValue::String(name) = &operand.value {
-            return execute_data.get_var(name.as_str());
+            let n = name.as_str();
+            let clean = if n.starts_with('$') { &n[1..] } else { n };
+            return execute_data.get_var(clean);
         }
     }
     clone_val(operand)

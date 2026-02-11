@@ -11,7 +11,6 @@ use std::io::{BufRead, BufReader, Read, Write};
 use std::net::TcpListener;
 use std::path::Path;
 
-const DEFAULT_PORT: u16 = 3080;
 const EXAMPLES_DIR: &str = "examples";
 
 // ---------------------------------------------------------------------------
@@ -58,14 +57,8 @@ struct ExecRequest {
 // Entry point
 // ---------------------------------------------------------------------------
 
-fn main() {
-    let port = std::env::var("PORT")
-        .ok()
-        .and_then(|p| p.parse().ok())
-        .unwrap_or(DEFAULT_PORT);
-
+pub fn start(port: u16) {
     let (listener, port) = bind_with_retry(port, 10);
-
 
     println!("PHP-RS Server running at http://localhost:{port}");
     println!("  GET  /              - Web UI");

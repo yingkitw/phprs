@@ -5,6 +5,31 @@ use super::opcodes::{Op, OpArray};
 use super::execute_data::{clone_val, ExecResult, ExecuteData};
 use super::handlers::execute_opcode;
 
+/// Execute op array and capture return value
+pub fn execute_ex_returning(execute_data: &mut ExecuteData, op_array: &OpArray) -> (PhpResult, Option<crate::engine::types::Val>) {
+    let mut new_op_array = OpArray::new(op_array.filename.clone().unwrap_or_default());
+    for op in &op_array.ops {
+        new_op_array.add_op(Op::new(
+            op.opcode, clone_val(&op.op1), clone_val(&op.op2), clone_val(&op.result), op.extended_value,
+        ));
+    }
+    execute_data.op_array = Some(new_op_array);
+    execute_data.current_op = 0;
+
+    while let Some(op) = op_array.ops.get(execute_data.current_op) {
+        match execute_opcode(op, execute_data) {
+            Ok(ExecResult::Continue) => { execute_data.current_op += 1; }
+            Ok(ExecResult::Jump(target)) => { execute_data.current_op = target as usize; }
+            Ok(ExecResult::Return(value)) => { return (PhpResult::Success, Some(value)); }
+            Err(e) => {
+                eprintln!("Error executing opcode: {}", e);
+                return (PhpResult::Failure, None);
+            }
+        }
+    }
+    (PhpResult::Success, None)
+}
+
 /// Execute op array (compiled script)
 pub fn execute_ex(execute_data: &mut ExecuteData, op_array: &OpArray) -> PhpResult {
     // Copy op array into execute_data
