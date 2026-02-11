@@ -1,0 +1,15 @@
+[package]
+name = "php"
+version = "0.1.0"
+authors = ["Ying kit WONG"]
+license = "Apache-2.0"
+edition = "2024"
+description = "phprs interpreter CLI"
+
+[[bin]]
+name = "php"
+path = "src/main.rs"
+
+[dependencies]
+phprs = { path = "../.." }
+anyhow = "1.0"

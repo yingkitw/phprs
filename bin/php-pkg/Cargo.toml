@@ -1,0 +1,51 @@
+[package]
+name = "php-pkg"
+version = "0.1.0"
+authors = ["Ying kit WONG"]
+license = "Apache-2.0"
+edition = "2024"
+description = "Composer-compatible package manager for phprs"
+
+[[bin]]
+name = "php-pkg"
+path = "src/main.rs"
+
+[dependencies]
+# Core
+phprs = { path = "../.." }
+anyhow = "1.0"
+thiserror = "2.0"
+
+# CLI
+clap = { version = "4.5", features = ["derive"] }
+
+# Serialization
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+toml = "0.8"
+
+# HTTP Client
+reqwest = { version = "0.12", features = ["json"] }
+tokio = { version = "1.0", features = ["full"] }
+
+# Version management
+semver = { version = "1.0", features = ["serde"] }
+
+# Archive handling
+zip = "0.6"
+tar = "0.4"
+flate2 = "1.0"
+
+# Cryptography
+sha2 = "0.10"
+
+# File system
+dirs = "5.0"
+tempfile = "3.10"
+
+# Logging
+log = "0.4"
+env_logger = "0.11"
+
+[dev-dependencies]
+tokio-test = "0.4"

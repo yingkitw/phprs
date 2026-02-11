@@ -1,0 +1,73 @@
+# Rust build artifacts
+/target/
+**/target/
+**/*.rs.bk
+*.pdb
+
+# Temporary/fix files
+*_fix.rs
+*_tmp.rs
+*_backup.rs
+
+# Cargo
+# Note: Cargo.lock is typically committed for binaries, but ignored for libraries
+# Uncomment the next line if this is a library crate
+# Cargo.lock
+
+# IDE and Editor files
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+*.sublime-project
+*.sublime-workspace
+.vim/
+
+# OS files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+Desktop.ini
+
+# Test artifacts
+*.d
+*.o
+*.so
+*.dylib
+*.dll
+
+# Temporary files
+*.tmp
+*.log
+*.bak
+*.orig
+
+# Coverage reports
+tarpaulin-report.html
+coverage/
+*.gcda
+*.gcno
+lcov.info
+
+# Documentation
+/doc/
+/docs/
+
+# Rustfmt
+rustfmt.toml
+
+# Clippy
+clippy.toml
+
+# Benchmark results
+criterion/
+
+# Profiling data
+perf.data*
+flamegraph.svg
+
