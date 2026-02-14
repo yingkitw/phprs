@@ -10,11 +10,8 @@ homepage = "https://github.com/yingkitw/phprs"
 documentation = "https://docs.rs/phprs"
 keywords = ["php", "interpreter", "build", "package-manager"]
 categories = ["command-line-utilities", "development-tools"]
-default-run = "phprs"
 
-[[bin]]
-name = "phprs"
-path = "bin/phprs/src/main.rs"
+# Note: The binary is in the bin/phprs workspace member
 
 [dependencies]
 # Core dependencies
