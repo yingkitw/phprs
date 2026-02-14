@@ -603,12 +603,20 @@ fn execute_do_method_call(op: &Op, execute_data: &mut ExecuteData) -> Result<Exe
             // Execute method
             let mut method_op_array = OpArray::new(format!("{}::{}", class_name, method_name.as_str()));
             method_op_array.ops = ops;
-            let method_result = super::execute::execute_ex(execute_data, &method_op_array);
-            if method_result == crate::engine::types::PhpResult::Failure {
-                return Err(format!("Method {}::{} failed", class_name, method_name.as_str()));
-            }
+            let (_status, return_val) = super::execute::execute_ex_returning(execute_data, &method_op_array);
             execute_data.op_array = saved_op_array;
             execute_data.current_op = saved_current_op;
+
+            // Store return value
+            execute_data.call_args.clear();
+            if let Some(slot) = result_slot(op) {
+                if let Some(ret) = return_val {
+                    execute_data.set_temp(slot, ret);
+                } else {
+                    execute_data.set_temp(slot, Val::new(PhpValue::Long(0), PhpType::Null));
+                }
+            }
+            return Ok(ExecResult::Continue);
         }
     }
 

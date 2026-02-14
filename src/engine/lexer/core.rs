@@ -10,7 +10,6 @@ pub struct Lexer {
     input: Vec<u8>,
     position: usize,
     lineno: u32,
-    current_token: Option<Token>,
 }
 
 impl Lexer {
@@ -19,7 +18,6 @@ impl Lexer {
             input: input.as_bytes().to_vec(),
             position: 0,
             lineno: 1,
-            current_token: None,
         }
     }
 
@@ -28,7 +26,6 @@ impl Lexer {
             input,
             position: 0,
             lineno: 1,
-            current_token: None,
         }
     }
 

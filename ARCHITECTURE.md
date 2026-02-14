@@ -77,7 +77,7 @@ Output
 
 ## Virtual Machine
 
-### Opcodes (62 total)
+### Opcodes (64 total)
 - Arithmetic: Add, Sub, Mul, Div, Mod, Pow
 - Comparison: IsEqual, IsNotEqual, IsSmaller, IsSmallerOrEqual, IsIdentical, IsNotIdentical
 - Logical: BoolNot, BoolXor

@@ -7,7 +7,7 @@ use crate::engine::facade::null_val;
 use crate::engine::lexer::{Token, Lexer, TokenType};
 use crate::engine::types::{ClassEntry, ClassMethod, Visibility};
 
-use super::parse_statement;
+use super::{parse_statement, skip_attribute_block};
 
 /// Parse a class/trait body: visibility, static, methods, properties, use TraitName
 fn parse_class_body(
@@ -20,6 +20,12 @@ fn parse_class_body(
         if token_is_punct(&next, "}") { break; }
         if next.token_type == TokenType::T_EOF {
             return Err("Unexpected EOF in class/trait body".to_string());
+        }
+
+        // Skip attributes (#[...]) before class members
+        if next.token_type == TokenType::T_ATTRIBUTE {
+            next = skip_attribute_block(lexer)?;
+            continue;
         }
 
         // Handle `use TraitName;` inside class body

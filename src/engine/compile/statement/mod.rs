@@ -12,7 +12,7 @@ use super::control_flow::{compile_for, compile_foreach, compile_if, compile_thro
 use super::expression::{parse_expression, parse_additive_expr_with_initial};
 use super::expression::helpers::token_is_punct;
 use super::function::compile_function;
-use crate::engine::facade::{null_val, long_val, result_val, string_val, string_val_copy, zero_val, clone_val, StdValFactory, ValFactory};
+use crate::engine::facade::{null_val, result_val, string_val, string_val_copy, zero_val, clone_val, StdValFactory, ValFactory};
 use crate::engine::lexer::{Token, Lexer, TokenType};
 use crate::engine::vm::Opcode;
 
@@ -98,7 +98,7 @@ pub fn parse_statement(
     }
 }
 
-fn skip_attribute_block(lexer: &mut Lexer) -> Result<Token, String> {
+pub(crate) fn skip_attribute_block(lexer: &mut Lexer) -> Result<Token, String> {
     let mut depth = 1;
     let mut token = lexer.next_token()?;
     while depth > 0 {

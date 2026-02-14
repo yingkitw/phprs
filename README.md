@@ -19,7 +19,7 @@ cargo build --release
 cargo test
 
 # Run a PHP file
-cargo run -- run examples/basic_types.php
+cargo run -- run examples/01_hello_world.php
 
 # Start web playground
 cargo run -- serve
@@ -60,10 +60,11 @@ execute_ex(&mut exec_data, &op_array);
 
 - ✅ Core engine (types, strings, hash tables, memory, GC)
 - ✅ PHP runtime (streams, filesystem, output)
-- ✅ Compiler (expressions, statements, functions, classes)
-- ✅ VM (63 opcodes, 40+ built-in functions)
+- ✅ Compiler (expressions, statements, functions, classes, traits, namespaces)
+- ✅ VM (64 opcodes, 40+ built-in functions)
+- ✅ PHP 8.0 features (match expressions, attributes, generators)
 - ✅ SAPI (CLI, built-in web server)
-- 🚧 Package manager (in development)
+- ✅ Package manager (composer.json, Packagist, dependency resolution)
 
 ## Tests
 

@@ -8,14 +8,12 @@ mod tests;
 /// Output buffer
 pub struct OutputBuffer {
     buffer: Vec<u8>,
-    level: usize, // Used for nested output buffering
 }
 
 impl OutputBuffer {
     pub fn new() -> Self {
         Self {
             buffer: Vec::new(),
-            level: 0,
         }
     }
 

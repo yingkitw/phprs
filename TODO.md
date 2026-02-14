@@ -43,26 +43,22 @@
 - [x] Test suite
 - [x] Comprehensive examples
 
-## In Progress 🚧
-
-### Language Features
+### Language Features (Phase 2)
 - [x] Namespaces
 - [x] Traits
+- [x] Attributes (PHP 8.0)
+- [x] Match expressions (PHP 8.0)
+- [x] Generators (yield → array accumulation)
 
 ### Package Manager
 - [x] CLI framework
 - [x] Composer.json parsing
 - [x] Packagist API client
-- [x] Autoloader generation
-- [x] Dependency resolution
+- [x] Autoloader generation (PSR-4)
+- [x] Dependency resolution (transitive, semver)
 - [x] Package installation
 
 ## Planned 📋
-
-### Language Features
-- [ ] Generators
-- [x] Attributes
-- [x] Match expressions
 
 ### Standard Library
 - [ ] Stream wrappers (HTTP, FTP)
@@ -70,24 +66,24 @@
 - [ ] Session handling
 - [ ] PDO/database layer
 
-## Roadmap to Frameworks
+### Framework Roadmap
 
-### CodeIgniter 4
+#### CodeIgniter 4
 - [ ] Bootstrap (index.php → system/bootstrap.php)
 - [ ] Autoloading
 - [ ] Routing
 - [ ] Controllers
 
-### Drupal
+#### Drupal
 - [ ] Bootstrap (index.php → core/lib/Drupal.php)
 - [ ] Kernel initialization
 - [ ] Module system
 
 ## Statistics
 
-- **36 source files** in engine/
+- **35 source files** in engine/
 - **12 source files** in php/
-- **257 tests** passing
+- **197 tests** passing
 - **64 opcodes** implemented
 - **40+ built-in functions**
 

@@ -149,7 +149,7 @@ fn test_classes_php_compilation() {
 fn test_all_php_examples_exist() {
     // Verify all expected PHP example files exist
     let examples = vec![
-        "basic_types.php",
+        "01_hello_world.php",
         "string_operations.php",
         "array_operations.php",
         "operators.php",
@@ -159,6 +159,9 @@ fn test_all_php_examples_exist() {
         "control_flow.php",
         "functions.php",
         "classes.php",
+        "match_expression.php",
+        "attributes.php",
+        "generators.php",
     ];
 
     for example in examples {
@@ -171,7 +174,7 @@ fn test_all_php_examples_exist() {
 fn test_php_file_readable() {
     // Test that we can read PHP files
     let examples = vec![
-        "basic_types.php",
+        "01_hello_world.php",
         "string_operations.php",
         "array_operations.php",
     ];

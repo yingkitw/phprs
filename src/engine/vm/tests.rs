@@ -446,3 +446,27 @@ fn test_compile_yield_statement() {
     assert!(matches!(result, PhpResult::Success));
     assert_eq!(output, "Array");
 }
+
+#[test]
+fn test_compile_match_expression_complex() {
+    let code = "<?php\n$val = 5;\n$base = 2;\n$result = match($val + 1) { 3 => 'low', 6 => 'ok', default => 'high', };\necho $result;\n";
+    let (result, output) = run_php_code(code);
+    assert!(matches!(result, PhpResult::Success));
+    assert_eq!(output, "ok");
+}
+
+#[test]
+fn test_compile_attributes_on_class_and_method() {
+    let code = "<?php\n#[Entity]\nclass User {\n  #[Column]\n  public function name() { return 'alice'; }\n}\n$u = new User();\necho $u->name();\n";
+    let (result, output) = run_php_code(code);
+    assert!(matches!(result, PhpResult::Success));
+    assert_eq!(output, "alice");
+}
+
+#[test]
+fn test_compile_generator_multiple_yields() {
+    let code = "<?php\nfunction gen() { yield 1; yield 2; yield 3; }\n$arr = gen();\necho $arr[1];\n";
+    let (result, output) = run_php_code(code);
+    assert!(matches!(result, PhpResult::Success));
+    assert_eq!(output, "2");
+}
