@@ -23,6 +23,8 @@ pub struct CompileContext {
     pub current_namespace: Option<String>,
     // Use imports: short name → fully qualified name
     pub use_imports: std::collections::HashMap<String, String>,
+    // Generator yield array slot (if any)
+    pub yield_slot: Option<u32>,
 }
 
 impl CompileContext {
@@ -37,6 +39,7 @@ impl CompileContext {
             class_table: std::collections::HashMap::new(),
             current_namespace: None,
             use_imports: std::collections::HashMap::new(),
+            yield_slot: None,
         }
     }
 
@@ -45,6 +48,36 @@ impl CompileContext {
         let idx = self.next_temp_var;
         self.next_temp_var += 1;
         idx
+    }
+
+    /// Ensure generator yield array exists and return its temp ref
+    pub fn ensure_yield_array(&mut self) -> Val {
+        if let Some(slot) = self.yield_slot {
+            return crate::engine::vm::temp_var_ref(slot);
+        }
+        let slot = self.alloc_temp();
+        self.emit_opcode(
+            Opcode::InitArray,
+            crate::engine::facade::null_val(),
+            crate::engine::facade::null_val(),
+            crate::engine::vm::temp_var_ref(slot),
+        );
+        self.yield_slot = Some(slot);
+        crate::engine::vm::temp_var_ref(slot)
+    }
+
+    /// Resolve a class/trait name using current namespace and imports
+    pub fn resolve_class_name(&self, name: &str) -> String {
+        if let Some(imported) = self.use_imports.get(name) {
+            return imported.clone();
+        }
+        if let Some(ns) = &self.current_namespace {
+            if ns.is_empty() {
+                return name.to_string();
+            }
+            return format!("{}\\{}", ns, name);
+        }
+        name.to_string()
     }
 
     /// Create context with filename

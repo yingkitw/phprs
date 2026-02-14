@@ -150,6 +150,14 @@ fn compile_function_body(
     }
 
     parse_statement_block(lexer, &mut func_context)?;
+    if let Some(slot) = func_context.yield_slot {
+        func_context.emit_opcode(
+            crate::engine::vm::Opcode::Return,
+            crate::engine::vm::temp_var_ref(slot),
+            crate::engine::facade::null_val(),
+            crate::engine::facade::null_val(),
+        );
+    }
     Ok(func_context.finalize())
 }
 

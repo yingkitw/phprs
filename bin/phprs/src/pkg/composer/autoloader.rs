@@ -8,7 +8,7 @@ use std::path::Path;
 /// Generate vendor/autoload.php
 pub fn generate_autoloader(
     vendor_dir: &Path,
-    autoload_mappings: &HashMap<String, String>,
+    autoload_mappings: &HashMap<String, Vec<String>>,
 ) -> Result<()> {
     let autoload_php = vendor_dir.join("autoload.php");
 
@@ -21,7 +21,7 @@ pub fn generate_autoloader(
 }
 
 /// Generate autoload.php content
-fn generate_autoload_content(autoload_mappings: &HashMap<String, String>) -> String {
+fn generate_autoload_content(autoload_mappings: &HashMap<String, Vec<String>>) -> String {
     let psr4_map = format_map(autoload_mappings);
 
     format!(
@@ -45,20 +45,22 @@ class ComposerAutoloaderInit{{
             // PSR-4 autoloading
             $prefixes = {psr4_map};
 
-            foreach ($prefixes as $prefix => $base_dir) {{
+            foreach ($prefixes as $prefix => $base_dirs) {{
                 // Check if class starts with namespace prefix
                 $len = strlen($prefix);
                 if (strncmp($prefix, $class, $len) === 0) {{
                     // Get relative class name
                     $relative_class = substr($class, $len);
 
-                    // Replace namespace separators with directory separators
-                    $file = $base_dir . str_replace('\\', '/', $relative_class) . '.php';
+                    foreach ($base_dirs as $base_dir) {{
+                        // Replace namespace separators with directory separators
+                        $file = $base_dir . str_replace('\\', '/', $relative_class) . '.php';
 
-                    // If file exists, require it
-                    if (file_exists($file)) {{
-                        require $file;
-                        return;
+                        // If file exists, require it
+                        if (file_exists($file)) {{
+                            require $file;
+                            return;
+                        }}
                     }}
                 }}
             }}
@@ -75,10 +77,17 @@ return ComposerAutoloaderInit::getLoader();
 }
 
 /// Format PSR-4 map for PHP
-fn format_map(map: &HashMap<String, String>) -> String {
+fn format_map(map: &HashMap<String, Vec<String>>) -> String {
     let entries: Vec<String> = map
         .iter()
-        .map(|(k, v)| format!("'{}' => '{}'", k, v))
+        .map(|(k, v)| {
+            let dirs = v
+                .iter()
+                .map(|dir| format!("'{}'", dir))
+                .collect::<Vec<_>>()
+                .join(", ");
+            format!("'{}' => array({})", k, dirs)
+        })
         .collect();
 
     format!("array({})", entries.join(", "))
@@ -131,7 +140,7 @@ mod tests {
     #[test]
     fn test_format_map() {
         let mut map = HashMap::new();
-        map.insert("App\\".to_string(), "src/".to_string());
+        map.insert("App\\".to_string(), vec!["src/".to_string()]);
 
         let result = format_map(&map);
         assert!(result.contains("App\\"));
@@ -141,7 +150,7 @@ mod tests {
     #[test]
     fn test_generate_autoload_content() {
         let mut map = HashMap::new();
-        map.insert("App\\".to_string(), "src/".to_string());
+        map.insert("App\\".to_string(), vec!["src/".to_string()]);
 
         let content = generate_autoload_content(&map);
 

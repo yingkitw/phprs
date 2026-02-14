@@ -286,6 +286,16 @@ fn parse_multiplicative_expr_with_initial(
         return multiplicative_loop(lexer, context, result, next);
     }
 
+    if initial_token.token_type == TokenType::T_MATCH {
+        let (result, next) = parse_match_expression(lexer, context)?;
+        return multiplicative_loop(lexer, context, result, next);
+    }
+
+    if initial_token.token_type == TokenType::T_YIELD {
+        let (result, next) = super::parse_expression(lexer, context)?;
+        return multiplicative_loop(lexer, context, result, next);
+    }
+
     // Handle T_FUNCTION (closure in expression position)
     if initial_token.token_type == TokenType::T_FUNCTION {
         let (result, next) = crate::engine::compile::function::compile_closure(lexer, context)?;

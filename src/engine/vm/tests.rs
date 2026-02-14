@@ -10,7 +10,7 @@ use crate::engine::vm::{
 static OUTPUT_TEST_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
 fn run_php_code(code: &str) -> (PhpResult, String) {
-    let _lock = OUTPUT_TEST_LOCK.lock().unwrap();
+    let _lock = OUTPUT_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
     let (op_array, ft) = crate::engine::compile::compile_string_with_functions(code, "test.php").unwrap();
     crate::php::output::php_output_start().unwrap();
     let mut ed = ExecuteData::new();
@@ -421,4 +421,28 @@ fn test_compile_trait_use_in_class() {
     let (result, output) = run_php_code(code);
     assert!(matches!(result, PhpResult::Success));
     assert_eq!(output, "hi");
+}
+
+#[test]
+fn test_compile_match_expression() {
+    let code = "<?php\n$val = 2;\n$result = match($val) { 1 => 'one', 2 => 'two', default => 'other', };\necho $result;\n";
+    let (result, output) = run_php_code(code);
+    assert!(matches!(result, PhpResult::Success));
+    assert_eq!(output, "two");
+}
+
+#[test]
+fn test_compile_attributes() {
+    let code = "<?php\n#[Example]\nfunction demo() { return 'ok'; }\necho demo();\n";
+    let (result, output) = run_php_code(code);
+    assert!(matches!(result, PhpResult::Success));
+    assert_eq!(output, "ok");
+}
+
+#[test]
+fn test_compile_yield_statement() {
+    let code = "<?php\nfunction gen() { yield 3; }\necho gen();\n";
+    let (result, output) = run_php_code(code);
+    assert!(matches!(result, PhpResult::Success));
+    assert_eq!(output, "Array");
 }

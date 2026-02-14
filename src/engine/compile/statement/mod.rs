@@ -66,6 +66,10 @@ pub fn parse_statement(
     context.set_line(token.lineno);
 
     match token.token_type {
+        TokenType::T_ATTRIBUTE => {
+            let next = skip_attribute_block(lexer)?;
+            parse_statement(lexer, context, next)
+        }
         TokenType::T_ECHO => compile_echo(lexer, context),
         TokenType::T_VARIABLE => compile_variable_stmt(lexer, context, &token),
         TokenType::T_LNUMBER | TokenType::T_DNUMBER => Ok(lexer.next_token()?),
@@ -87,10 +91,28 @@ pub fn parse_statement(
         TokenType::T_CLASS => oop::compile_class(lexer, context),
         TokenType::T_TRAIT => oop::compile_trait(lexer, context),
         TokenType::T_RETURN => compile_return(lexer, context),
+        TokenType::T_YIELD => compile_yield(lexer, context),
         TokenType::T_NAMESPACE => compile_namespace(lexer, context),
         TokenType::T_USE => compile_use(lexer, context),
         _ => Ok(lexer.next_token()?),
     }
+}
+
+fn skip_attribute_block(lexer: &mut Lexer) -> Result<Token, String> {
+    let mut depth = 1;
+    let mut token = lexer.next_token()?;
+    while depth > 0 {
+        if token.token_type == TokenType::T_ATTRIBUTE {
+            depth += 1;
+        } else if token_is_punct(&token, "]") {
+            depth -= 1;
+            if depth == 0 {
+                return Ok(lexer.next_token()?);
+            }
+        }
+        token = lexer.next_token()?;
+    }
+    Ok(token)
 }
 
 /// Compile echo statement
@@ -341,5 +363,21 @@ fn compile_return(
     // Parse the return expression
     let (return_value, after) = crate::engine::compile::expression::parse_additive_expr_with_initial(lexer, context, peek)?;
     context.emit_opcode(Opcode::Return, return_value, null_val(), null_val());
+    skip_semicolon(lexer, after)
+}
+
+/// Compile yield statement (currently treated as return-style value)
+fn compile_yield(
+    lexer: &mut Lexer,
+    context: &mut CompileContext,
+) -> Result<Token, String> {
+    let yield_array = context.ensure_yield_array();
+    let peek = lexer.next_token()?;
+    if token_is_punct(&peek, ";") {
+        context.emit_opcode(Opcode::AddArrayElement, yield_array, null_val(), null_val());
+        return lexer.next_token().map(Ok)?;
+    }
+    let (yield_value, after) = crate::engine::compile::expression::parse_additive_expr_with_initial(lexer, context, peek)?;
+    context.emit_opcode(Opcode::AddArrayElement, yield_array, yield_value, null_val());
     skip_semicolon(lexer, after)
 }

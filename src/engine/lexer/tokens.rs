@@ -76,6 +76,8 @@ pub enum TokenType {
     T_YIELD_FROM = 375,
     T_REQUIRE = 380,
     T_REQUIRE_ONCE = 381,
+    T_MATCH = 382,
+    T_ATTRIBUTE = 383,
 
     // Operators and punctuation
     T_PLUS = 43,                      // +

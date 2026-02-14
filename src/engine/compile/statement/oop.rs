@@ -67,8 +67,10 @@ fn compile_use_trait(
         .as_str()
         .to_string();
 
+    let resolved_trait = context.resolve_class_name(&trait_name);
+
     // Look up the trait in the class table (stored with __trait_ prefix)
-    let trait_key = format!("__trait_{}", trait_name);
+    let trait_key = format!("__trait_{}", resolved_trait);
     if let Some(trait_ce) = context.class_table.get(&trait_key) {
         // Copy trait methods into the class
         for (method_name, method) in &trait_ce.methods {
@@ -121,17 +123,17 @@ pub(crate) fn compile_class(
         .ok_or("Expected class name")?
         .as_str()
         .to_string();
-
-    let mut ce = ClassEntry::new(&class_name);
+    let resolved_name = context.resolve_class_name(&class_name);
+    let mut ce = ClassEntry::new(&resolved_name);
 
     // Optional: extends ParentClass
     let mut next = lexer.next_token()?;
     if next.token_type == TokenType::T_EXTENDS {
         let parent_token = lexer.next_token()?;
-        ce.parent_name = Some(parent_token.value.as_ref()
+        let parent_name = parent_token.value.as_ref()
             .ok_or("Expected parent class name")?
-            .as_str()
-            .to_string());
+            .as_str();
+        ce.parent_name = Some(context.resolve_class_name(parent_name));
         next = lexer.next_token()?;
     }
 
@@ -166,8 +168,8 @@ pub(crate) fn compile_trait(
         .ok_or("Expected trait name")?
         .as_str()
         .to_string();
-
-    let mut ce = ClassEntry::new(&trait_name);
+    let resolved_name = context.resolve_class_name(&trait_name);
+    let mut ce = ClassEntry::new(&resolved_name);
 
     let next = lexer.next_token()?;
     if !token_is_punct(&next, "{") {
@@ -177,7 +179,7 @@ pub(crate) fn compile_trait(
     parse_class_body(lexer, context, &mut ce)?;
 
     // Store trait with __trait_ prefix so it doesn't collide with classes
-    let trait_key = format!("__trait_{}", trait_name);
+    let trait_key = format!("__trait_{}", resolved_name);
     ce.name = trait_key.clone();
     context.register_class(ce);
     Ok(lexer.next_token()?)

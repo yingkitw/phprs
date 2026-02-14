@@ -50,6 +50,8 @@ pub fn keyword_to_token(keyword: &str) -> TokenType {
         "include_once" => TokenType::T_INCLUDE_ONCE,
         "require" => TokenType::T_REQUIRE,
         "require_once" => TokenType::T_REQUIRE_ONCE,
+        "match" => TokenType::T_MATCH,
+        "yield" => TokenType::T_YIELD,
         _ => TokenType::T_STRING,
     }
 }
@@ -64,7 +66,7 @@ pub fn is_keyword(keyword: &str) -> bool {
         "case" | "default" | "try" | "catch" | "throw" | "namespace" | "use" |
         "as" | "abstract" | "extends" | "final" | "implements" | "interface" |
         "trait" | "clone" | "instanceof" | "do" | "callable" | "insteadof" |
-        "include" | "include_once" | "require" | "require_once"
+        "include" | "include_once" | "require" | "require_once" | "match" | "yield"
     )
 }
 

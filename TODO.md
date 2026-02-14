@@ -46,23 +46,23 @@
 ## In Progress 🚧
 
 ### Language Features
-- [ ] Namespaces
-- [ ] Traits
+- [x] Namespaces
+- [x] Traits
 
 ### Package Manager
 - [x] CLI framework
 - [x] Composer.json parsing
 - [x] Packagist API client
-- [ ] Autoloader generation
-- [ ] Dependency resolution
-- [ ] Package installation
+- [x] Autoloader generation
+- [x] Dependency resolution
+- [x] Package installation
 
 ## Planned 📋
 
 ### Language Features
 - [ ] Generators
-- [ ] Attributes
-- [ ] Match expressions
+- [x] Attributes
+- [x] Match expressions
 
 ### Standard Library
 - [ ] Stream wrappers (HTTP, FTP)

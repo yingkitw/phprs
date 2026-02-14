@@ -59,25 +59,29 @@ impl Install {
         // Create autoload cache directory
         std::fs::create_dir_all(&config.cache_dir)?;
 
-        // Phase 1: Install packages without dependency resolution
+        // Resolve and install packages (with transitive dependencies)
         if let Some(ref require) = composer.require {
             let client = super::super::registry::PackagistClient::new(Some(config.registry_url.clone()));
+            let resolver = super::super::resolver::DependencyResolver::new(client);
+            let resolved = resolver.resolve(require, !self.no_dev).await?;
 
-            log::info!("Installing {} package(s)...", require.len());
+            log::info!("Installing {} package(s)...", resolved.packages.len());
 
-            for (package_name, version_constraint) in require {
-                // Skip PHP version requirement
-                if package_name == "php" {
-                    continue;
-                }
-
-                log::info!("Installing {} ({})...", package_name, version_constraint);
-
-                match self.install_package(&client, package_name, version_constraint, &vendor_dir, &config).await {
-                    Ok(_) => log::info!("Installed {}", package_name),
-                    Err(e) => log::error!("Failed to install {}: {}", package_name, e),
+            for package in &resolved.packages {
+                log::info!("Installing {} ({})...", package.name, package.version);
+                match self.install_package(
+                    &package.name,
+                    &package.version,
+                    &package.metadata,
+                    &vendor_dir,
+                    &config,
+                ).await {
+                    Ok(_) => log::info!("Installed {}", package.name),
+                    Err(e) => log::error!("Failed to install {}: {}", package.name, e),
                 }
             }
+
+            self.generate_autoloader_from_packages(&resolved.packages, &vendor_dir)?;
         }
 
         // Generate autoloader
@@ -92,31 +96,21 @@ impl Install {
     /// Install a single package
     async fn install_package(
         &self,
-        client: &super::super::registry::PackagistClient,
         package_name: &str,
-        _version_constraint: &str,
+        version: &str,
+        metadata: &super::super::registry::VersionMetadata,
         vendor_dir: &std::path::Path,
         config: &super::super::config::Config,
     ) -> anyhow::Result<()> {
-        // Fetch package metadata
-        let metadata = client.get_package_metadata(package_name).await?;
-
-        // For Phase 1, just use the latest stable version
-        // TODO: Phase 2 - Parse version constraints and resolve properly
-        let version_meta = metadata.latest_stable_version()
-            .ok_or_else(|| anyhow::anyhow!("No stable version found for {}", package_name))?;
-
-        let version = version_meta.version.clone();
-        log::debug!("Selected version: {}", version);
-
         // Check if dist is available
-        let dist = version_meta.dist.as_ref()
+        let dist = metadata.dist.as_ref()
             .ok_or_else(|| anyhow::anyhow!("No dist available for {} {}", package_name, version))?;
 
         // Download and extract package
+        let client = super::super::registry::PackagistClient::new(Some(config.registry_url.clone()));
         let package_dir = client.download_package(
             package_name,
-            &version,
+            version,
             dist,
             &config.packages_cache_dir(),
         ).await?;
@@ -148,24 +142,61 @@ impl Install {
         composer: &super::super::composer::ComposerJson,
         vendor_dir: &std::path::Path,
     ) -> anyhow::Result<()> {
-        let mut autoload_mappings = std::collections::HashMap::new();
+        let mut autoload_mappings: std::collections::HashMap<String, Vec<String>> =
+            std::collections::HashMap::new();
 
         // Add project autoloading
         if let Some(ref autoload) = composer.autoload {
             if let Some(ref psr4) = autoload.psr_4 {
                 for (namespace, path) in psr4 {
-                    let path_str = match path {
-                        super::super::composer::StringOrArray::Single(p) => p.clone(),
-                        super::super::composer::StringOrArray::Multiple(paths) => {
-                            paths.join(",")
-                        }
+                    let paths = match path {
+                        super::super::composer::StringOrArray::Single(p) => vec![p.clone()],
+                        super::super::composer::StringOrArray::Multiple(paths) => paths.clone(),
                     };
-                    autoload_mappings.insert(namespace.clone(), path_str);
+                    autoload_mappings.insert(namespace.clone(), paths);
                 }
             }
         }
 
-        // TODO: Phase 2 - Collect autoload mappings from installed packages
+        if !autoload_mappings.is_empty() {
+            super::super::composer::generate_autoloader(vendor_dir, &autoload_mappings)?;
+        }
+
+        Ok(())
+    }
+
+    fn generate_autoloader_from_packages(
+        &self,
+        packages: &[super::super::resolver::ResolvedPackage],
+        vendor_dir: &std::path::Path,
+    ) -> anyhow::Result<()> {
+        let mut autoload_mappings: std::collections::HashMap<String, Vec<String>> =
+            std::collections::HashMap::new();
+
+        for package in packages {
+            if let Some(autoload) = package.metadata.autoload.as_ref() {
+                if let Some(psr4) = autoload.psr_4.as_ref() {
+                    for (namespace, path) in psr4 {
+                        let paths = match path {
+                            super::super::composer::StringOrArray::Single(p) => vec![p.clone()],
+                            super::super::composer::StringOrArray::Multiple(paths) => paths.clone(),
+                        };
+                        let base_paths = paths
+                            .into_iter()
+                            .map(|p| vendor_dir
+                                .join(package.name.replace('/', "/"))
+                                .join(p)
+                                .to_string_lossy()
+                                .to_string())
+                            .collect::<Vec<_>>();
+                        autoload_mappings
+                            .entry(namespace.clone())
+                            .or_insert_with(Vec::new)
+                            .extend(base_paths);
+                    }
+                }
+            }
+        }
 
         if !autoload_mappings.is_empty() {
             super::super::composer::generate_autoloader(vendor_dir, &autoload_mappings)?;

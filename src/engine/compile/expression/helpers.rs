@@ -11,6 +11,10 @@ pub(crate) fn token_is_punct(token: &Token, ch: &str) -> bool {
     token.token_type == TokenType::T_STRING && token.value.as_ref().map(|s| s.as_str()) == Some(ch)
 }
 
+pub(crate) fn token_is_keyword(token: &Token, keyword: &str) -> bool {
+    token.token_type == TokenType::T_STRING && token.value.as_ref().map(|s| s.as_str()) == Some(keyword)
+}
+
 /// Convert a pre-consumed token into a primary Val
 pub(crate) fn token_to_primary(tok: &Token) -> Result<Val, String> {
     match tok.token_type {
@@ -53,6 +57,91 @@ pub(crate) fn emit_binary_op(
     let slot = context.alloc_temp();
     context.emit_opcode(opcode, left, right, temp_var_ref(slot));
     temp_var_ref(slot)
+}
+
+pub(crate) fn parse_match_expression(
+    lexer: &mut Lexer,
+    context: &mut CompileContext,
+) -> Result<(Val, Token), String> {
+    let open_paren = lexer.next_token()?;
+    if !token_is_punct(&open_paren, "(") {
+        return Err("Expected '(' after 'match'".to_string());
+    }
+
+    let (match_value, close_paren) = super::parse_expression(lexer, context)?;
+    if !token_is_punct(&close_paren, ")") {
+        return Err("Expected ')' after match expression".to_string());
+    }
+
+    let open_brace = lexer.next_token()?;
+    if !token_is_punct(&open_brace, "{") {
+        return Err("Expected '{' after match expression".to_string());
+    }
+
+    let result_slot = context.alloc_temp();
+    let mut end_jumps = Vec::new();
+    let mut token = lexer.next_token()?;
+
+    while !token_is_punct(&token, "}") {
+        let is_default = token.token_type == TokenType::T_DEFAULT || token_is_keyword(&token, "default");
+        let (condition, next) = if is_default {
+            (facade::null_val(), lexer.next_token()?)
+        } else {
+            super::operators::parse_additive_expr_with_initial(lexer, context, token)?
+        };
+
+        if next.token_type != TokenType::T_DOUBLE_ARROW {
+            return Err("Expected '=>' in match arm".to_string());
+        }
+
+        if is_default {
+            let (value, after) = super::parse_expression(lexer, context)?;
+            context.emit_opcode(
+                Opcode::QmAssign,
+                value,
+                facade::null_val(),
+                temp_var_ref(result_slot),
+            );
+            token = after;
+        } else {
+            let cmp = emit_binary_op(context, Opcode::IsEqual, facade::clone_val(&match_value), condition);
+            let jmp_idx = context.emit_opcode_with_index(
+                Opcode::JmpZ,
+                cmp,
+                facade::null_val(),
+                facade::null_val(),
+            );
+            let (value, after) = super::parse_expression(lexer, context)?;
+            context.emit_opcode(
+                Opcode::QmAssign,
+                value,
+                facade::null_val(),
+                temp_var_ref(result_slot),
+            );
+            let end_jmp = context.emit_opcode_with_index(
+                Opcode::Jmp,
+                facade::null_val(),
+                facade::null_val(),
+                facade::null_val(),
+            );
+            context.update_jump_target(jmp_idx, context.current_op_index() as u32);
+            end_jumps.push(end_jmp);
+            token = after;
+        }
+
+        if token_is_punct(&token, ",") {
+            token = lexer.next_token()?;
+        } else if !token_is_punct(&token, "}") {
+            return Err("Expected ',' or '}' after match arm".to_string());
+        }
+    }
+
+    let end_idx = context.current_op_index();
+    for jmp in end_jumps {
+        context.update_jump_target(jmp, end_idx as u32);
+    }
+
+    Ok((temp_var_ref(result_slot), lexer.next_token()?))
 }
 
 /// Parse the object access chain: $var[idx], $var->prop, $var->method(args...)
@@ -190,7 +279,8 @@ pub(crate) fn compile_new_obj(
     let class_name = class_token.value.as_ref()
         .ok_or("Expected class name after 'new'")?
         .as_str();
-    let class_zval = facade::string_val(class_name);
+    let resolved_name = context.resolve_class_name(class_name);
+    let class_zval = facade::string_val(&resolved_name);
     let slot = context.alloc_temp();
     context.emit_opcode(Opcode::NewObj, class_zval, facade::null_val(), temp_var_ref(slot));
 

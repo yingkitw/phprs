@@ -120,6 +120,15 @@ impl Lexer {
     /// Read a token based on the current character
     fn read_token(&mut self, ch: u8) -> Result<(TokenType, String), String> {
         match ch {
+            b'#' => {
+                self.advance();
+                if self.current_char() == Some(b'[') {
+                    self.advance();
+                    Ok((TokenType::T_ATTRIBUTE, "#[".to_string()))
+                } else {
+                    Ok((TokenType::T_STRING, "#".to_string()))
+                }
+            }
             b'$' => {
                 let _start = self.position;
                 self.read_with(|lexer| read_variable(&lexer.input, &mut lexer.position))
