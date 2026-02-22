@@ -12,6 +12,7 @@ pub fn zval_get_long(zval: &Val) -> i64 {
     match &zval.value {
         PhpValue::Long(l) => *l,
         PhpValue::Double(d) => *d as i64,
+        PhpValue::Bool(b) => if *b { 1 } else { 0 },
         PhpValue::String(s) => {
             // Try to parse string as integer
             s.as_str().parse().unwrap_or(0)
@@ -27,6 +28,7 @@ pub fn zval_get_double(zval: &Val) -> f64 {
     match &zval.value {
         PhpValue::Long(l) => *l as f64,
         PhpValue::Double(d) => *d,
+        PhpValue::Bool(b) => if *b { 1.0 } else { 0.0 },
         PhpValue::String(s) => {
             // Try to parse string as float
             s.as_str().parse().unwrap_or(0.0)
@@ -44,6 +46,7 @@ pub fn zval_get_string(zval: &Val) -> PhpString {
         }
         PhpValue::Long(l) => string_init(&l.to_string(), false),
         PhpValue::Double(d) => string_init(&d.to_string(), false),
+        PhpValue::Bool(b) => string_init(if *b { "1" } else { "" }, false),
         PhpValue::Array(_) => string_init("Array", false),
         PhpValue::Object(_) => string_init("Object", false),
         _ => {
@@ -76,6 +79,15 @@ pub fn zval_compare(z1: &Val, z2: &Val) -> i32 {
                 1
             } else {
                 0
+            }
+        }
+        (PhpValue::Bool(b1), PhpValue::Bool(b2)) => {
+            if b1 == b2 {
+                0
+            } else if !b1 && *b2 {
+                -1
+            } else {
+                1
             }
         }
         (PhpValue::String(s1), PhpValue::String(s2)) => s1.as_str().cmp(s2.as_str()) as i32,
@@ -151,6 +163,7 @@ pub fn zval_get_bool(zval: &Val) -> bool {
     match &zval.value {
         PhpValue::Long(l) => *l != 0,
         PhpValue::Double(d) => *d != 0.0,
+        PhpValue::Bool(b) => *b,
         PhpValue::String(s) => !s.as_str().is_empty() && s.as_str() != "0",
         PhpValue::Array(a) => !a.ar_data.is_empty(),
         PhpValue::Object(_) => true,
@@ -159,6 +172,18 @@ pub fn zval_get_bool(zval: &Val) -> bool {
             zval.get_type() != PhpType::Null
         }
     }
+}
+
+/// Modulo two zvals
+pub fn zval_mod(z1: &Val, z2: &Val) -> Result<Val, String> {
+    let v1 = zval_get_long(z1);
+    let v2 = zval_get_long(z2);
+
+    if v2 == 0 {
+        return Err("Division by zero".to_string());
+    }
+
+    Ok(Val::new(PhpValue::Long(v1 % v2), PhpType::Long))
 }
 
 #[cfg(test)]

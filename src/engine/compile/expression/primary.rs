@@ -72,7 +72,9 @@ pub(crate) fn parse_primary_expr(
                 if token_is_punct(&next_token, "(") {
                     parse_function_call(lexer, context, val)
                 } else {
-                    Ok((facade::string_val(val), next_token))
+                    // Bare identifier: treat as constant lookup (WordPress/PHP compatibility)
+                    let result = super::helpers::compile_constant_lookup(context, val);
+                    Ok((result, next_token))
                 }
             }
         }

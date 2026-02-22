@@ -15,7 +15,11 @@ pub fn temp_var_ref(index: u32) -> Val {
 
 /// Create a Val that references a named variable ($name)
 pub fn var_ref(name: &str) -> Val {
-    let clean = if name.starts_with('$') { &name[1..] } else { name };
+    let clean = if name.starts_with('$') {
+        &name[1..]
+    } else {
+        name
+    };
     Val::new(
         PhpValue::String(Box::new(crate::engine::string::string_init(clean, false))),
         TEMP_VAR_TYPE,
@@ -83,6 +87,12 @@ pub struct ExecuteData {
     pub call_args: Vec<Val>,
     pub included_files: std::collections::HashSet<String>,
     pub class_table: std::collections::HashMap<String, crate::engine::types::ClassEntry>,
+    /// Constants defined by define() (shared across includes)
+    pub constants: std::collections::HashMap<String, Val>,
+    /// Directory of the script currently being executed (for resolving relative include paths)
+    pub current_script_dir: Option<String>,
+    /// If set by exit()/die(), script should terminate with this code
+    pub exit_requested: Option<i64>,
 }
 
 impl ExecuteData {
@@ -96,19 +106,26 @@ impl ExecuteData {
             call_args: Vec::new(),
             included_files: std::collections::HashSet::new(),
             class_table: std::collections::HashMap::new(),
+            constants: std::collections::HashMap::new(),
+            current_script_dir: None,
+            exit_requested: None,
         }
     }
 
     /// Ensure temp_vars has at least `n` slots
     pub fn ensure_temp_slots(&mut self, n: usize) {
         if self.temp_vars.len() < n {
-            self.temp_vars.resize_with(n, || Val::new(PhpValue::Long(0), PhpType::Null));
+            self.temp_vars
+                .resize_with(n, || Val::new(PhpValue::Long(0), PhpType::Null));
         }
     }
 
     /// Get a temp var value (clone)
     pub fn get_temp(&self, index: usize) -> Val {
-        self.temp_vars.get(index).map(|z| clone_val(z)).unwrap_or_else(|| Val::new(PhpValue::Long(0), PhpType::Null))
+        self.temp_vars
+            .get(index)
+            .map(|z| clone_val(z))
+            .unwrap_or_else(|| Val::new(PhpValue::Long(0), PhpType::Null))
     }
 
     /// Set a temp var value

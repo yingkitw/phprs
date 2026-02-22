@@ -33,10 +33,23 @@ pub fn parse_statement_block(
 ) -> Result<(), String> {
     let mut brace_count = 1;
     let mut current_token = lexer.next_token()?;
+    let mut last_token_type = current_token.token_type;
+    let mut same_token_count = 0;
 
     loop {
         if current_token.token_type == TokenType::T_EOF {
             return Err("Unexpected EOF in statement block".to_string());
+        }
+
+        // Safety check: prevent infinite loops
+        if current_token.token_type == last_token_type {
+            same_token_count += 1;
+            if same_token_count > 100 {
+                return Err(format!("Infinite loop detected in statement block at token {:?}", current_token.token_type));
+            }
+        } else {
+            same_token_count = 0;
+            last_token_type = current_token.token_type;
         }
 
         if let Some(s) = current_token.value.as_ref() {

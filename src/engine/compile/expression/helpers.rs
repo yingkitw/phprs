@@ -473,3 +473,12 @@ pub(crate) fn parse_function_call(
 
     Ok((temp_var_ref(result_slot), lexer.next_token()?))
 }
+
+/// Emit constant(name) lookup for bare identifiers (WordPress/PHP compatibility)
+pub(crate) fn compile_constant_lookup(context: &mut CompileContext, name: &str) -> Val {
+    let slot = context.alloc_temp();
+    context.emit_opcode(Opcode::InitFCall, facade::null_val(), facade::null_val(), facade::null_val());
+    context.emit_opcode(Opcode::SendVal, facade::string_val(name), facade::null_val(), facade::null_val());
+    context.emit_opcode(Opcode::DoFCall, facade::string_val("constant"), facade::null_val(), temp_var_ref(slot));
+    temp_var_ref(slot)
+}

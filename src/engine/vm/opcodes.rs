@@ -38,41 +38,41 @@ pub enum Opcode {
     Jmp = 29,
     JmpZ = 30,
     JmpNZ = 31,
-    InitFCall = 32,     // Initialize function call
-    DoFCall = 33,       // Execute function call
-    TryCatchBegin = 34, // Begin try block
-    TryCatchEnd = 35,   // End try block
-    CatchBegin = 36,    // Begin catch block
-    CatchEnd = 37,      // End catch block
-    FinallyBegin = 38,  // Begin finally block
-    FinallyEnd = 39,    // End finally block
-    Throw = 40,         // Throw exception
-    FetchVar = 41,      // Load variable from symbol table into temp
-    SendVal = 42,       // Push argument for function call
-    Include = 43,       // include/require
-    InitArray = 44,     // Create empty array in temp slot
+    InitFCall = 32,       // Initialize function call
+    DoFCall = 33,         // Execute function call
+    TryCatchBegin = 34,   // Begin try block
+    TryCatchEnd = 35,     // End try block
+    CatchBegin = 36,      // Begin catch block
+    CatchEnd = 37,        // End catch block
+    FinallyBegin = 38,    // Begin finally block
+    FinallyEnd = 39,      // End finally block
+    Throw = 40,           // Throw exception
+    FetchVar = 41,        // Load variable from symbol table into temp
+    SendVal = 42,         // Push argument for function call
+    Include = 43,         // include/require
+    InitArray = 44,       // Create empty array in temp slot
     AddArrayElement = 45, // Add element to array (op1=array temp, op2=value, extended_value for key)
-    FetchDim = 46,      // Fetch array element by index/key
-    NewObj = 47,        // Create new object instance (op1=class name, result=temp)
-    FetchObjProp = 48,  // Fetch object property (op1=obj, op2=prop name, result=temp)
-    AssignObjProp = 49, // Assign to object property (op1=obj var, op2=prop name, result=value)
-    InitMethodCall = 50, // Init method call (op1=obj, op2=method name)
-    DoMethodCall = 51,  // Execute method call (op1=method name, result=temp)
-    TypeCheck = 52,     // Check type of operand
-    IsSet = 53,         // Check if variable is set
-    Empty = 54,         // Check if variable is empty
-    Unset = 55,         // Unset a variable
-    Count = 56,         // Count elements in array/string
-    Keys = 57,          // Get array keys
-    Values = 58,        // Get array values
-    ArrayDiff = 59,     // Compare arrays
-    Coalesce = 60,      // Null coalescing: if op1 is not null, result=op1, else result=op2
-    JmpNullZ = 61,      // Jump if op1 is null (for ?? short-circuit)
-    QmAssign = 62,      // Ternary assign: resolve op1, store in result temp slot
+    FetchDim = 46,        // Fetch array element by index/key
+    NewObj = 47,          // Create new object instance (op1=class name, result=temp)
+    FetchObjProp = 48,    // Fetch object property (op1=obj, op2=prop name, result=temp)
+    AssignObjProp = 49,   // Assign to object property (op1=obj var, op2=prop name, result=value)
+    InitMethodCall = 50,  // Init method call (op1=obj, op2=method name)
+    DoMethodCall = 51,    // Execute method call (op1=method name, result=temp)
+    TypeCheck = 52,       // Check type of operand
+    IsSet = 53,           // Check if variable is set
+    Empty = 54,           // Check if variable is empty
+    Unset = 55,           // Unset a variable
+    Count = 56,           // Count elements in array/string
+    Keys = 57,            // Get array keys
+    Values = 58,          // Get array values
+    ArrayDiff = 59,       // Compare arrays
+    Coalesce = 60,        // Null coalescing: if op1 is not null, result=op1, else result=op2
+    JmpNullZ = 61,        // Jump if op1 is null (for ?? short-circuit)
+    QmAssign = 62,        // Ternary assign: resolve op1, store in result temp slot
 }
 
 /// Operation structure
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Op {
     pub opcode: Opcode,
     pub op1: Val,
@@ -82,13 +82,7 @@ pub struct Op {
 }
 
 impl Op {
-    pub fn new(
-        opcode: Opcode,
-        op1: Val,
-        op2: Val,
-        result: Val,
-        extended_value: u32,
-    ) -> Self {
+    pub fn new(opcode: Opcode, op1: Val, op2: Val, result: Val, extended_value: u32) -> Self {
         Self {
             opcode,
             op1,
@@ -124,6 +118,20 @@ impl OpArray {
         }
     }
 
+    /// Create OpArray with pre-allocated capacity for performance
+    pub fn with_capacity(capacity: usize, filename: String) -> Self {
+        Self {
+            ops: Vec::with_capacity(capacity),
+            vars: Vec::new(),
+            filename: Some(filename),
+            line_start: 0,
+            line_end: 0,
+            class_table: std::collections::HashMap::new(),
+            function_name: None,
+        }
+    }
+
+    #[inline]
     pub fn add_op(&mut self, op: Op) {
         self.ops.push(op);
     }

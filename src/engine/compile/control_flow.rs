@@ -22,11 +22,10 @@ pub fn compile_if(
         return Err("Expected '(' after 'if'".to_string());
     }
 
-    // Parse condition expression
-    let (condition, _) = parse_expression(lexer, context)?;
+    // Parse condition expression (parse_expression returns the next token, e.g. ')')
+    let (condition, paren_token) = parse_expression(lexer, context)?;
 
-    // Expect closing parenthesis
-    let paren_token = lexer.next_token()?;
+    // Expect closing parenthesis (use token returned by parse_expression, do not consume again)
     if paren_token.token_type != TokenType::T_STRING
         || paren_token.value.as_ref().map(|s| s.as_str()) != Some(")")
     {

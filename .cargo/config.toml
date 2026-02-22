@@ -1,0 +1,28 @@
+[build]
+# Use parallel jobs for building
+jobs = 8
+
+[profile.dev]
+# Optimize dependencies in dev mode for faster test compilation
+opt-level = 0
+[profile.dev.package."*"]
+# Optimize dependencies even in dev mode
+opt-level = 2
+
+[profile.test]
+# Test profile optimizations
+opt-level = 2
+# Faster link times
+incremental = true
+# Enable link-time optimization for tests
+lto = "off"
+# More codegen units for faster compilation
+codegen-units = 256
+
+[profile.test.package."*"]
+# Optimize dependencies more for tests
+opt-level = 3
+
+[profile.bench]
+# Benchmark optimizations
+inherits = "release"

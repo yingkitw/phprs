@@ -80,5 +80,8 @@ fn cmd_run(filename: &str) -> anyhow::Result<()> {
     let output = php_output_end().unwrap_or_default();
 
     print!("{}", output);
+    if let Some(code) = ed.exit_requested {
+        std::process::exit(code as i32);
+    }
     Ok(())
 }

@@ -2,27 +2,33 @@
 //!
 //! Each handler resolves operands, performs the operation, and stores the result.
 
-use crate::engine::types::{PhpType, PhpValue, Val};
-use crate::engine::facade::{bool_val, long_val};
-use super::opcodes::{Op, OpArray, Opcode};
-use super::execute_data::{
-    clone_val, is_temp_ref, is_var_ref, resolve_operand, result_slot,
-    ExecResult, ExecuteData,
-};
 use super::builtins::execute_builtin_function;
+use super::execute_data::{
+    clone_val, is_temp_ref, is_var_ref, resolve_operand, result_slot, ExecResult, ExecuteData,
+};
+use super::opcodes::{Op, OpArray, Opcode};
+use crate::engine::facade::{bool_val, long_val};
+use crate::engine::types::{PhpType, PhpValue, Val};
 
 /// Extract variable name from a Val (for get_var/remove_var calls)
 fn val_to_var_name(val: &Val) -> Option<String> {
     if let PhpValue::String(ref s) = val.value {
         let name = s.as_str();
-        Some(if name.starts_with('$') { name[1..].to_string() } else { name.to_string() })
+        Some(if name.starts_with('$') {
+            name[1..].to_string()
+        } else {
+            name.to_string()
+        })
     } else {
         None
     }
 }
 
 /// Execute a single opcode
-pub(crate) fn execute_opcode(op: &Op, execute_data: &mut ExecuteData) -> Result<ExecResult, String> {
+pub(crate) fn execute_opcode(
+    op: &Op,
+    execute_data: &mut ExecuteData,
+) -> Result<ExecResult, String> {
     match op.opcode {
         Opcode::Nop => Ok(ExecResult::Continue),
 
@@ -36,9 +42,15 @@ pub(crate) fn execute_opcode(op: &Op, execute_data: &mut ExecuteData) -> Result<
         }
 
         // Arithmetic operations
-        Opcode::Add => execute_binary_op(op, execute_data, |a, b| crate::engine::operators::zval_add(a, b)),
-        Opcode::Sub => execute_binary_op(op, execute_data, |a, b| crate::engine::operators::zval_sub(a, b)),
-        Opcode::Mul => execute_binary_op(op, execute_data, |a, b| crate::engine::operators::zval_mul(a, b)),
+        Opcode::Add => execute_binary_op(op, execute_data, |a, b| {
+            crate::engine::operators::zval_add(a, b)
+        }),
+        Opcode::Sub => execute_binary_op(op, execute_data, |a, b| {
+            crate::engine::operators::zval_sub(a, b)
+        }),
+        Opcode::Mul => execute_binary_op(op, execute_data, |a, b| {
+            crate::engine::operators::zval_mul(a, b)
+        }),
         Opcode::Div => {
             let op1 = resolve_operand(&op.op1, execute_data);
             let op2 = resolve_operand(&op.op2, execute_data);
@@ -57,7 +69,9 @@ pub(crate) fn execute_opcode(op: &Op, execute_data: &mut ExecuteData) -> Result<
             let op2 = resolve_operand(&op.op2, execute_data);
             let v1 = crate::engine::operators::zval_get_long(&op1);
             let v2 = crate::engine::operators::zval_get_long(&op2);
-            if v2 == 0 { return Err("Division by zero".into()); }
+            if v2 == 0 {
+                return Err("Division by zero".into());
+            }
             let result = Val::new(PhpValue::Long(v1 % v2), PhpType::Long);
             if let Some(slot) = result_slot(op) {
                 execute_data.set_temp(slot, result);
@@ -70,7 +84,9 @@ pub(crate) fn execute_opcode(op: &Op, execute_data: &mut ExecuteData) -> Result<
             let v1 = crate::engine::operators::zval_get_double(&op1);
             let v2 = crate::engine::operators::zval_get_double(&op2);
             let result = Val::new(PhpValue::Double(v1.powf(v2)), PhpType::Double);
-            if let Some(slot) = result_slot(op) { execute_data.set_temp(slot, result); }
+            if let Some(slot) = result_slot(op) {
+                execute_data.set_temp(slot, result);
+            }
             Ok(ExecResult::Continue)
         }
         Opcode::Sl => execute_bitwise_op(op, execute_data, |a, b| a << b),
@@ -81,7 +97,11 @@ pub(crate) fn execute_opcode(op: &Op, execute_data: &mut ExecuteData) -> Result<
             let val = resolve_operand(&op.op2, execute_data);
             if let PhpValue::String(var_name) = &op.op1.value {
                 let name = var_name.as_str();
-                let clean = if name.starts_with('$') { &name[1..] } else { name };
+                let clean = if name.starts_with('$') {
+                    &name[1..]
+                } else {
+                    name
+                };
                 execute_data.set_var(clean, clone_val(&val));
             }
             if let Some(slot) = result_slot(op) {
@@ -98,7 +118,9 @@ pub(crate) fn execute_opcode(op: &Op, execute_data: &mut ExecuteData) -> Result<
             let s2 = crate::engine::operators::zval_get_string(&op2);
             let combined = format!("{}{}", s1.as_str(), s2.as_str());
             let result = Val::new(
-                PhpValue::String(Box::new(crate::engine::string::string_init(&combined, false))),
+                PhpValue::String(Box::new(crate::engine::string::string_init(
+                    &combined, false,
+                ))),
                 PhpType::String,
             );
             if let Some(slot) = result_slot(op) {
@@ -124,12 +146,20 @@ pub(crate) fn execute_opcode(op: &Op, execute_data: &mut ExecuteData) -> Result<
         Opcode::JmpZ => {
             let val = resolve_operand(&op.op1, execute_data);
             let b = crate::engine::operators::zval_get_bool(&val);
-            if !b { Ok(ExecResult::Jump(op.extended_value)) } else { Ok(ExecResult::Continue) }
+            if !b {
+                Ok(ExecResult::Jump(op.extended_value))
+            } else {
+                Ok(ExecResult::Continue)
+            }
         }
         Opcode::JmpNZ => {
             let val = resolve_operand(&op.op1, execute_data);
             let b = crate::engine::operators::zval_get_bool(&val);
-            if b { Ok(ExecResult::Jump(op.extended_value)) } else { Ok(ExecResult::Continue) }
+            if b {
+                Ok(ExecResult::Jump(op.extended_value))
+            } else {
+                Ok(ExecResult::Continue)
+            }
         }
 
         // Comparison operations
@@ -142,8 +172,13 @@ pub(crate) fn execute_opcode(op: &Op, execute_data: &mut ExecuteData) -> Result<
             let op2 = resolve_operand(&op.op2, execute_data);
             let same_type = op1.get_type() == op2.get_type();
             let eq = same_type && crate::engine::operators::zval_compare(&op1, &op2) == 0;
-            let result = Val::new(PhpValue::Long(if eq { 1 } else { 0 }), if eq { PhpType::True } else { PhpType::False });
-            if let Some(slot) = result_slot(op) { execute_data.set_temp(slot, result); }
+            let result = Val::new(
+                PhpValue::Long(if eq { 1 } else { 0 }),
+                if eq { PhpType::True } else { PhpType::False },
+            );
+            if let Some(slot) = result_slot(op) {
+                execute_data.set_temp(slot, result);
+            }
             Ok(ExecResult::Continue)
         }
         Opcode::IsNotIdentical => {
@@ -151,8 +186,13 @@ pub(crate) fn execute_opcode(op: &Op, execute_data: &mut ExecuteData) -> Result<
             let op2 = resolve_operand(&op.op2, execute_data);
             let same_type = op1.get_type() == op2.get_type();
             let neq = !same_type || crate::engine::operators::zval_compare(&op1, &op2) != 0;
-            let result = Val::new(PhpValue::Long(if neq { 1 } else { 0 }), if neq { PhpType::True } else { PhpType::False });
-            if let Some(slot) = result_slot(op) { execute_data.set_temp(slot, result); }
+            let result = Val::new(
+                PhpValue::Long(if neq { 1 } else { 0 }),
+                if neq { PhpType::True } else { PhpType::False },
+            );
+            if let Some(slot) = result_slot(op) {
+                execute_data.set_temp(slot, result);
+            }
             Ok(ExecResult::Continue)
         }
 
@@ -163,16 +203,27 @@ pub(crate) fn execute_opcode(op: &Op, execute_data: &mut ExecuteData) -> Result<
         Opcode::BoolNot => {
             let val = resolve_operand(&op.op1, execute_data);
             let b = !crate::engine::operators::zval_get_bool(&val);
-            let result = Val::new(PhpValue::Long(if b { 1 } else { 0 }), if b { PhpType::True } else { PhpType::False });
-            if let Some(slot) = result_slot(op) { execute_data.set_temp(slot, result); }
+            let result = Val::new(
+                PhpValue::Long(if b { 1 } else { 0 }),
+                if b { PhpType::True } else { PhpType::False },
+            );
+            if let Some(slot) = result_slot(op) {
+                execute_data.set_temp(slot, result);
+            }
             Ok(ExecResult::Continue)
         }
         Opcode::BoolXor => {
             let op1 = resolve_operand(&op.op1, execute_data);
             let op2 = resolve_operand(&op.op2, execute_data);
-            let r = crate::engine::operators::zval_get_bool(&op1) ^ crate::engine::operators::zval_get_bool(&op2);
-            let result = Val::new(PhpValue::Long(if r { 1 } else { 0 }), if r { PhpType::True } else { PhpType::False });
-            if let Some(slot) = result_slot(op) { execute_data.set_temp(slot, result); }
+            let r = crate::engine::operators::zval_get_bool(&op1)
+                ^ crate::engine::operators::zval_get_bool(&op2);
+            let result = Val::new(
+                PhpValue::Long(if r { 1 } else { 0 }),
+                if r { PhpType::True } else { PhpType::False },
+            );
+            if let Some(slot) = result_slot(op) {
+                execute_data.set_temp(slot, result);
+            }
             Ok(ExecResult::Continue)
         }
 
@@ -274,9 +325,21 @@ pub(crate) fn execute_opcode(op: &Op, execute_data: &mut ExecuteData) -> Result<
                     let mut result_arr = crate::engine::types::PhpArray::new();
                     for bucket in &a.ar_data {
                         if let Some(key) = &bucket.key {
-                            let key_val = Val::new(PhpValue::String(Box::new(crate::engine::string::string_init(key.as_str(), false))), PhpType::String);
+                            let key_val = Val::new(
+                                PhpValue::String(Box::new(crate::engine::string::string_init(
+                                    key.as_str(),
+                                    false,
+                                ))),
+                                PhpType::String,
+                            );
                             let idx = result_arr.n_num_of_elements as u64;
-                            let _ = crate::engine::hash::hash_add_or_update(&mut result_arr, None, idx, key_val, 0);
+                            let _ = crate::engine::hash::hash_add_or_update(
+                                &mut result_arr,
+                                None,
+                                idx,
+                                key_val,
+                                0,
+                            );
                         }
                     }
                     let result = Val::new(PhpValue::Array(Box::new(result_arr)), PhpType::Array);
@@ -297,7 +360,13 @@ pub(crate) fn execute_opcode(op: &Op, execute_data: &mut ExecuteData) -> Result<
                     for bucket in &a.ar_data {
                         let cloned = clone_val(&bucket.val);
                         let idx = result_arr.n_num_of_elements as u64;
-                        let _ = crate::engine::hash::hash_add_or_update(&mut result_arr, None, idx, cloned, 0);
+                        let _ = crate::engine::hash::hash_add_or_update(
+                            &mut result_arr,
+                            None,
+                            idx,
+                            cloned,
+                            0,
+                        );
                     }
                     let result = Val::new(PhpValue::Array(Box::new(result_arr)), PhpType::Array);
                     if let Some(slot) = result_slot(op) {
@@ -371,7 +440,11 @@ pub(crate) fn execute_opcode(op: &Op, execute_data: &mut ExecuteData) -> Result<
 
 // --- Helper functions for common handler patterns ---
 
-fn execute_binary_op<F>(op: &Op, execute_data: &mut ExecuteData, operation: F) -> Result<ExecResult, String>
+fn execute_binary_op<F>(
+    op: &Op,
+    execute_data: &mut ExecuteData,
+    operation: F,
+) -> Result<ExecResult, String>
 where
     F: FnOnce(&Val, &Val) -> Val,
 {
@@ -384,7 +457,11 @@ where
     Ok(ExecResult::Continue)
 }
 
-fn execute_cmp_op<F>(op: &Op, execute_data: &mut ExecuteData, predicate: F) -> Result<ExecResult, String>
+fn execute_cmp_op<F>(
+    op: &Op,
+    execute_data: &mut ExecuteData,
+    predicate: F,
+) -> Result<ExecResult, String>
 where
     F: FnOnce(i32) -> bool,
 {
@@ -392,14 +469,21 @@ where
     let op2 = resolve_operand(&op.op2, execute_data);
     let cmp = crate::engine::operators::zval_compare(&op1, &op2);
     let b = predicate(cmp);
-    let result = Val::new(PhpValue::Long(if b { 1 } else { 0 }), if b { PhpType::True } else { PhpType::False });
+    let result = Val::new(
+        PhpValue::Long(if b { 1 } else { 0 }),
+        if b { PhpType::True } else { PhpType::False },
+    );
     if let Some(slot) = result_slot(op) {
         execute_data.set_temp(slot, result);
     }
     Ok(ExecResult::Continue)
 }
 
-fn execute_bitwise_op<F>(op: &Op, execute_data: &mut ExecuteData, operation: F) -> Result<ExecResult, String>
+fn execute_bitwise_op<F>(
+    op: &Op,
+    execute_data: &mut ExecuteData,
+    operation: F,
+) -> Result<ExecResult, String>
 where
     F: FnOnce(i64, i64) -> i64,
 {
@@ -425,10 +509,15 @@ fn execute_include(op: &Op, execute_data: &mut ExecuteData) -> Result<ExecResult
     }
     match crate::engine::compile::compile_file(path.as_str()) {
         Ok(included_op_array) => {
-            execute_data.included_files.insert(path.as_str().to_string());
+            execute_data
+                .included_files
+                .insert(path.as_str().to_string());
             let result = super::execute::execute_ex(execute_data, &included_op_array);
             if result == crate::engine::types::PhpResult::Failure {
-                return Err(format!("Failed to execute included file: {}", path.as_str()));
+                return Err(format!(
+                    "Failed to execute included file: {}",
+                    path.as_str()
+                ));
             }
             Ok(ExecResult::Continue)
         }
@@ -452,7 +541,10 @@ fn execute_init_array(op: &Op, execute_data: &mut ExecuteData) -> Result<ExecRes
     Ok(ExecResult::Continue)
 }
 
-fn execute_add_array_element(op: &Op, execute_data: &mut ExecuteData) -> Result<ExecResult, String> {
+fn execute_add_array_element(
+    op: &Op,
+    execute_data: &mut ExecuteData,
+) -> Result<ExecResult, String> {
     if is_temp_ref(&op.op1) {
         if let PhpValue::Long(slot_idx) = op.op1.value {
             let arr_slot = slot_idx as usize;
@@ -462,8 +554,10 @@ fn execute_add_array_element(op: &Op, execute_data: &mut ExecuteData) -> Result<
                 if op.extended_value != 0 {
                     let key = resolve_operand(&op.result, execute_data);
                     let key_str = crate::engine::operators::zval_get_string(&key);
-                    let key_zs = Box::new(crate::engine::string::string_init(key_str.as_str(), false));
-                    let _ = crate::engine::hash::hash_add_or_update(arr, Some(&*key_zs), 0, value, 0);
+                    let key_zs =
+                        Box::new(crate::engine::string::string_init(key_str.as_str(), false));
+                    let _ =
+                        crate::engine::hash::hash_add_or_update(arr, Some(&*key_zs), 0, value, 0);
                 } else {
                     let next_idx = arr.n_num_used as u64;
                     let _ = crate::engine::hash::hash_add_or_update(arr, None, next_idx, value, 0);
@@ -480,16 +574,12 @@ fn execute_fetch_dim(op: &Op, execute_data: &mut ExecuteData) -> Result<ExecResu
     let idx_val = resolve_operand(&op.op2, execute_data);
     let result_val = if let PhpValue::Array(ref arr) = arr_val.value {
         match &idx_val.value {
-            PhpValue::Long(i) => {
-                crate::engine::hash::hash_index_find(arr, *i as u64)
-                    .map(|v| clone_val(v))
-                    .unwrap_or_else(|| Val::new(PhpValue::Long(0), PhpType::Null))
-            }
-            PhpValue::String(s) => {
-                crate::engine::hash::hash_find(arr, s)
-                    .map(|v| clone_val(v))
-                    .unwrap_or_else(|| Val::new(PhpValue::Long(0), PhpType::Null))
-            }
+            PhpValue::Long(i) => crate::engine::hash::hash_index_find(arr, *i as u64)
+                .map(|v| clone_val(v))
+                .unwrap_or_else(|| Val::new(PhpValue::Long(0), PhpType::Null)),
+            PhpValue::String(s) => crate::engine::hash::hash_find(arr, s)
+                .map(|v| clone_val(v))
+                .unwrap_or_else(|| Val::new(PhpValue::Long(0), PhpType::Null)),
             _ => Val::new(PhpValue::Long(0), PhpType::Null),
         }
     } else {
@@ -509,7 +599,8 @@ fn execute_new_obj(op: &Op, execute_data: &mut ExecuteData) -> Result<ExecResult
     let mut obj = crate::engine::types::PhpObject::new(cn);
     if let Some(ce) = execute_data.class_table.get(cn) {
         for (prop_name, prop_val) in &ce.default_properties {
-            obj.properties.insert(prop_name.clone(), clone_val(prop_val));
+            obj.properties
+                .insert(prop_name.clone(), clone_val(prop_val));
         }
     }
 
@@ -526,7 +617,8 @@ fn execute_fetch_obj_prop(op: &Op, execute_data: &mut ExecuteData) -> Result<Exe
     let prop_name = crate::engine::operators::zval_get_string(&prop_name_val);
 
     let result_val = if let PhpValue::Object(ref obj) = obj_val.value {
-        obj.properties.get(prop_name.as_str())
+        obj.properties
+            .get(prop_name.as_str())
             .map(|v| clone_val(v))
             .unwrap_or_else(|| Val::new(PhpValue::Long(0), PhpType::Null))
     } else {
@@ -548,7 +640,11 @@ fn execute_assign_obj_prop(op: &Op, execute_data: &mut ExecuteData) -> Result<Ex
     if is_var_ref(var_name_val) {
         if let PhpValue::String(ref s) = var_name_val.value {
             let vname = s.as_str();
-            let name = if vname.starts_with('$') { &vname[1..] } else { vname };
+            let name = if vname.starts_with('$') {
+                &vname[1..]
+            } else {
+                vname
+            };
             let mut obj_val = execute_data.get_var(name);
             if let PhpValue::Object(ref mut obj) = obj_val.value {
                 obj.properties.insert(prop_name.as_str().to_string(), value);
@@ -576,13 +672,26 @@ fn execute_do_method_call(op: &Op, execute_data: &mut ExecuteData) -> Result<Exe
     if let PhpValue::Object(ref obj) = obj_val.value {
         let class_name = obj.class_name.clone();
         // Extract method info (owned copies to avoid borrow conflict)
-        let method_info: Option<(Vec<String>, Vec<Op>)> = execute_data.class_table.get(&class_name)
+        let method_info: Option<(Vec<String>, Vec<Op>)> = execute_data
+            .class_table
+            .get(&class_name)
             .and_then(|ce| ce.methods.get(method_name.as_str()))
             .map(|m| {
                 let params = m.params.clone();
-                let ops: Vec<Op> = m.op_array.ops.iter().map(|op| {
-                    Op::new(op.opcode, clone_val(&op.op1), clone_val(&op.op2), clone_val(&op.result), op.extended_value)
-                }).collect();
+                let ops: Vec<Op> = m
+                    .op_array
+                    .ops
+                    .iter()
+                    .map(|op| {
+                        Op::new(
+                            op.opcode,
+                            clone_val(&op.op1),
+                            clone_val(&op.op2),
+                            clone_val(&op.result),
+                            op.extended_value,
+                        )
+                    })
+                    .collect();
                 (params, ops)
             });
 
@@ -593,7 +702,11 @@ fn execute_do_method_call(op: &Op, execute_data: &mut ExecuteData) -> Result<Exe
             execute_data.set_var("this", clone_val(&obj_val));
 
             // Set up method parameters
-            let args: Vec<Val> = execute_data.call_args.iter().map(|a| clone_val(a)).collect();
+            let args: Vec<Val> = execute_data
+                .call_args
+                .iter()
+                .map(|a| clone_val(a))
+                .collect();
             for (i, param_name) in params.iter().enumerate() {
                 if let Some(arg) = args.get(i) {
                     execute_data.set_var(param_name, clone_val(arg));
@@ -601,9 +714,11 @@ fn execute_do_method_call(op: &Op, execute_data: &mut ExecuteData) -> Result<Exe
             }
 
             // Execute method
-            let mut method_op_array = OpArray::new(format!("{}::{}", class_name, method_name.as_str()));
+            let mut method_op_array =
+                OpArray::new(format!("{}::{}", class_name, method_name.as_str()));
             method_op_array.ops = ops;
-            let (_status, return_val) = super::execute::execute_ex_returning(execute_data, &method_op_array);
+            let (_status, return_val) =
+                super::execute::execute_ex_returning(execute_data, &method_op_array);
             execute_data.op_array = saved_op_array;
             execute_data.current_op = saved_current_op;
 
@@ -630,9 +745,13 @@ fn execute_do_method_call(op: &Op, execute_data: &mut ExecuteData) -> Result<Exe
 fn execute_do_fcall(op: &Op, execute_data: &mut ExecuteData) -> Result<ExecResult, String> {
     let func_name = if is_var_ref(&op.op1) || is_temp_ref(&op.op1) {
         let resolved = resolve_operand(&op.op1, execute_data);
-        crate::engine::operators::zval_get_string(&resolved).as_str().to_string()
+        crate::engine::operators::zval_get_string(&resolved)
+            .as_str()
+            .to_string()
     } else {
-        crate::engine::operators::zval_get_string(&op.op1).as_str().to_string()
+        crate::engine::operators::zval_get_string(&op.op1)
+            .as_str()
+            .to_string()
     };
 
     let args: Vec<Val> = execute_data.call_args.drain(..).collect();
@@ -646,25 +765,43 @@ fn execute_do_fcall(op: &Op, execute_data: &mut ExecuteData) -> Result<ExecResul
         }
         None => {
             // Try user-defined function table — clone needed data to avoid borrow conflict
-            let func_data: Option<(Vec<String>, super::opcodes::OpArray)> = execute_data.function_table.as_ref()
-                .and_then(|ft| ft.downcast_ref::<crate::engine::compile::function_table::FunctionTable>())
+            let func_data: Option<(Vec<String>, super::opcodes::OpArray)> = execute_data
+                .function_table
+                .as_ref()
+                .and_then(|ft| {
+                    ft.downcast_ref::<crate::engine::compile::function_table::FunctionTable>()
+                })
                 .and_then(|ft| ft.lookup_function(&func_name))
                 .map(|func_op_array| {
                     // Extract param names from vars
-                    let param_names: Vec<String> = func_op_array.vars.iter().map(|v| {
-                        if let PhpValue::String(ref s) = v.value {
-                            let name = s.as_str();
-                            if name.starts_with('$') { name[1..].to_string() } else { name.to_string() }
-                        } else {
-                            String::new()
-                        }
-                    }).collect();
+                    let param_names: Vec<String> = func_op_array
+                        .vars
+                        .iter()
+                        .map(|v| {
+                            if let PhpValue::String(ref s) = v.value {
+                                let name = s.as_str();
+                                if name.starts_with('$') {
+                                    name[1..].to_string()
+                                } else {
+                                    name.to_string()
+                                }
+                            } else {
+                                String::new()
+                            }
+                        })
+                        .collect();
                     // Clone the op array
-                    let mut cloned = super::opcodes::OpArray::new(func_op_array.filename.clone().unwrap_or_default());
+                    let mut cloned = super::opcodes::OpArray::new(
+                        func_op_array.filename.clone().unwrap_or_default(),
+                    );
                     cloned.function_name = func_op_array.function_name.clone();
                     for op in &func_op_array.ops {
                         cloned.add_op(super::opcodes::Op::new(
-                            op.opcode, clone_val(&op.op1), clone_val(&op.op2), clone_val(&op.result), op.extended_value,
+                            op.opcode,
+                            clone_val(&op.op1),
+                            clone_val(&op.op2),
+                            clone_val(&op.result),
+                            op.extended_value,
                         ));
                     }
                     (param_names, cloned)
@@ -684,14 +821,19 @@ fn execute_do_fcall(op: &Op, execute_data: &mut ExecuteData) -> Result<ExecResul
                 for (i, arg) in args.iter().enumerate() {
                     if let Some(name) = param_names.get(i) {
                         if !name.is_empty() {
-                            let clean = if name.starts_with('$') { &name[1..] } else { name.as_str() };
+                            let clean = if name.starts_with('$') {
+                                &name[1..]
+                            } else {
+                                name.as_str()
+                            };
                             execute_data.set_var(clean, clone_val(arg));
                         }
                     }
                 }
 
                 // Execute the function and capture return value
-                let (_status, return_val) = super::execute::execute_ex_returning(execute_data, &func_op_array);
+                let (_status, return_val) =
+                    super::execute::execute_ex_returning(execute_data, &func_op_array);
 
                 // Restore execution state
                 execute_data.symbol_table = saved_symbol_table;

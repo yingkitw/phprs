@@ -8,38 +8,46 @@ phprs is a PHP interpreter implemented in Rust, maintaining the same architectur
 
 ```
 src/
-├── engine/           # Core engine (compiler, VM, types, memory, GC)
+├── engine/           # Core engine (compiler, VM, types, memory, GC, perf)
 │   ├── types.rs      # Core PHP types (Val, PhpString, PhpArray, PhpObject)
 │   ├── string.rs     # String handling with DJBX33A hashing
 │   ├── hash.rs       # Hash tables (dynamic resizing, collision handling)
 │   ├── alloc.rs      # Memory allocation (persistent/non-persistent)
 │   ├── gc.rs         # Garbage collection (tri-color marking)
-│   ├── operators.rs   # Type conversion and operators
+│   ├── operators.rs  # Type conversion and operators
+│   ├── array_ops.rs  # Array operations and optimizations
 │   ├── vm/           # Virtual machine
-│   │   ├── opcodes.rs      # 52 opcode definitions
-│   │   ├── execute_data.rs # Execution context
-│   │   ├── handlers.rs     # Opcode dispatch
-│   │   ├── builtins.rs     # 40+ PHP functions
-│   │   └── execute.rs      # Main execution loop
+│   │   ├── opcodes.rs        # 63 opcode definitions
+│   │   ├── execute_data.rs   # Execution context
+│   │   ├── dispatch_handlers.rs # Dispatch table (computed goto style)
+│   │   ├── handlers.rs       # Opcode handler implementations
+│   │   ├── builtins.rs       # 40+ PHP functions
+│   │   └── execute.rs        # Main execution loop
 │   ├── compile/      # Compiler
-│   │   ├── expression/     # Expression parsing
-│   │   ├── statement/      # Statement parsing
-│   │   ├── control_flow.rs # Control structures
-│   │   └── function.rs     # Function compilation
+│   │   ├── expression/       # Expression parsing
+│   │   ├── statement/        # Statement parsing
+│   │   ├── control_flow.rs   # Control structures
+│   │   └── function.rs      # Function compilation
+│   ├── jit.rs        # JIT compilation for hot functions
+│   ├── function_optimizer.rs # Inlining and call optimizations
+│   ├── opcode_cache.rs      # Opcode cache with optimization passes
+│   ├── benchmark.rs  # Benchmark harness
+│   ├── perf.rs       # Performance utilities
+│   ├── perf_alloc.rs # Performance-oriented allocation
 │   ├── facade/       # Factory helpers
 │   ├── lexer/        # Tokenizer
-│   ├── exception.rs   # Exception handling
-│   └── errors.rs      # Error handling
+│   ├── exception.rs  # Exception handling
+│   └── errors.rs     # Error handling
 └── php/              # PHP runtime
-    ├── runtime.rs      # Main runtime
-    ├── ini.rs          # INI configuration
-    ├── variables.rs    # Variable handling
-    ├── streams.rs      # Stream system
-    ├── sapi.rs         # SAPI layer
-    ├── output.rs       # Output buffering
-    ├── globals.rs      # Global state
-    ├── filesystem.rs   # Filesystem operations
-    └── extension.rs   # Extension framework
+    ├── runtime.rs    # Main runtime
+    ├── ini.rs        # INI configuration
+    ├── variables.rs  # Variable handling
+    ├── streams.rs    # Stream system
+    ├── sapi.rs       # SAPI layer
+    ├── output.rs     # Output buffering
+    ├── globals.rs    # Global state
+    ├── filesystem.rs # Filesystem operations
+    └── extension.rs  # Extension framework
 ```
 
 ## Execution Flow
@@ -77,7 +85,7 @@ Output
 
 ## Virtual Machine
 
-### Opcodes (64 total)
+### Opcodes (63 total)
 - Arithmetic: Add, Sub, Mul, Div, Mod, Pow
 - Comparison: IsEqual, IsNotEqual, IsSmaller, IsSmallerOrEqual, IsIdentical, IsNotIdentical
 - Logical: BoolNot, BoolXor
@@ -92,7 +100,7 @@ Output
 - Functions: DoFCall, Include
 - Other: Nop, Echo, AssignDim, AssignObj, AssignStaticProp, AssignOp, InitArray,
           NewObj, Throw, TryCatchBegin, TryCatchEnd, CatchBegin, CatchEnd,
-          FinallyBegin, FinallyEnd, TypeCheck
+          FinallyBegin, FinallyEnd, TypeCheck, QmAssign (ternary assign)
 
 ### Built-in Functions (40+)
 - **String**: strlen, strpos, substr, str_replace, strtolower, strtoupper, trim, explode, implode, sprintf
@@ -122,6 +130,14 @@ phprs pkg build           # Build project
 - Dark/light theme
 - Multi-language (EN/中文/日本語)
 
+## Framework support (planned)
+
+Roadmap items in [TODO.md](TODO.md):
+
+- **CodeIgniter 4**: Bootstrap, autoloading, routing, controllers
+- **Drupal**: Bootstrap (index.php → Drupal.php), kernel, module system
+- **WordPress**: Bootstrap (index.php → wp-blog-header.php → wp-load.php → wp-settings.php), wp-config and wpdb, hooks/filters (do_action, apply_filters), theme and plugin loading
+
 ## Comparison with C PHP
 
 | Aspect | C PHP | phprs |
@@ -135,5 +151,7 @@ phprs pkg build           # Build project
 
 ## See Also
 
+- [spec.md](spec.md) - Project specification and scope
 - [README.md](README.md) - Quick start guide
-- [TODO.md](TODO.md) - Migration roadmap
+- [TODO.md](TODO.md) - Migration roadmap and statistics
+- [PERFORMANCE.md](PERFORMANCE.md) - Optimizations and benchmarks vs PHP 8

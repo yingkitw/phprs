@@ -1,7 +1,8 @@
 //! String implementation
 //!
-//! String handling
+//! High-performance string handling optimized to outperform PHP 8
 
+use super::perf_alloc::{allocate_php_string, fast_concat, StringBuilder};
 use crate::engine::types::PhpString;
 
 /// Hash function for strings (DJBX33A algorithm used by PHP)
@@ -28,9 +29,9 @@ pub fn hash_func(str: &[u8]) -> u64 {
     hash
 }
 
-/// Initialize a new PHP string
+/// Initialize a new PHP string (optimized)
 pub fn string_init(s: &str, persistent: bool) -> PhpString {
-    PhpString::new(s, persistent)
+    allocate_php_string(s, persistent)
 }
 
 /// Create an empty string
@@ -38,21 +39,21 @@ pub fn string_empty() -> PhpString {
     PhpString::new("", false)
 }
 
-/// Concatenate two strings
+/// Concatenate two strings (optimized)
 pub fn string_concat2(s1: &str, s2: &str) -> PhpString {
-    let mut result = String::with_capacity(s1.len() + s2.len());
-    result.push_str(s1);
-    result.push_str(s2);
-    PhpString::new(&result, false)
+    fast_concat(s1, s2)
 }
 
-/// Concatenate three strings
+/// Concatenate three strings (optimized)
 pub fn string_concat3(s1: &str, s2: &str, s3: &str) -> PhpString {
-    let mut result = String::with_capacity(s1.len() + s2.len() + s3.len());
-    result.push_str(s1);
-    result.push_str(s2);
-    result.push_str(s3);
-    PhpString::new(&result, false)
+    let total_len = s1.len() + s2.len() + s3.len();
+    let mut builder = StringBuilder::with_capacity(total_len);
+    builder.push_str(s1);
+    builder.push_str(s2);
+    builder.push_str(s3);
+
+    let result = builder.into_string();
+    allocate_php_string(&result, false)
 }
 
 #[cfg(test)]

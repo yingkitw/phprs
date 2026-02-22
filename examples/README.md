@@ -36,3 +36,13 @@ Run with `cargo run -- run examples/<file>.php`:
 | `match_expression.php` | PHP 8.0 match expressions |
 | `attributes.php` | PHP 8.0 attributes on functions/classes |
 | `generators.php` | Generator functions with yield |
+
+### WordPress-style example
+
+Run the minimal WordPress-style bootstrap (from project root):
+
+```bash
+cargo run -p phprs-cli -- run examples/wordpress/index.php
+```
+
+See [wordpress/README.md](wordpress/README.md) for layout and engine requirements.

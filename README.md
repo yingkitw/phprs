@@ -6,8 +6,11 @@ A PHP interpreter written in Rust, migrated from the PHP C implementation.
 
 - **Memory Safe**: Rust's ownership system prevents memory leaks and dangling pointers
 - **Type Safe**: Compile-time type checking with Rust enums
-- **Thread Safe**: Safe concurrent access with Mutex and OnceLock
-- **Fast**: Zero-cost abstractions, similar performance to C PHP
+- **Thread Safe**: Safe concurrent access with RwLock and OnceLock (Rust 2024 compliant)
+- **Fast**: Zero-cost abstractions, JIT compilation, and optimized dispatch table
+- **JIT Compiler**: Just-in-time compilation for hot code paths
+- **Function Optimizer**: Advanced inlining and call optimizations
+- **Opcode Cache**: Cached execution with optimization passes
 
 ## Quick Start
 
@@ -34,12 +37,14 @@ cargo run -- pkg init
 ```
 phprs/
 ├── src/
-│   ├── engine/       # Core engine: compiler, VM, types, memory
-│   └── php/          # PHP runtime: streams, filesystem, SAPI
+│   ├── engine/       # Core engine: types, string, hash, alloc, gc, operators,
+│   │                 # array_ops, lexer, compile, vm, jit, function_optimizer,
+│   │                 # opcode_cache, benchmark, perf, perf_alloc, facade
+│   └── php/          # PHP runtime: streams, filesystem, SAPI, globals
 ├── bin/
 │   └── phprs         # Unified CLI (run, serve, pkg)
-├── examples/       # PHP and Rust examples
-└── tests/          # Comprehensive test suite
+├── examples/        # PHP and Rust examples (including performance_demo)
+└── tests/           # Test suite
 ```
 
 ## API Usage
@@ -61,10 +66,11 @@ execute_ex(&mut exec_data, &op_array);
 - ✅ Core engine (types, strings, hash tables, memory, GC)
 - ✅ PHP runtime (streams, filesystem, output)
 - ✅ Compiler (expressions, statements, functions, classes, traits, namespaces)
-- ✅ VM (64 opcodes, 40+ built-in functions)
+- ✅ VM (63 opcodes, dispatch table, 40+ built-in functions)
 - ✅ PHP 8.0 features (match expressions, attributes, generators)
 - ✅ SAPI (CLI, built-in web server)
 - ✅ Package manager (composer.json, Packagist, dependency resolution)
+- 📋 Planned: framework support (CodeIgniter 4, Drupal, WordPress — see [TODO.md](TODO.md))
 
 ## Tests
 
@@ -76,6 +82,8 @@ cargo test --test php_examples # PHP examples
 
 ## Documentation
 
-- [ARCHITECTURE.md](ARCHITECTURE.md) - Detailed architecture
-- [TODO.md](TODO.md) - Migration roadmap
+- [spec.md](spec.md) - Project specification and scope
+- [ARCHITECTURE.md](ARCHITECTURE.md) - Module structure and execution flow
+- [TODO.md](TODO.md) - Migration roadmap and statistics
+- [PERFORMANCE.md](PERFORMANCE.md) - Optimizations and benchmarks vs PHP 8
 - [examples/README.md](examples/README.md) - Example guide

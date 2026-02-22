@@ -161,6 +161,7 @@ impl Refcounted {
 pub enum PhpValue {
     Long(i64),
     Double(f64),
+    Bool(bool),
     String(Box<PhpString>),
     Array(Box<PhpArray>),
     Object(Box<PhpObject>),
@@ -180,6 +181,25 @@ pub enum PhpValue {
 unsafe impl Send for PhpValue {}
 unsafe impl Sync for PhpValue {}
 
+impl PartialEq for PhpValue {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (PhpValue::Long(a), PhpValue::Long(b)) => a == b,
+            (PhpValue::Double(a), PhpValue::Double(b)) => a == b,
+            (PhpValue::Bool(a), PhpValue::Bool(b)) => a == b,
+            (PhpValue::String(a), PhpValue::String(b)) => a.val == b.val,
+            (PhpValue::Array(a), PhpValue::Array(b)) => std::ptr::eq(&**a, &**b), // Shallow comparison for now
+            (PhpValue::Object(a), PhpValue::Object(b)) => a.handle == b.handle,
+            (PhpValue::Resource(a), PhpValue::Resource(b)) => a.handle == b.handle,
+            (PhpValue::Reference(a), PhpValue::Reference(b)) => std::ptr::eq(&**a, &**b),
+            (PhpValue::Ptr(a), PhpValue::Ptr(b)) => a == b,
+            (PhpValue::ClassEntry(a), PhpValue::ClassEntry(b)) => a == b,
+            (PhpValue::Function(a), PhpValue::Function(b)) => a == b,
+            _ => false,
+        }
+    }
+}
+
 /// Val - PHP value container
 ///
 /// This is the fundamental type that represents any PHP value.
@@ -189,6 +209,60 @@ pub struct Val {
     pub value: PhpValue,
     pub type_info: u32,
     pub u2: ValU2,
+}
+
+impl Clone for Val {
+    fn clone(&self) -> Self {
+        Self {
+            value: match &self.value {
+                PhpValue::Long(l) => PhpValue::Long(*l),
+                PhpValue::Double(d) => PhpValue::Double(*d),
+                PhpValue::Bool(b) => PhpValue::Bool(*b),
+                PhpValue::String(s) => PhpValue::String(s.clone()),
+                PhpValue::Array(a) => {
+                    // For arrays, we need to implement proper cloning
+                    // For now, just create a new empty array
+                    PhpValue::Array(Box::new(PhpArray::new()))
+                }
+                PhpValue::Object(o) => {
+                    // For objects, create a new stdClass
+                    PhpValue::Object(Box::new(PhpObject::new("stdClass")))
+                }
+                PhpValue::Resource(_) => {
+                    // Resources can't be cloned, return null
+                    PhpValue::Long(0)
+                }
+                PhpValue::Reference(_) => {
+                    // For references, create a new reference
+                    PhpValue::Long(0)
+                }
+                PhpValue::Ast(_) => {
+                    // AST can't be cloned
+                    PhpValue::Long(0)
+                }
+                PhpValue::Val(v) => {
+                    // For boxed values, clone them
+                    PhpValue::Val(v.clone())
+                }
+                PhpValue::Ptr(p) => PhpValue::Ptr(*p),
+                PhpValue::ClassEntry(c) => PhpValue::ClassEntry(*c),
+                PhpValue::Function(f) => PhpValue::Function(*f),
+            },
+            type_info: self.type_info,
+            u2: ValU2 {
+                next: self.u2.next,
+                cache_slot: self.u2.cache_slot,
+                opline_num: self.u2.opline_num,
+                lineno: self.u2.lineno,
+                num_args: self.u2.num_args,
+                fe_pos: self.u2.fe_pos,
+                fe_iter_idx: self.u2.fe_iter_idx,
+                guard: self.u2.guard,
+                constant_flags: self.u2.constant_flags,
+                extra: self.u2.extra,
+            },
+        }
+    }
 }
 
 impl Val {
@@ -221,7 +295,7 @@ impl Val {
 }
 
 /// Val u2 union - stores various auxiliary data
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 pub struct ValU2 {
     pub next: u32,
     pub cache_slot: u32,
@@ -283,7 +357,7 @@ impl PhpString {
 #[derive(Debug)]
 pub struct Bucket {
     pub val: Val,
-    pub h: u64,                       // hash value or numeric index
+    pub h: u64,                      // hash value or numeric index
     pub key: Option<Box<PhpString>>, // string key or None for numerics
 }
 
@@ -337,7 +411,10 @@ pub struct PhpObject {
 impl PhpObject {
     pub fn new(class_name: &str) -> Self {
         Self {
-            gc: RefcountedH { refcount: std::sync::atomic::AtomicU32::new(1), type_info: std::sync::atomic::AtomicU32::new(8) },
+            gc: RefcountedH {
+                refcount: std::sync::atomic::AtomicU32::new(1),
+                type_info: std::sync::atomic::AtomicU32::new(8),
+            },
             handle: 0,
             class_name: class_name.to_string(),
             properties: std::collections::HashMap::new(),

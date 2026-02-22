@@ -9,7 +9,10 @@ pub(crate) fn var_dump_value(val: &Val) -> String {
         PhpType::True => "bool(true)\n".to_string(),
         PhpType::False => "bool(false)\n".to_string(),
         PhpType::Long => format!("int({})\n", crate::engine::operators::zval_get_long(val)),
-        PhpType::Double => format!("float({})\n", crate::engine::operators::zval_get_double(val)),
+        PhpType::Double => format!(
+            "float({})\n",
+            crate::engine::operators::zval_get_double(val)
+        ),
         PhpType::String => {
             let s = crate::engine::operators::zval_get_string(val);
             format!("string({}) \"{}\"\n", s.as_str().len(), s.as_str())
@@ -43,15 +46,25 @@ pub(crate) fn print_r_value(val: &Val) -> String {
         PhpType::False => String::new(),
         PhpType::Long => format!("{}", crate::engine::operators::zval_get_long(val)),
         PhpType::Double => format!("{}", crate::engine::operators::zval_get_double(val)),
-        PhpType::String => crate::engine::operators::zval_get_string(val).as_str().to_string(),
+        PhpType::String => crate::engine::operators::zval_get_string(val)
+            .as_str()
+            .to_string(),
         PhpType::Array => {
             if let PhpValue::Array(ref arr) = val.value {
                 let mut out = "Array\n(\n".to_string();
                 for bucket in &arr.ar_data {
                     if let Some(ref key) = bucket.key {
-                        out.push_str(&format!("    [{}] => {}\n", key.as_str(), print_r_value(&bucket.val)));
+                        out.push_str(&format!(
+                            "    [{}] => {}\n",
+                            key.as_str(),
+                            print_r_value(&bucket.val)
+                        ));
                     } else {
-                        out.push_str(&format!("    [{}] => {}\n", bucket.h, print_r_value(&bucket.val)));
+                        out.push_str(&format!(
+                            "    [{}] => {}\n",
+                            bucket.h,
+                            print_r_value(&bucket.val)
+                        ));
                     }
                 }
                 out.push_str(")\n");
@@ -74,19 +87,31 @@ pub(crate) fn zval_to_json(val: &Val) -> String {
         PhpType::Double => format!("{}", crate::engine::operators::zval_get_double(val)),
         PhpType::String => {
             let s = crate::engine::operators::zval_get_string(val);
-            format!("\"{}\"" , s.as_str().replace('\\', "\\\\").replace('"', "\\\""))
+            format!(
+                "\"{}\"",
+                s.as_str().replace('\\', "\\\\").replace('"', "\\\"")
+            )
         }
         PhpType::Array => {
             if let PhpValue::Array(ref arr) = val.value {
                 let is_list = arr.ar_data.iter().all(|b| b.key.is_none());
                 if is_list {
-                    let items: Vec<String> = arr.ar_data.iter().map(|b| zval_to_json(&b.val)).collect();
+                    let items: Vec<String> =
+                        arr.ar_data.iter().map(|b| zval_to_json(&b.val)).collect();
                     format!("[{}]", items.join(","))
                 } else {
-                    let items: Vec<String> = arr.ar_data.iter().map(|b| {
-                        let key = b.key.as_ref().map(|k| format!("\"{}\"" , k.as_str())).unwrap_or_else(|| format!("{}", b.h));
-                        format!("{}:{}", key, zval_to_json(&b.val))
-                    }).collect();
+                    let items: Vec<String> = arr
+                        .ar_data
+                        .iter()
+                        .map(|b| {
+                            let key = b
+                                .key
+                                .as_ref()
+                                .map(|k| format!("\"{}\"", k.as_str()))
+                                .unwrap_or_else(|| format!("{}", b.h));
+                            format!("{}:{}", key, zval_to_json(&b.val))
+                        })
+                        .collect();
                     format!("{{{}}}", items.join(","))
                 }
             } else {

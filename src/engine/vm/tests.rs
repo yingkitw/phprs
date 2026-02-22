@@ -2,16 +2,13 @@
 
 use crate::engine::types::{PhpResult, PhpType, PhpValue, Val};
 use crate::engine::vm::{
-    execute_ex, temp_var_ref, var_ref, get_opcode_name, ExecuteData, Op, OpArray,
-    Opcode,
+    execute_ex, get_opcode_name, temp_var_ref, var_ref, ExecuteData, Op, OpArray, Opcode,
 };
 
-// Mutex to serialize tests that use the global output buffer
-static OUTPUT_TEST_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
-
 fn run_php_code(code: &str) -> (PhpResult, String) {
-    let _lock = OUTPUT_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
-    let (op_array, ft) = crate::engine::compile::compile_string_with_functions(code, "test.php").unwrap();
+    // Output is thread-local, so parallel tests are safe without a global lock
+    let (op_array, ft) =
+        crate::engine::compile::compile_string_with_functions(code, "test.php").unwrap();
     crate::php::output::php_output_start().unwrap();
     let mut ed = ExecuteData::new();
     ed.function_table = Some(std::sync::Arc::new(ft));
@@ -97,12 +94,15 @@ fn test_vm_assign_and_resolve_variable() {
     // Verify variable is in symbol table
     let val = ed.get_var("x");
     assert_eq!(val.get_type(), PhpType::Long);
-    if let PhpValue::Long(v) = val.value { assert_eq!(v, 42); } else { panic!("expected Long"); }
+    if let PhpValue::Long(v) = val.value {
+        assert_eq!(v, 42);
+    } else {
+        panic!("expected Long");
+    }
 }
 
 #[test]
 fn test_vm_add_with_temp_vars() {
-    let _lock = OUTPUT_TEST_LOCK.lock().unwrap();
     // temp[0] = 10 + 20 → echo temp[0]
     let mut op_array = OpArray::new("test.php".to_string());
     op_array.add_op(Op::new(
@@ -130,7 +130,6 @@ fn test_vm_add_with_temp_vars() {
 
 #[test]
 fn test_vm_variable_in_expression() {
-    let _lock = OUTPUT_TEST_LOCK.lock().unwrap();
     // Test: $a = 5; $b = 3; echo $a + $b;
     let mut op_array = OpArray::new("test.php".to_string());
     let var_a = crate::engine::string::string_init("a", false);
@@ -178,7 +177,6 @@ fn test_vm_variable_in_expression() {
 
 #[test]
 fn test_vm_builtin_strlen() {
-    let _lock = OUTPUT_TEST_LOCK.lock().unwrap();
     // InitFCall; SendVal "hello"; DoFCall strlen → temp[0]; Echo temp[0]
     let mut op_array = OpArray::new("test.php".to_string());
     let zero = || Val::new(PhpValue::Long(0), PhpType::Null);
@@ -189,14 +187,18 @@ fn test_vm_builtin_strlen() {
     op_array.add_op(Op::new(
         Opcode::SendVal,
         Val::new(PhpValue::String(Box::new(hello)), PhpType::String),
-        zero(), zero(), 0,
+        zero(),
+        zero(),
+        0,
     ));
     // DoFCall strlen → temp[0]
     let fname = crate::engine::string::string_init("strlen", false);
     op_array.add_op(Op::new(
         Opcode::DoFCall,
         Val::new(PhpValue::String(Box::new(fname)), PhpType::String),
-        zero(), temp_var_ref(0), 0,
+        zero(),
+        temp_var_ref(0),
+        0,
     ));
     // Echo temp[0]
     op_array.add_op(Op::new(Opcode::Echo, temp_var_ref(0), zero(), zero(), 0));
@@ -409,7 +411,8 @@ fn test_compile_namespace_and_use() {
 #[test]
 fn test_compile_trait_definition() {
     // Trait definition should parse without error
-    let code = "<?php\ntrait Greetable {\n  public function greet() { echo 'hello'; }\n}\necho 'ok';\n";
+    let code =
+        "<?php\ntrait Greetable {\n  public function greet() { echo 'hello'; }\n}\necho 'ok';\n";
     let (result, output) = run_php_code(code);
     assert!(matches!(result, PhpResult::Success));
     assert_eq!(output, "ok");
@@ -465,7 +468,8 @@ fn test_compile_attributes_on_class_and_method() {
 
 #[test]
 fn test_compile_generator_multiple_yields() {
-    let code = "<?php\nfunction gen() { yield 1; yield 2; yield 3; }\n$arr = gen();\necho $arr[1];\n";
+    let code =
+        "<?php\nfunction gen() { yield 1; yield 2; yield 3; }\n$arr = gen();\necho $arr[1];\n";
     let (result, output) = run_php_code(code);
     assert!(matches!(result, PhpResult::Success));
     assert_eq!(output, "2");

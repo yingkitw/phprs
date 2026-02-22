@@ -17,14 +17,15 @@
 #[cfg(test)]
 mod tests;
 
-pub mod opcodes;
-pub mod execute_data;
 mod builtins;
+pub mod dispatch_handlers;
+pub mod execute;
+pub mod execute_data;
 mod format;
 mod handlers;
-pub mod execute;
+pub mod opcodes;
 
 // Re-export public API
-pub use opcodes::{Op, OpArray, Opcode, get_opcode_name};
-pub use execute_data::{ExecuteData, temp_var_ref, var_ref};
 pub use execute::execute_ex;
+pub use execute_data::{temp_var_ref, var_ref, ExecuteData};
+pub use opcodes::{get_opcode_name, Op, OpArray, Opcode};
