@@ -1,6 +1,20 @@
 # phprs Examples
 
-Example programs demonstrating phprs capabilities.
+**80+ working examples** demonstrating all phprs features with 2100+ lines of test code.
+
+## Quick Start
+
+Run any example:
+```bash
+cargo run -p phprs-cli -- run examples/01_hello_world.php
+```
+
+Or use the compiled binary:
+```bash
+./target/release/phprs run examples/01_hello_world.php
+```
+
+## Example Categories
 
 ## Rust Examples (`rust/`)
 

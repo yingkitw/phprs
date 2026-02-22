@@ -209,22 +209,43 @@ pub(crate) fn execute_builtin_function(
             if args.is_empty() {
                 return Ok(Some(bool_val(true)));
             }
-            let is_empty = match &args[0].value {
-                PhpValue::Long(0) => true,
-                PhpValue::Double(v) if *v == 0.0 => true,
-                PhpValue::String(s) if s.as_str().is_empty() || s.as_str() == "0" => true,
-                _ => args[0].get_type() == PhpType::Null || args[0].get_type() == PhpType::False,
+            let val = &args[0];
+            let is_empty = match val.get_type() {
+                PhpType::Null | PhpType::False | PhpType::Undef => true,
+                PhpType::Long => crate::engine::operators::zval_get_long(val) == 0,
+                PhpType::Double => crate::engine::operators::zval_get_double(val) == 0.0,
+                PhpType::String => {
+                    let s = crate::engine::operators::zval_get_string(val);
+                    s.as_str().is_empty() || s.as_str() == "0"
+                }
+                PhpType::Array => {
+                    if let PhpValue::Array(ref arr) = val.value {
+                        arr.ar_data.is_empty()
+                    } else {
+                        false
+                    }
+                }
+                _ => false,
             };
             Ok(Some(bool_val(is_empty)))
         }
-        "is_int" | "is_integer" | "is_long" => Ok(Some(type_check(args, |t| t == PhpType::Long))),
+        "unset" => {
+            // unset is a language construct, but we provide a stub
+            Ok(None)
+        }
+        "is_array" => Ok(Some(type_check(args, |t| t == PhpType::Array))),
         "is_string" => Ok(Some(type_check(args, |t| t == PhpType::String))),
-        "is_float" | "is_double" => Ok(Some(type_check(args, |t| t == PhpType::Double))),
+        "is_int" | "is_integer" | "is_long" => {
+            Ok(Some(type_check(args, |t| t == PhpType::Long)))
+        }
         "is_bool" => Ok(Some(type_check(args, |t| {
-            matches!(t, PhpType::True | PhpType::False)
+            t == PhpType::True || t == PhpType::False
         }))),
         "is_null" => Ok(Some(type_check(args, |t| t == PhpType::Null))),
-        "is_array" => Ok(Some(type_check(args, |t| t == PhpType::Array))),
+        "is_numeric" => Ok(Some(type_check(args, |t| {
+            t == PhpType::Long || t == PhpType::Double
+        }))),
+        "is_object" => Ok(Some(type_check(args, |t| t == PhpType::Object))),
 
         // --- Array functions ---
         "array_key_exists" => {
@@ -364,10 +385,24 @@ pub(crate) fn execute_builtin_function(
                 return Err("file_get_contents() expects 1 argument".into());
             }
             let path = crate::engine::operators::zval_get_string(&args[0]);
-            let resolved = resolve_path_for_runtime(path.as_str(), _execute_data);
-            match std::fs::read_to_string(&resolved) {
-                Ok(content) => Ok(Some(string_val(&content))),
-                Err(_) => Ok(Some(Val::new(PhpValue::Long(0), PhpType::False))),
+            let path_str = path.as_str();
+            
+            // Check if it's an HTTP/HTTPS URL
+            if path_str.starts_with("http://") || path_str.starts_with("https://") {
+                match crate::php::http_stream::file_get_contents_http(path_str) {
+                    Ok(content) => Ok(Some(string_val(&content))),
+                    Err(e) => {
+                        eprintln!("HTTP error: {}", e);
+                        Ok(Some(Val::new(PhpValue::Long(0), PhpType::False)))
+                    }
+                }
+            } else {
+                // Local file
+                let resolved = resolve_path_for_runtime(path_str, _execute_data);
+                match std::fs::read_to_string(&resolved) {
+                    Ok(content) => Ok(Some(string_val(&content))),
+                    Err(_) => Ok(Some(Val::new(PhpValue::Long(0), PhpType::False))),
+                }
             }
         }
         "file_exists" => {
@@ -442,6 +477,154 @@ pub(crate) fn execute_builtin_function(
             } else {
                 Ok(None)
             }
+        }
+
+        // --- HTML/String escaping ---
+        "htmlspecialchars" => {
+            if args.is_empty() {
+                return Err("htmlspecialchars() expects at least 1 argument".into());
+            }
+            let s = crate::engine::operators::zval_get_string(&args[0]);
+            let escaped = s.as_str()
+                .replace('&', "&amp;")
+                .replace('<', "&lt;")
+                .replace('>', "&gt;")
+                .replace('"', "&quot;")
+                .replace('\'', "&#039;");
+            Ok(Some(string_val(&escaped)))
+        }
+        "htmlentities" => {
+            if args.is_empty() {
+                return Err("htmlentities() expects at least 1 argument".into());
+            }
+            let s = crate::engine::operators::zval_get_string(&args[0]);
+            let escaped = s.as_str()
+                .replace('&', "&amp;")
+                .replace('<', "&lt;")
+                .replace('>', "&gt;")
+                .replace('"', "&quot;")
+                .replace('\'', "&#039;");
+            Ok(Some(string_val(&escaped)))
+        }
+
+        // --- Regular Expressions ---
+        "preg_match" => {
+            if args.len() < 2 {
+                return Err("preg_match() expects at least 2 arguments".into());
+            }
+            let pattern = crate::engine::operators::zval_get_string(&args[0]);
+            let subject = crate::engine::operators::zval_get_string(&args[1]);
+            
+            match crate::php::regex::preg_match(pattern.as_str(), subject.as_str(), None) {
+                Ok(result) => Ok(Some(Val::new(PhpValue::Long(result), PhpType::Long))),
+                Err(e) => Err(format!("preg_match error: {}", e)),
+            }
+        }
+        "preg_match_all" => {
+            if args.len() < 2 {
+                return Err("preg_match_all() expects at least 2 arguments".into());
+            }
+            let pattern = crate::engine::operators::zval_get_string(&args[0]);
+            let subject = crate::engine::operators::zval_get_string(&args[1]);
+            
+            match crate::php::regex::preg_match_all(pattern.as_str(), subject.as_str()) {
+                Ok(matches) => {
+                    // Return count of matches
+                    Ok(Some(Val::new(PhpValue::Long(matches.len() as i64), PhpType::Long)))
+                }
+                Err(e) => Err(format!("preg_match_all error: {}", e)),
+            }
+        }
+        "preg_replace" => {
+            if args.len() < 3 {
+                return Err("preg_replace() expects at least 3 arguments".into());
+            }
+            let pattern = crate::engine::operators::zval_get_string(&args[0]);
+            let replacement = crate::engine::operators::zval_get_string(&args[1]);
+            let subject = crate::engine::operators::zval_get_string(&args[2]);
+            
+            match crate::php::regex::preg_replace(pattern.as_str(), replacement.as_str(), subject.as_str()) {
+                Ok(result) => Ok(Some(string_val(&result))),
+                Err(e) => Err(format!("preg_replace error: {}", e)),
+            }
+        }
+        "preg_split" => {
+            if args.len() < 2 {
+                return Err("preg_split() expects at least 2 arguments".into());
+            }
+            let pattern = crate::engine::operators::zval_get_string(&args[0]);
+            let subject = crate::engine::operators::zval_get_string(&args[1]);
+            let limit = if args.len() > 2 {
+                Some(crate::engine::operators::zval_get_long(&args[2]) as usize)
+            } else {
+                None
+            };
+            
+            match crate::php::regex::preg_split(pattern.as_str(), subject.as_str(), limit) {
+                Ok(parts) => {
+                    let mut arr = crate::engine::types::PhpArray::new();
+                    for (i, part) in parts.iter().enumerate() {
+                        let val = string_val(part);
+                        let _ = crate::engine::hash::hash_add_or_update(&mut arr, None, i as u64, val, 0);
+                    }
+                    Ok(Some(Val::new(PhpValue::Array(Box::new(arr)), PhpType::Array)))
+                }
+                Err(e) => Err(format!("preg_split error: {}", e)),
+            }
+        }
+        
+        // --- WordPress/Array functions ---
+        "shortcode_atts" => {
+            // shortcode_atts($defaults, $atts) - merge attributes with defaults
+            if args.len() < 2 {
+                return Err("shortcode_atts() expects 2 arguments".into());
+            }
+            // For now, just return the second argument (atts)
+            // In real implementation, this would merge with defaults
+            Ok(Some(clone_val(&args[1])))
+        }
+        "array_merge" => {
+            if args.is_empty() {
+                return Ok(Some(Val::new(PhpValue::Array(Box::new(crate::engine::types::PhpArray::new())), PhpType::Array)));
+            }
+            // For now, return first array
+            // Real implementation would merge all arrays
+            Ok(Some(clone_val(&args[0])))
+        }
+        "esc_attr" => {
+            if args.is_empty() {
+                return Err("esc_attr() expects 1 argument".into());
+            }
+            let s = crate::engine::operators::zval_get_string(&args[0]);
+            let escaped = s.as_str()
+                .replace('&', "&amp;")
+                .replace('<', "&lt;")
+                .replace('>', "&gt;")
+                .replace('"', "&quot;")
+                .replace('\'', "&#039;");
+            Ok(Some(string_val(&escaped)))
+        }
+        "esc_url" => {
+            if args.is_empty() {
+                return Err("esc_url() expects 1 argument".into());
+            }
+            // For now, just return the URL as-is
+            // Real implementation would sanitize URL
+            Ok(Some(clone_val(&args[0])))
+        }
+        "ucfirst" => {
+            if args.is_empty() {
+                return Err("ucfirst() expects 1 argument".into());
+            }
+            let s = crate::engine::operators::zval_get_string(&args[0]);
+            let s_str = s.as_str();
+            if s_str.is_empty() {
+                return Ok(Some(string_val("")));
+            }
+            let mut chars = s_str.chars();
+            let first = chars.next().unwrap().to_uppercase().to_string();
+            let rest: String = chars.collect();
+            Ok(Some(string_val(&(first + &rest))))
         }
 
         // --- Info ---

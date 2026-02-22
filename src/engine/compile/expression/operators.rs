@@ -272,11 +272,13 @@ fn parse_multiplicative_expr_with_initial(
 ) -> Result<(Val, Token), String> {
     // Handle interpolated strings
     if initial_token.token_type == TokenType::T_CONSTANT_ENCAPSED_STRING {
-        let s = initial_token.value.as_ref().unwrap().as_str();
-        if s.contains('$') {
-            let result = compile_interpolated_string(s, context)?;
-            let next = lexer.next_token()?;
-            return multiplicative_loop(lexer, context, result, next);
+        if let Some(ref val) = initial_token.value {
+            let s = val.as_str();
+            if s.contains('$') {
+                let result = compile_interpolated_string(s, context)?;
+                let next = lexer.next_token()?;
+                return multiplicative_loop(lexer, context, result, next);
+            }
         }
     }
 

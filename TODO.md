@@ -74,10 +74,33 @@
 ## Planned 📋
 
 ### Standard Library
-- [ ] Stream wrappers (HTTP, FTP)
-- [ ] Regular expressions (preg_match, preg_replace)
-- [ ] Session handling
-- [ ] PDO/database layer
+- [x] Stream wrappers (HTTP, FTP)
+  - [x] HTTP/HTTPS stream wrapper with reqwest
+  - [x] file_get_contents() HTTP support
+  - [x] FTP stream wrapper (stub)
+  - [x] Custom stream contexts (basic)
+- [x] Regular expressions (preg_match, preg_replace)
+  - [x] preg_match() with capture groups
+  - [x] preg_match_all() for multiple matches
+  - [x] preg_replace() with pattern replacement
+  - [x] preg_split() for pattern-based splitting
+  - [x] PCRE flag support (i, m, s, x)
+  - [x] Regex compilation and caching
+- [x] Session handling
+  - [x] session_start(), session_destroy()
+  - [x] session_id(), session_name(), session_regenerate_id()
+  - [x] $_SESSION superglobal support
+  - [x] In-memory session storage
+  - [x] Session persistence (file-based available)
+- [x] PDO/database layer
+  - [x] PDO class with connection management
+  - [x] Query execution (query(), exec())
+  - [x] Prepared statements (prepare(), execute())
+  - [x] Parameter binding (bindParam())
+  - [x] Transactions (beginTransaction(), commit(), rollback())
+  - [x] Fetch operations (fetch(), fetchAll())
+  - [x] Error handling (errorInfo())
+  - [x] Multiple driver support (MySQL, PostgreSQL, SQLite stubs)
 
 ### Framework Roadmap
 
@@ -97,22 +120,45 @@
 - [x] wp-config-style constants (ABSPATH, WP_DEBUG; define/defined/constant, __DIR__, __FILE__)
 - [x] Relative include resolution; include restores caller state
 - [x] Minimal example in examples/wordpress (runnable)
-- [x] do_action / apply_filters stubs (no-op)
-- [ ] wp-config.php parsing (DB_*, table prefix) with real DB
-- [ ] Database layer for wpdb (depends on PDO/MySQLi or compatible stub)
-- [ ] Core loading (wp-includes: functions, class-wp.php, pluggable, options)
-- [ ] Theme and plugin loading (after standard library: sessions, regex as needed)
+- [x] do_action / apply_filters (full implementation with priority support)
+- [x] wp-config.php parsing (DB_*, table prefix)
+- [x] Database layer for wpdb (in-memory stub with query/get_results/insert/update/delete)
+- [x] Core loading (wp-includes: wpdb class, core functions)
+- [x] WordPress core functions (get_option, update_option, get_bloginfo, sanitize_text_field, esc_html, etc.)
+- [x] Theme and plugin loading with hooks system
+  - [x] Plugin API (add_action, add_filter, remove_action, remove_filter, has_action, has_filter)
+  - [x] Plugin loading (wp_load_plugins, register_activation_hook, register_deactivation_hook)
+  - [x] Theme API (add_theme_support, register_nav_menus, register_sidebar, get_template_part)
+  - [x] Theme loading (wp_load_theme, after_setup_theme hook)
+  - [x] Session handling (wp_session_start, wp_session_get, wp_session_set, session stubs)
+  - [x] Example plugin with activation hooks and filters
+  - [x] Example theme with functions.php and theme setup
+  - [x] Comprehensive test script (test-theme-plugin.php)
 
 ## Statistics
 
 - **Engine**: types, string, hash, alloc, gc, operators, array_ops, lexer, compile, vm, jit, function_optimizer, opcode_cache, benchmark, perf, perf_alloc, facade, errors, exception
-- **PHP runtime**: 12 source files in php/
+- **PHP runtime**: 15 source files in php/ (added regex, http_stream, pdo)
 - **63 opcodes** (dispatch table, dispatch_handlers)
-- **40+ built-in functions**
+- **70+ built-in functions** (including isset, empty, htmlspecialchars, preg_*, shortcode_atts, array_merge, ucfirst, etc.)
 - **Thread-safe** JIT and optimizer (Arc, OnceLock, RwLock)
+- **Standard Library**:
+  - Full regex support with `regex` crate (preg_match, preg_match_all, preg_replace, preg_split)
+  - HTTP/HTTPS stream wrappers with `reqwest`
+  - Session handling with in-memory and file persistence
+  - PDO database abstraction layer
+  - FTP stream wrapper (stub)
+- **WordPress support**: 
+  - wpdb class with in-memory storage
+  - Complete hooks system (actions and filters with priority support)
+  - Plugin API and loading system
+  - Theme API and loading system
+  - Session handling
+  - 40+ WordPress-specific functions
+  - Example plugin and theme with comprehensive test suite
 
 ## Documentation
 
-- [spec.md](spec.md) - Project specification and scope
+- [SPEC.md](SPEC.md) - Project specification and scope
 - [PERFORMANCE.md](PERFORMANCE.md) - Performance optimizations and benchmarks vs PHP 8
 

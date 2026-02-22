@@ -37,7 +37,8 @@ pub(crate) fn is_var_ref(z: &Val) -> bool {
 }
 
 /// Resolve an operand: if it's a temp var ref, look up in temp_vars;
-/// if it's a variable ref, look up in symbol_table; otherwise return literal.
+/// if it's a variable ref, look up in symbol_table; if it's a constant identifier,
+/// look up in constants; otherwise return literal.
 pub(crate) fn resolve_operand(operand: &Val, execute_data: &ExecuteData) -> Val {
     if is_temp_ref(operand) {
         if let PhpValue::Long(idx) = &operand.value {
@@ -49,6 +50,16 @@ pub(crate) fn resolve_operand(operand: &Val, execute_data: &ExecuteData) -> Val 
             let n = name.as_str();
             let clean = if n.starts_with('$') { &n[1..] } else { n };
             return execute_data.get_var(clean);
+        }
+    }
+    // Check if it's a constant identifier (bare string that might be a constant name)
+    if operand.get_type() == PhpType::String {
+        if let PhpValue::String(name) = &operand.value {
+            let name_str = name.as_str();
+            // Check if this is a constant (uppercase identifier without quotes in source)
+            if execute_data.constants.contains_key(name_str) {
+                return clone_val(execute_data.constants.get(name_str).unwrap());
+            }
         }
     }
     clone_val(operand)

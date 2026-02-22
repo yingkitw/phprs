@@ -104,7 +104,7 @@ impl Lexer {
 
             let (token_type, value_str) = self.read_token(self.current_char().ok_or("Unexpected EOF")?)?;
 
-            let value = if value_str.is_empty() {
+            let value = if value_str.is_empty() && token_type != TokenType::T_CONSTANT_ENCAPSED_STRING {
                 None
             } else {
                 Some(string_init(&value_str, false))

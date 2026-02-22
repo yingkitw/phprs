@@ -23,15 +23,15 @@ pub(crate) fn token_to_primary(tok: &Token) -> Result<Val, String> {
             Ok(facade::long_val(num_val))
         }
         TokenType::T_DNUMBER => {
-            let num_val = tok.value.as_ref().unwrap().as_str().parse::<f64>().unwrap_or(0.0);
+            let num_val = tok.value.as_ref().ok_or("Number token missing value")?.as_str().parse::<f64>().unwrap_or(0.0);
             Ok(facade::double_val(num_val))
         }
         TokenType::T_CONSTANT_ENCAPSED_STRING => {
-            let str_val = tok.value.as_ref().unwrap().clone();
+            let str_val = tok.value.as_ref().ok_or("String token missing value")?.clone();
             Ok(Val::new(crate::engine::types::PhpValue::String(Box::new(str_val)), crate::engine::types::PhpType::String))
         }
         TokenType::T_VARIABLE => {
-            let name = tok.value.as_ref().unwrap().as_str();
+            let name = tok.value.as_ref().ok_or("Variable token missing value")?.as_str();
             Ok(var_ref(name))
         }
         TokenType::T_STRING => {
@@ -475,10 +475,9 @@ pub(crate) fn parse_function_call(
 }
 
 /// Emit constant(name) lookup for bare identifiers (WordPress/PHP compatibility)
-pub(crate) fn compile_constant_lookup(context: &mut CompileContext, name: &str) -> Val {
-    let slot = context.alloc_temp();
-    context.emit_opcode(Opcode::InitFCall, facade::null_val(), facade::null_val(), facade::null_val());
-    context.emit_opcode(Opcode::SendVal, facade::string_val(name), facade::null_val(), facade::null_val());
-    context.emit_opcode(Opcode::DoFCall, facade::string_val("constant"), facade::null_val(), temp_var_ref(slot));
-    temp_var_ref(slot)
+/// Returns a string Val with the constant name that will be resolved at runtime
+pub(crate) fn compile_constant_lookup(_context: &mut CompileContext, name: &str) -> Val {
+    // Return the constant name as a string literal
+    // resolve_operand will check the constants HashMap for this name
+    facade::string_val(name)
 }
