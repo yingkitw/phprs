@@ -12,9 +12,7 @@ pub struct OutputBuffer {
 
 impl OutputBuffer {
     pub fn new() -> Self {
-        Self {
-            buffer: Vec::new(),
-        }
+        Self { buffer: Vec::new() }
     }
 
     pub fn write(&mut self, data: &[u8]) -> Result<usize, String> {
@@ -50,7 +48,7 @@ impl Default for OutputBuffer {
     }
 }
 
-/// Output buffer stack (thread-local to avoid races between parallel tests)
+// Output buffer stack (thread-local to avoid races between parallel tests)
 thread_local! {
     static OUTPUT_BUFFERS: std::cell::RefCell<Vec<OutputBuffer>> = std::cell::RefCell::new(Vec::new());
 }

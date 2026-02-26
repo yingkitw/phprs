@@ -60,3 +60,23 @@ cargo run -p phprs-cli -- run examples/wordpress/index.php
 ```
 
 See [wordpress/README.md](wordpress/README.md) for layout and engine requirements.
+
+### CodeIgniter 4-style example
+
+Run the minimal CodeIgniter 4 bootstrap:
+
+```bash
+cargo run -p phprs-cli -- run examples/codeigniter/public/index.php
+```
+
+See [codeigniter/README.md](codeigniter/README.md) for layout.
+
+### Drupal-style example
+
+Run the minimal Drupal bootstrap:
+
+```bash
+cargo run -p phprs-cli -- run examples/drupal/index.php
+```
+
+See [drupal/README.md](drupal/README.md) for layout.

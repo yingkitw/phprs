@@ -8,7 +8,7 @@ use super::execute_data::{
     clone_val, is_temp_ref, is_var_ref, resolve_operand, result_slot, ExecResult, ExecuteData,
 };
 use super::opcodes::{Op, OpArray, Opcode};
-use crate::engine::facade::{bool_val, long_val};
+
 use crate::engine::jit::{increment_execution_counter, try_inline_operation};
 use crate::engine::types::{PhpType, PhpValue, Val};
 
@@ -215,7 +215,7 @@ pub fn execute_do_fcall(op: &Op, execute_data: &mut ExecuteData) -> Result<ExecR
             let jit_result = jit.get_compiled_function(&func_name);
             if let Some(jit_result) = jit_result {
                 execute_data.call_args.extend(args);
-                let result = {
+                let _result = {
                     let func = jit_result.clone();
                     func(execute_data)?
                 };
@@ -234,9 +234,7 @@ pub fn execute_do_fcall(op: &Op, execute_data: &mut ExecuteData) -> Result<ExecR
                 .and_then(|ft| {
                     ft.downcast_ref::<crate::engine::compile::function_table::FunctionTable>()
                 })
-                .and_then(|ft| {
-                    ft.lookup_function(&func_name)
-                })
+                .and_then(|ft| ft.lookup_function(&func_name))
                 .map(|func_op_array| {
                     // Extract param names from vars - optimized with capacity
                     let param_names: Vec<String> = func_op_array
@@ -366,15 +364,16 @@ pub fn execute_include(op: &Op, execute_data: &mut ExecuteData) -> Result<ExecRe
     let path_val = resolve_operand(&op.op1, execute_data);
     let path = crate::engine::operators::zval_get_string(&path_val);
     let path_str = path.as_str();
-    let resolved = if path_str.starts_with('/') || (path_str.len() >= 2 && path_str.get(1..2) == Some(":")) {
-        path_str.to_string()
-    } else if let Some(ref dir) = execute_data.current_script_dir {
-        let mut p = std::path::PathBuf::from(dir);
-        p.push(path_str);
-        p.to_string_lossy().into_owned()
-    } else {
-        path_str.to_string()
-    };
+    let resolved =
+        if path_str.starts_with('/') || (path_str.len() >= 2 && path_str.get(1..2) == Some(":")) {
+            path_str.to_string()
+        } else if let Some(ref dir) = execute_data.current_script_dir {
+            let mut p = std::path::PathBuf::from(dir);
+            p.push(path_str);
+            p.to_string_lossy().into_owned()
+        } else {
+            path_str.to_string()
+        };
 
     let is_once = op.extended_value == 2 || op.extended_value == 3;
     if is_once && execute_data.included_files.contains(&resolved) {
@@ -738,7 +737,10 @@ pub fn execute_is_identical(op: &Op, execute_data: &mut ExecuteData) -> Result<E
 }
 
 #[inline]
-pub fn execute_is_not_identical(op: &Op, execute_data: &mut ExecuteData) -> Result<ExecResult, String> {
+pub fn execute_is_not_identical(
+    op: &Op,
+    execute_data: &mut ExecuteData,
+) -> Result<ExecResult, String> {
     let op1 = resolve_operand(&op.op1, execute_data);
     let op2 = resolve_operand(&op.op2, execute_data);
     let result = !(op1.value == op2.value && op1.get_type() == op2.get_type());
@@ -782,7 +784,10 @@ pub fn execute_is_smaller(op: &Op, execute_data: &mut ExecuteData) -> Result<Exe
 }
 
 #[inline]
-pub fn execute_is_smaller_or_equal(op: &Op, execute_data: &mut ExecuteData) -> Result<ExecResult, String> {
+pub fn execute_is_smaller_or_equal(
+    op: &Op,
+    execute_data: &mut ExecuteData,
+) -> Result<ExecResult, String> {
     let op1 = resolve_operand(&op.op1, execute_data);
     let op2 = resolve_operand(&op.op2, execute_data);
     let result = crate::engine::operators::zval_compare(&op1, &op2) <= 0;

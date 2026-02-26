@@ -2,7 +2,7 @@
 //!
 //! Advanced function call optimizations to outperform PHP 8
 
-use crate::engine::types::{PhpResult, Val};
+use crate::engine::types::PhpResult;
 use crate::vm::execute_data::{ExecResult, ExecuteData};
 use crate::vm::opcodes::{Op, OpArray, Opcode};
 use std::collections::HashMap;
@@ -120,9 +120,9 @@ impl FunctionOptimizer {
     fn analyze_complexity(&self, ops: &[Op]) -> Complexity {
         let op_count = ops.len();
         let mut loop_count = 0;
-        let mut branch_count = 0;
+        let mut _branch_count = 0;
         let mut call_count = 0;
-        let mut complex_ops = 0;
+        let mut _complex_ops = 0;
 
         for op in ops {
             match op.opcode {
@@ -130,12 +130,12 @@ impl FunctionOptimizer {
                     if op.extended_value < ops.len() as u32 {
                         loop_count += 1;
                     } else {
-                        branch_count += 1;
+                        _branch_count += 1;
                     }
                 }
-                Opcode::JmpZ | Opcode::JmpNZ => branch_count += 1,
+                Opcode::JmpZ | Opcode::JmpNZ => _branch_count += 1,
                 Opcode::InitFCall | Opcode::DoFCall => call_count += 1,
-                Opcode::Include | Opcode::NewObj | Opcode::DoMethodCall => complex_ops += 1,
+                Opcode::Include | Opcode::NewObj | Opcode::DoMethodCall => _complex_ops += 1,
                 _ => {}
             }
         }
@@ -243,7 +243,7 @@ impl FunctionOptimizer {
     fn optimize_for_inlining(
         &mut self,
         ops: &[Op],
-        metadata: &FunctionMetadata,
+        _metadata: &FunctionMetadata,
     ) -> Result<Vec<Op>, String> {
         let mut optimized = Vec::with_capacity(ops.len());
 
@@ -427,7 +427,7 @@ pub fn analyze_function(name: &str, op_array: &OpArray) -> FunctionMetadata {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::engine::types::{PhpType, PhpValue};
+    use crate::engine::types::{PhpType, PhpValue, Val};
 
     #[test]
     fn test_function_analysis() {

@@ -250,10 +250,10 @@ impl BenchmarkSuite {
             });
 
             // Reduce operation
-            let mut sum = 0i64;
+            let mut _sum = 0i64;
             for bucket in &array.inner.ar_data {
                 if let PhpValue::Long(n) = bucket.val.value {
-                    sum += n;
+                    _sum += n;
                 }
             }
         }

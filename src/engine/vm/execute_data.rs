@@ -81,7 +81,7 @@ pub(crate) fn clone_val(source: &Val) -> Val {
 }
 
 /// Result of opcode execution
-pub(crate) enum ExecResult {
+pub enum ExecResult {
     Continue,
     Jump(u32),
     Return(Val),

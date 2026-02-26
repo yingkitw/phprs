@@ -235,9 +235,7 @@ pub(crate) fn execute_builtin_function(
         }
         "is_array" => Ok(Some(type_check(args, |t| t == PhpType::Array))),
         "is_string" => Ok(Some(type_check(args, |t| t == PhpType::String))),
-        "is_int" | "is_integer" | "is_long" => {
-            Ok(Some(type_check(args, |t| t == PhpType::Long)))
-        }
+        "is_int" | "is_integer" | "is_long" => Ok(Some(type_check(args, |t| t == PhpType::Long))),
         "is_bool" => Ok(Some(type_check(args, |t| {
             t == PhpType::True || t == PhpType::False
         }))),
@@ -386,7 +384,7 @@ pub(crate) fn execute_builtin_function(
             }
             let path = crate::engine::operators::zval_get_string(&args[0]);
             let path_str = path.as_str();
-            
+
             // Check if it's an HTTP/HTTPS URL
             if path_str.starts_with("http://") || path_str.starts_with("https://") {
                 match crate::php::http_stream::file_get_contents_http(path_str) {
@@ -485,7 +483,8 @@ pub(crate) fn execute_builtin_function(
                 return Err("htmlspecialchars() expects at least 1 argument".into());
             }
             let s = crate::engine::operators::zval_get_string(&args[0]);
-            let escaped = s.as_str()
+            let escaped = s
+                .as_str()
                 .replace('&', "&amp;")
                 .replace('<', "&lt;")
                 .replace('>', "&gt;")
@@ -498,7 +497,8 @@ pub(crate) fn execute_builtin_function(
                 return Err("htmlentities() expects at least 1 argument".into());
             }
             let s = crate::engine::operators::zval_get_string(&args[0]);
-            let escaped = s.as_str()
+            let escaped = s
+                .as_str()
                 .replace('&', "&amp;")
                 .replace('<', "&lt;")
                 .replace('>', "&gt;")
@@ -514,7 +514,7 @@ pub(crate) fn execute_builtin_function(
             }
             let pattern = crate::engine::operators::zval_get_string(&args[0]);
             let subject = crate::engine::operators::zval_get_string(&args[1]);
-            
+
             match crate::php::regex::preg_match(pattern.as_str(), subject.as_str(), None) {
                 Ok(result) => Ok(Some(Val::new(PhpValue::Long(result), PhpType::Long))),
                 Err(e) => Err(format!("preg_match error: {}", e)),
@@ -526,11 +526,14 @@ pub(crate) fn execute_builtin_function(
             }
             let pattern = crate::engine::operators::zval_get_string(&args[0]);
             let subject = crate::engine::operators::zval_get_string(&args[1]);
-            
+
             match crate::php::regex::preg_match_all(pattern.as_str(), subject.as_str()) {
                 Ok(matches) => {
                     // Return count of matches
-                    Ok(Some(Val::new(PhpValue::Long(matches.len() as i64), PhpType::Long)))
+                    Ok(Some(Val::new(
+                        PhpValue::Long(matches.len() as i64),
+                        PhpType::Long,
+                    )))
                 }
                 Err(e) => Err(format!("preg_match_all error: {}", e)),
             }
@@ -542,8 +545,12 @@ pub(crate) fn execute_builtin_function(
             let pattern = crate::engine::operators::zval_get_string(&args[0]);
             let replacement = crate::engine::operators::zval_get_string(&args[1]);
             let subject = crate::engine::operators::zval_get_string(&args[2]);
-            
-            match crate::php::regex::preg_replace(pattern.as_str(), replacement.as_str(), subject.as_str()) {
+
+            match crate::php::regex::preg_replace(
+                pattern.as_str(),
+                replacement.as_str(),
+                subject.as_str(),
+            ) {
                 Ok(result) => Ok(Some(string_val(&result))),
                 Err(e) => Err(format!("preg_replace error: {}", e)),
             }
@@ -559,20 +566,25 @@ pub(crate) fn execute_builtin_function(
             } else {
                 None
             };
-            
+
             match crate::php::regex::preg_split(pattern.as_str(), subject.as_str(), limit) {
                 Ok(parts) => {
                     let mut arr = crate::engine::types::PhpArray::new();
                     for (i, part) in parts.iter().enumerate() {
                         let val = string_val(part);
-                        let _ = crate::engine::hash::hash_add_or_update(&mut arr, None, i as u64, val, 0);
+                        let _ = crate::engine::hash::hash_add_or_update(
+                            &mut arr, None, i as u64, val, 0,
+                        );
                     }
-                    Ok(Some(Val::new(PhpValue::Array(Box::new(arr)), PhpType::Array)))
+                    Ok(Some(Val::new(
+                        PhpValue::Array(Box::new(arr)),
+                        PhpType::Array,
+                    )))
                 }
                 Err(e) => Err(format!("preg_split error: {}", e)),
             }
         }
-        
+
         // --- WordPress/Array functions ---
         "shortcode_atts" => {
             // shortcode_atts($defaults, $atts) - merge attributes with defaults
@@ -583,20 +595,13 @@ pub(crate) fn execute_builtin_function(
             // In real implementation, this would merge with defaults
             Ok(Some(clone_val(&args[1])))
         }
-        "array_merge" => {
-            if args.is_empty() {
-                return Ok(Some(Val::new(PhpValue::Array(Box::new(crate::engine::types::PhpArray::new())), PhpType::Array)));
-            }
-            // For now, return first array
-            // Real implementation would merge all arrays
-            Ok(Some(clone_val(&args[0])))
-        }
         "esc_attr" => {
             if args.is_empty() {
                 return Err("esc_attr() expects 1 argument".into());
             }
             let s = crate::engine::operators::zval_get_string(&args[0]);
-            let escaped = s.as_str()
+            let escaped = s
+                .as_str()
                 .replace('&', "&amp;")
                 .replace('<', "&lt;")
                 .replace('>', "&gt;")

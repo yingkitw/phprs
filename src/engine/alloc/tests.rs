@@ -28,24 +28,17 @@ fn test_pemalloc_non_persistent() {
 
 #[test]
 fn test_pemalloc_persistent() {
-    // Get initial count (may have other allocations from previous tests)
-    let initial_count = get_allocation_count();
+    // Persistent allocations use a separate HashMap (not NON_PERSISTENT_STATS),
+    // so get_allocation_count() does not change. Just verify alloc/free work.
     let size = 2048;
 
     let ptr = unsafe { pemalloc(size, true) };
     assert!(!ptr.is_null());
 
-    let new_count = get_allocation_count();
-    // Allocation count should increase
-    assert!(new_count >= initial_count);
-
     unsafe {
         pefree(ptr, true);
     }
-
-    // After free, count should decrease (but may not be exactly initial due to other allocations)
-    let final_count = get_allocation_count();
-    assert!(final_count <= new_count);
+    // No double-free; alloc/free completed successfully
 }
 
 #[test]

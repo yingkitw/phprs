@@ -5,7 +5,7 @@
 
 use crate::engine::types::{PhpResult, Val};
 use crate::vm::execute_data::{ExecResult, ExecuteData};
-use crate::vm::opcodes::{Op, OpArray, Opcode};
+use crate::vm::opcodes::{OpArray, Opcode};
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{OnceLock, RwLock};
@@ -278,7 +278,8 @@ pub fn increment_execution_counter(function_name: &str) -> bool {
         let mut jit = jit.write().unwrap();
         let counter = jit.get_counter(function_name);
         let count = counter.increment();
-        let should_compile = count >= JIT_THRESHOLD && !counter.jit_compiled.load(Ordering::Relaxed);
+        let should_compile =
+            count >= JIT_THRESHOLD && !counter.jit_compiled.load(Ordering::Relaxed);
         drop(jit); // Explicitly release the write lock to prevent deadlock
         should_compile
     } else {
@@ -301,7 +302,7 @@ pub fn execute_with_jit(
             drop(jit); // Release the read lock
 
             // We need to update stats - get a write lock just for that
-            let mut jit = get_jit_compiler().write().unwrap();
+            let jit = get_jit_compiler().write().unwrap();
             jit.jit_stats.jit_hits.fetch_add(1, Ordering::Relaxed);
             return compiled_fn(execute_data);
         }

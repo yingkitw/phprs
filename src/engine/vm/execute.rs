@@ -1,10 +1,10 @@
 //! Main VM execution loop
 
 use super::execute_data::{clone_val, ExecResult, ExecuteData};
-use super::handlers::execute_opcode;
+
 use super::opcodes::{Op, OpArray, Opcode};
-use crate::engine::types::{PhpResult, PhpType, PhpValue, Val};
 use crate::engine::string::string_init;
+use crate::engine::types::{PhpResult, PhpType, PhpValue, Val};
 use std::sync::OnceLock;
 
 // Performance-optimized dispatch table
@@ -91,21 +91,27 @@ pub fn execute_ex_returning(
     execute_data.op_array = Some(new_op_array);
     execute_data.current_op = 0;
     execute_data.current_script_dir = op_array.filename.as_ref().and_then(|f| {
-        std::path::Path::new(f).parent().map(|p| p.to_string_lossy().into_owned())
+        std::path::Path::new(f)
+            .parent()
+            .map(|p| p.to_string_lossy().into_owned())
     });
     if let Some(ref dir) = execute_data.current_script_dir {
         let dir_val = Val::new(
             PhpValue::String(Box::new(string_init(dir, false))),
             PhpType::String,
         );
-        execute_data.constants.insert("__DIR__".to_string(), dir_val);
+        execute_data
+            .constants
+            .insert("__DIR__".to_string(), dir_val);
     }
     if let Some(ref path) = op_array.filename {
         let file_val = Val::new(
             PhpValue::String(Box::new(string_init(path, false))),
             PhpType::String,
         );
-        execute_data.constants.insert("__FILE__".to_string(), file_val);
+        execute_data
+            .constants
+            .insert("__FILE__".to_string(), file_val);
     }
 
     // Optimized execution loop with direct dispatch
@@ -121,7 +127,10 @@ pub fn execute_ex_returning(
     while execute_data.current_op < len {
         iteration_count += 1;
         if iteration_count > max_iterations {
-            eprintln!("VM execution exceeded maximum iterations ({}), possible infinite loop", max_iterations);
+            eprintln!(
+                "VM execution exceeded maximum iterations ({}), possible infinite loop",
+                max_iterations
+            );
             return (PhpResult::Failure, None);
         }
 
@@ -176,7 +185,9 @@ pub fn execute_ex(execute_data: &mut ExecuteData, op_array: &OpArray) -> PhpResu
     execute_data.op_array = Some(new_op_array);
     execute_data.current_op = 0;
     execute_data.current_script_dir = op_array.filename.as_ref().and_then(|f| {
-        std::path::Path::new(f).parent().map(|p| p.to_string_lossy().into_owned())
+        std::path::Path::new(f)
+            .parent()
+            .map(|p| p.to_string_lossy().into_owned())
     });
     // Set __DIR__ magic constant for WordPress/script compatibility
     if let Some(ref dir) = execute_data.current_script_dir {
@@ -184,14 +195,18 @@ pub fn execute_ex(execute_data: &mut ExecuteData, op_array: &OpArray) -> PhpResu
             PhpValue::String(Box::new(string_init(dir, false))),
             PhpType::String,
         );
-        execute_data.constants.insert("__DIR__".to_string(), dir_val);
+        execute_data
+            .constants
+            .insert("__DIR__".to_string(), dir_val);
     }
     if let Some(ref path) = op_array.filename {
         let file_val = Val::new(
             PhpValue::String(Box::new(string_init(path, false))),
             PhpType::String,
         );
-        execute_data.constants.insert("__FILE__".to_string(), file_val);
+        execute_data
+            .constants
+            .insert("__FILE__".to_string(), file_val);
     }
 
     // Optimized class table transfer with capacity hints
@@ -254,7 +269,10 @@ pub fn execute_ex(execute_data: &mut ExecuteData, op_array: &OpArray) -> PhpResu
     while execute_data.current_op < len {
         iteration_count += 1;
         if iteration_count > max_iterations {
-            eprintln!("VM execution exceeded maximum iterations ({}), possible infinite loop", max_iterations);
+            eprintln!(
+                "VM execution exceeded maximum iterations ({}), possible infinite loop",
+                max_iterations
+            );
             return PhpResult::Failure;
         }
 

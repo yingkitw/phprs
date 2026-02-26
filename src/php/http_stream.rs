@@ -6,6 +6,7 @@ use std::io::{Read, Seek, SeekFrom, Write};
 
 /// HTTP Stream for reading from URLs
 pub struct HttpStream {
+    #[allow(dead_code)]
     url: String,
     content: Vec<u8>,
     position: usize,

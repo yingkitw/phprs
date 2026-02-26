@@ -1,6 +1,6 @@
 [package]
 name = "phprs"
-version = "0.1.3"
+version = "0.1.4"
 authors = ["Ying kit WONG"]
 license = "Apache-2.0"
 description = "A PHP interpreter with build/package manager written in Rust"

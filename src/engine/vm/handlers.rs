@@ -11,6 +11,7 @@ use crate::engine::facade::{bool_val, long_val};
 use crate::engine::types::{PhpType, PhpValue, Val};
 
 /// Extract variable name from a Val (for get_var/remove_var calls)
+#[allow(dead_code)]
 fn val_to_var_name(val: &Val) -> Option<String> {
     if let PhpValue::String(ref s) = val.value {
         let name = s.as_str();
@@ -25,6 +26,7 @@ fn val_to_var_name(val: &Val) -> Option<String> {
 }
 
 /// Execute a single opcode
+#[allow(dead_code)]
 pub(crate) fn execute_opcode(
     op: &Op,
     execute_data: &mut ExecuteData,
@@ -440,6 +442,7 @@ pub(crate) fn execute_opcode(
 
 // --- Helper functions for common handler patterns ---
 
+#[allow(dead_code)]
 fn execute_binary_op<F>(
     op: &Op,
     execute_data: &mut ExecuteData,
@@ -457,6 +460,7 @@ where
     Ok(ExecResult::Continue)
 }
 
+#[allow(dead_code)]
 fn execute_cmp_op<F>(
     op: &Op,
     execute_data: &mut ExecuteData,
@@ -479,6 +483,7 @@ where
     Ok(ExecResult::Continue)
 }
 
+#[allow(dead_code)]
 fn execute_bitwise_op<F>(
     op: &Op,
     execute_data: &mut ExecuteData,
@@ -500,6 +505,7 @@ where
 
 // --- Complex handler functions ---
 
+#[allow(dead_code)]
 fn execute_include(op: &Op, execute_data: &mut ExecuteData) -> Result<ExecResult, String> {
     let path_val = resolve_operand(&op.op1, execute_data);
     let path = crate::engine::operators::zval_get_string(&path_val);
@@ -532,6 +538,7 @@ fn execute_include(op: &Op, execute_data: &mut ExecuteData) -> Result<ExecResult
     }
 }
 
+#[allow(dead_code)]
 fn execute_init_array(op: &Op, execute_data: &mut ExecuteData) -> Result<ExecResult, String> {
     let arr = crate::engine::types::PhpArray::new();
     let arr_zval = Val::new(PhpValue::Array(Box::new(arr)), PhpType::Array);
@@ -541,6 +548,7 @@ fn execute_init_array(op: &Op, execute_data: &mut ExecuteData) -> Result<ExecRes
     Ok(ExecResult::Continue)
 }
 
+#[allow(dead_code)]
 fn execute_add_array_element(
     op: &Op,
     execute_data: &mut ExecuteData,
@@ -569,6 +577,7 @@ fn execute_add_array_element(
     Ok(ExecResult::Continue)
 }
 
+#[allow(dead_code)]
 fn execute_fetch_dim(op: &Op, execute_data: &mut ExecuteData) -> Result<ExecResult, String> {
     let arr_val = resolve_operand(&op.op1, execute_data);
     let idx_val = resolve_operand(&op.op2, execute_data);
@@ -591,6 +600,7 @@ fn execute_fetch_dim(op: &Op, execute_data: &mut ExecuteData) -> Result<ExecResu
     Ok(ExecResult::Continue)
 }
 
+#[allow(dead_code)]
 fn execute_new_obj(op: &Op, execute_data: &mut ExecuteData) -> Result<ExecResult, String> {
     let class_name_val = resolve_operand(&op.op1, execute_data);
     let class_name = crate::engine::operators::zval_get_string(&class_name_val);
@@ -611,6 +621,7 @@ fn execute_new_obj(op: &Op, execute_data: &mut ExecuteData) -> Result<ExecResult
     Ok(ExecResult::Continue)
 }
 
+#[allow(dead_code)]
 fn execute_fetch_obj_prop(op: &Op, execute_data: &mut ExecuteData) -> Result<ExecResult, String> {
     let obj_val = resolve_operand(&op.op1, execute_data);
     let prop_name_val = resolve_operand(&op.op2, execute_data);
@@ -631,6 +642,7 @@ fn execute_fetch_obj_prop(op: &Op, execute_data: &mut ExecuteData) -> Result<Exe
     Ok(ExecResult::Continue)
 }
 
+#[allow(dead_code)]
 fn execute_assign_obj_prop(op: &Op, execute_data: &mut ExecuteData) -> Result<ExecResult, String> {
     let var_name_val = &op.op1;
     let prop_name_val = resolve_operand(&op.op2, execute_data);
@@ -664,6 +676,7 @@ fn execute_assign_obj_prop(op: &Op, execute_data: &mut ExecuteData) -> Result<Ex
     Ok(ExecResult::Continue)
 }
 
+#[allow(dead_code)]
 fn execute_do_method_call(op: &Op, execute_data: &mut ExecuteData) -> Result<ExecResult, String> {
     let method_name_val = resolve_operand(&op.op1, execute_data);
     let method_name = crate::engine::operators::zval_get_string(&method_name_val);
@@ -742,6 +755,7 @@ fn execute_do_method_call(op: &Op, execute_data: &mut ExecuteData) -> Result<Exe
     Ok(ExecResult::Continue)
 }
 
+#[allow(dead_code)]
 fn execute_do_fcall(op: &Op, execute_data: &mut ExecuteData) -> Result<ExecResult, String> {
     let func_name = if is_var_ref(&op.op1) || is_temp_ref(&op.op1) {
         let resolved = resolve_operand(&op.op1, execute_data);

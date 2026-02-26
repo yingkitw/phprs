@@ -11,6 +11,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 #[derive(Debug)]
 pub struct MemoryPool {
     pools: [Vec<NonNull<u8>>; 8],
+    #[allow(dead_code)]
     sizes: [usize; 8],
     total_allocated: AtomicUsize,
 }
@@ -116,7 +117,7 @@ impl Default for MemoryPool {
     }
 }
 
-/// Thread-local memory pool for fast allocations
+// Thread-local memory pool for fast allocations
 thread_local! {
     static MEMORY_POOL: std::cell::RefCell<MemoryPool> = std::cell::RefCell::new(MemoryPool::new());
 }
@@ -125,6 +126,7 @@ thread_local! {
 #[derive(Debug)]
 pub struct StringBuilder {
     buffer: Vec<u8>,
+    #[allow(dead_code)]
     capacity: usize,
 }
 

@@ -404,7 +404,10 @@ pub fn load_optimized_opcodes(filename: &str) -> Option<Vec<Op>> {
 }
 
 /// Runtime optimization of hot paths
-pub fn optimize_hot_path(execute_data: &mut ExecuteData, op_array: &OpArray) -> Result<(), String> {
+pub fn optimize_hot_path(
+    _execute_data: &mut ExecuteData,
+    op_array: &OpArray,
+) -> Result<(), String> {
     let cache = get_opcode_cache();
 
     // Identify hot spots based on execution frequency
@@ -419,7 +422,7 @@ pub fn optimize_hot_path(execute_data: &mut ExecuteData, op_array: &OpArray) -> 
         // Re-optimize with aggressive level for hot paths
         let mut optimized_ops = op_array.ops.clone();
         for &hot_idx in &hot_operations {
-            if let Some(op) = optimized_ops.get_mut(hot_idx) {
+            if let Some(_op) = optimized_ops.get_mut(hot_idx) {
                 // Add hot path hints
                 // This would be more sophisticated in a real implementation
             }

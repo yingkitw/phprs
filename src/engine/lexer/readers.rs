@@ -109,6 +109,7 @@ pub fn read_variable(input: &[u8], position: &mut usize) -> ReadResult {
 }
 
 /// Skip whitespace
+#[allow(dead_code)]
 pub fn skip_whitespace(input: &[u8], position: &mut usize) {
     while let Some(&ch) = input.get(*position) {
         if ch.is_ascii_whitespace() {

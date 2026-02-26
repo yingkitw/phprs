@@ -28,8 +28,14 @@ static NON_PERSISTENT_STATS: MemoryStats = MemoryStats {
     count: AtomicUsize::new(0),
 };
 
-/// Track persistent allocations (size -> count)
+/// Track persistent allocations (ptr -> size)
 fn persistent_allocs() -> &'static Mutex<HashMap<usize, usize>> {
+    static ALLOCS: OnceLock<Mutex<HashMap<usize, usize>>> = OnceLock::new();
+    ALLOCS.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+/// Track non-persistent allocations (ptr -> size)
+fn non_persistent_allocs() -> &'static Mutex<HashMap<usize, usize>> {
     static ALLOCS: OnceLock<Mutex<HashMap<usize, usize>>> = OnceLock::new();
     ALLOCS.get_or_init(|| Mutex::new(HashMap::new()))
 }
@@ -49,7 +55,9 @@ pub unsafe fn pemalloc(size: usize, persistent: bool) -> *mut u8 {
     let aligned_size = align_size(size);
     let layout = match Layout::from_size_align(aligned_size, ALIGNMENT) {
         Ok(l) => l,
-        Err(_) => unsafe { handle_alloc_error(Layout::from_size_align_unchecked(aligned_size, ALIGNMENT)) },
+        Err(_) => unsafe {
+            handle_alloc_error(Layout::from_size_align_unchecked(aligned_size, ALIGNMENT))
+        },
     };
 
     let ptr = unsafe { alloc(layout) };
@@ -61,6 +69,9 @@ pub unsafe fn pemalloc(size: usize, persistent: bool) -> *mut u8 {
         let mut allocs = persistent_allocs().lock().unwrap();
         allocs.insert(ptr as usize, aligned_size);
     } else {
+        let mut allocs = non_persistent_allocs().lock().unwrap();
+        allocs.insert(ptr as usize, aligned_size);
+
         NON_PERSISTENT_STATS
             .allocated
             .fetch_add(aligned_size, Ordering::Relaxed);
@@ -77,19 +88,61 @@ pub unsafe fn pemalloc(size: usize, persistent: bool) -> *mut u8 {
 }
 
 /// Reallocate memory
+///
+/// # Safety
+/// Caller must ensure that:
+/// - If `ptr` is non-null, it must point to memory previously allocated by `pemalloc`
+/// - `new_size` must be non-zero
+/// - The memory region pointed to by `ptr` must not be accessed after this call
 pub unsafe fn perealloc(ptr: *mut u8, new_size: usize, persistent: bool) -> *mut u8 {
     if ptr.is_null() {
-        return pemalloc(new_size, persistent);
+        return unsafe { pemalloc(new_size, persistent) };
     }
 
-    // For simplicity, allocate new and copy
-    // TODO: Implement proper realloc with size tracking
-    let new_ptr = pemalloc(new_size, persistent);
-    if !new_ptr.is_null() {
-        // Note: We don't know the old size, so this is a simplified version
-        // In a real implementation, we'd track sizes
+    // Get the old size from tracking
+    let old_size = if persistent {
+        let mut allocs = persistent_allocs().lock().unwrap();
+        allocs.remove(&(ptr as usize)).unwrap_or(0)
+    } else {
+        let mut allocs = non_persistent_allocs().lock().unwrap();
+        allocs.remove(&(ptr as usize)).unwrap_or(0)
+    };
+
+    let aligned_new_size = align_size(new_size);
+    let aligned_old_size = align_size(old_size);
+
+    // If shrinking and the new size fits within the old allocation, reuse it
+    if aligned_new_size <= aligned_old_size && !persistent {
+        // Update the tracking with new size
+        let mut allocs = non_persistent_allocs().lock().unwrap();
+        allocs.insert(ptr as usize, new_size);
+
+        // Update statistics
+        let size_diff = aligned_old_size as isize - aligned_new_size as isize;
+        NON_PERSISTENT_STATS
+            .allocated
+            .fetch_sub(size_diff as usize, Ordering::Relaxed);
+
+        return ptr;
     }
-    pefree(ptr, persistent);
+
+    // Allocate new memory and copy data
+    let new_ptr = unsafe { pemalloc(new_size, persistent) };
+    if !new_ptr.is_null() {
+        // Copy the minimum of old and new sizes
+        let copy_size = if aligned_new_size < aligned_old_size {
+            aligned_new_size
+        } else {
+            aligned_old_size
+        };
+
+        unsafe {
+            std::ptr::copy_nonoverlapping(ptr, new_ptr, copy_size);
+        }
+    }
+
+    // Free the old pointer
+    unsafe { pefree(ptr, persistent) };
     new_ptr
 }
 
@@ -108,9 +161,19 @@ pub unsafe fn pefree(ptr: *mut u8, persistent: bool) {
             }
         }
     } else {
-        // For non-persistent, we need to track sizes
-        // For now, this is a placeholder - in real implementation we'd use a size map
-        // This is simplified - proper implementation would track allocation sizes
+        let mut allocs = non_persistent_allocs().lock().unwrap();
+        if let Some(size) = allocs.remove(&(ptr as usize)) {
+            unsafe {
+                let layout = Layout::from_size_align_unchecked(size, ALIGNMENT);
+                dealloc(ptr, layout);
+            }
+
+            // Update statistics
+            NON_PERSISTENT_STATS
+                .allocated
+                .fetch_sub(size, Ordering::Relaxed);
+            NON_PERSISTENT_STATS.count.fetch_sub(1, Ordering::Relaxed);
+        }
     }
 }
 

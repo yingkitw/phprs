@@ -5,24 +5,12 @@
 use crate::engine::string::string_hash_func;
 use crate::engine::types::{Bucket, PhpArray, PhpResult, PhpString, Val};
 
-const HT_MIN_SIZE: u32 = 8;
-const HT_INVALID_IDX: u32 = 0xFFFFFFFF;
-
 /// Calculate table mask from table size
 fn ht_size_to_mask(n_table_size: u32) -> u32 {
     if n_table_size == 0 {
         return !0u32;
     }
     !(n_table_size - 1)
-}
-
-/// Check and adjust hash table size to be a power of 2
-fn hash_check_size(n_size: u32) -> u32 {
-    if n_size <= HT_MIN_SIZE {
-        HT_MIN_SIZE
-    } else {
-        n_size.next_power_of_two()
-    }
 }
 
 /// Initialize a hash table

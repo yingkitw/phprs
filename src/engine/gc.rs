@@ -61,7 +61,7 @@ impl Gc {
         }
 
         // Check if refcount is 1 (possible cycle)
-        let refcount = (*ref_).gc.refcount.load(Ordering::Acquire);
+        let refcount = unsafe { (*ref_).gc.refcount.load(Ordering::Acquire) };
         if refcount == 1 {
             self.roots.push(ref_);
             self.root_count.fetch_add(1, Ordering::Relaxed);
