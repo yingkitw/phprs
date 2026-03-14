@@ -1,9 +1,15 @@
 //! PSR-4 Autoloader Generator
 
-use super::super::error::Result;
+use super::super::error::{PkgError, Result};
 use std::collections::HashMap;
 use std::fs;
 use std::path::Path;
+
+impl From<String> for PkgError {
+    fn from(s: String) -> Self {
+        PkgError::Config(s)
+    }
+}
 
 /// Generate vendor/autoload.php
 pub fn generate_autoloader(
@@ -94,10 +100,7 @@ fn format_map(map: &HashMap<String, Vec<String>>) -> String {
 }
 
 /// Generate classmap autoloader
-pub fn generate_classmap(
-    vendor_dir: &Path,
-    classmap: &HashMap<String, String>,
-) -> Result<()> {
+pub fn generate_classmap(vendor_dir: &Path, classmap: &HashMap<String, String>) -> Result<()> {
     if classmap.is_empty() {
         return Ok(());
     }
@@ -127,10 +130,108 @@ return array(
     Ok(())
 }
 
-/// Scan PHP files and extract class names (Phase 2 - for now, just a stub)
-pub fn scan_classes_from_directory(_dir: &Path) -> Result<HashMap<String, String>> {
-    // TODO: Phase 2 - Use php-rs lexer to parse PHP files and extract class names
-    Ok(HashMap::new())
+/// Scan PHP files and extract class names
+pub fn scan_classes_from_directory(dir: &Path) -> Result<HashMap<String, String>> {
+    let mut classmap = HashMap::new();
+    scan_directory_recursive(dir, dir, &mut classmap)?;
+    Ok(classmap)
+}
+
+/// Recursively scan directory for PHP files and extract classes
+fn scan_directory_recursive(
+    root: &Path,
+    current_dir: &Path,
+    classmap: &mut HashMap<String, String>,
+) -> Result<()> {
+    let entries = fs::read_dir(current_dir)
+        .map_err(|e| format!("Failed to read directory {:?}: {}", current_dir, e))?;
+
+    for entry in entries {
+        let entry = entry.map_err(|e| format!("Failed to read directory entry: {}", e))?;
+        let path = entry.path();
+
+        if path.is_dir() {
+            scan_directory_recursive(root, &path, classmap)?;
+        } else if path.extension().and_then(|s| s.to_str()) == Some("php") {
+            if let Ok(classes) = extract_classes_from_file(&path) {
+                for class in classes {
+                    let relative_path = path
+                        .strip_prefix(root)
+                        .map_err(|e| format!("Failed to get relative path: {}", e))?;
+                    classmap.insert(class, relative_path.to_string_lossy().to_string());
+                }
+            }
+        }
+    }
+
+    Ok(())
+}
+
+/// Extract class names from a PHP file
+fn extract_classes_from_file(path: &Path) -> Result<Vec<String>> {
+    let content =
+        fs::read_to_string(path).map_err(|e| format!("Failed to read file {:?}: {}", path, e))?;
+
+    use phprs::engine::lexer::{Lexer, TokenType};
+
+    let mut lexer = Lexer::new(&content);
+    let mut classes = Vec::new();
+    let mut current_namespace = String::new();
+    let mut in_namespace = false;
+
+    loop {
+        match lexer.next_token() {
+            Ok(token) => {
+                if token.token_type == TokenType::T_EOF {
+                    break;
+                }
+
+                match token.token_type {
+                    TokenType::T_NAMESPACE => {
+                        in_namespace = true;
+                        current_namespace.clear();
+                    }
+                    TokenType::T_STRING => {
+                        if let Some(value) = &token.value {
+                            let s = value.as_str();
+                            if in_namespace {
+                                if s == ";" {
+                                    in_namespace = false;
+                                } else {
+                                    if !current_namespace.is_empty() && s != "\\" {
+                                        current_namespace.push('\\');
+                                    }
+                                    current_namespace.push_str(s);
+                                }
+                            }
+                        }
+                    }
+                    TokenType::T_CLASS => {
+                        let next_token = lexer.next_token()?;
+                        if let Some(value) = &next_token.value {
+                            let class_name = value.as_str().to_string();
+                            let full_class_name = if current_namespace.is_empty() {
+                                class_name
+                            } else {
+                                format!("{}\\{}", current_namespace, class_name)
+                            };
+                            classes.push(full_class_name);
+                        }
+                    }
+                    TokenType::T_OPEN_TAG => {
+                        in_namespace = false;
+                        current_namespace.clear();
+                    }
+                    _ => {}
+                }
+            }
+            Err(_) => {
+                break;
+            }
+        }
+    }
+
+    Ok(classes)
 }
 
 #[cfg(test)]
@@ -158,5 +259,99 @@ mod tests {
         assert!(content.contains("ComposerAutoloaderInit"));
         assert!(content.contains("spl_autoload_register"));
         assert!(content.contains("App\\"));
+    }
+
+    #[test]
+    fn test_extract_classes_from_file() {
+        use std::fs;
+        use std::io::Write;
+
+        let temp_dir = std::env::temp_dir();
+        let test_file = temp_dir.join("test_class.php");
+
+        let content = r#"<?php
+namespace App\Models;
+
+class User {
+    public $name;
+}
+
+class Product {
+    public $price;
+}
+"#;
+
+        fs::write(&test_file, content).unwrap();
+        let classes = extract_classes_from_file(&test_file).unwrap();
+
+        assert_eq!(classes.len(), 2);
+        assert!(classes.contains(&"App\\Models\\User".to_string()));
+        assert!(classes.contains(&"App\\Models\\Product".to_string()));
+
+        fs::remove_file(&test_file).ok();
+    }
+
+    #[test]
+    fn test_extract_classes_without_namespace() {
+        use std::fs;
+
+        let temp_dir = std::env::temp_dir();
+        let test_file = temp_dir.join("test_class_no_namespace.php");
+
+        let content = r#"<?php
+class SimpleClass {
+    public $value;
+}
+"#;
+
+        fs::write(&test_file, content).unwrap();
+        let classes = extract_classes_from_file(&test_file).unwrap();
+
+        assert_eq!(classes.len(), 1);
+        assert!(classes.contains(&"SimpleClass".to_string()));
+
+        fs::remove_file(&test_file).ok();
+    }
+
+    #[test]
+    fn test_scan_classes_from_directory() {
+        use std::fs;
+
+        let temp_dir = std::env::temp_dir().join("phprs_test_classes");
+        fs::create_dir_all(&temp_dir).unwrap();
+
+        let src_dir = temp_dir.join("src");
+        fs::create_dir_all(&src_dir).unwrap();
+
+        let models_dir = src_dir.join("Models");
+        fs::create_dir_all(&models_dir).unwrap();
+
+        let content1 = r#"<?php
+namespace App\Models;
+
+class User {
+    public $name;
+}
+"#;
+        fs::write(models_dir.join("User.php"), content1).unwrap();
+
+        let content2 = r#"<?php
+namespace App\Services;
+
+class AuthService {
+    public function login() {}
+}
+"#;
+        let services_dir = src_dir.join("Services");
+        fs::create_dir_all(&services_dir).unwrap();
+        fs::write(services_dir.join("AuthService.php"), content2).unwrap();
+
+        let classmap = scan_classes_from_directory(&temp_dir).unwrap();
+
+        assert_eq!(classmap.len(), 2);
+        assert!(classmap.contains_key("App\\Models\\User"));
+        assert!(classmap.contains_key("App\\Services\\AuthService"));
+
+        fs::remove_dir_all(&temp_dir).ok();
     }
 }

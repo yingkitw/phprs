@@ -1,11 +1,11 @@
 //! Operator expression parsing (logical, comparison, arithmetic chains)
 
+use super::helpers::*;
 use crate::engine::compile::context::CompileContext;
 use crate::engine::facade::{self, result_val};
-use crate::engine::lexer::{Token, Lexer, TokenType};
+use crate::engine::lexer::{Lexer, Token, TokenType};
 use crate::engine::types::Val;
 use crate::engine::vm::Opcode;
-use super::helpers::*;
 
 /// Parse ternary expression (condition ? true_expr : false_expr)
 /// Also handles short ternary (expr ?: default)
@@ -68,7 +68,10 @@ pub(crate) fn parse_ternary_expr(
     // `peek` is the first token of the true expression — need to parse with it
     let (true_expr, colon_token) = parse_additive_expr_with_initial(lexer, context, peek)?;
     if !token_is_punct(&colon_token, ":") {
-        return Err(format!("Expected ':' in ternary expression, got {:?}", colon_token.token_type));
+        return Err(format!(
+            "Expected ':' in ternary expression, got {:?}",
+            colon_token.token_type
+        ));
     }
     let (false_expr, after) = parse_ternary_expr(lexer, context)?;
 
@@ -145,8 +148,7 @@ pub(crate) fn parse_logical_or_expr(
         let (right, next_token) = parse_logical_and_expr(lexer, context)?;
         let or_result = result_val(crate::engine::types::PhpType::Bool);
         let or_result_dup = result_val(crate::engine::types::PhpType::Bool);
-        // TODO: Add BoolOr opcode, for now use BoolXor as placeholder
-        context.emit_opcode(Opcode::BoolXor, left, right, or_result);
+        context.emit_opcode(Opcode::BoolOr, left, right, or_result);
         left = or_result_dup;
         token = next_token;
     }
@@ -165,8 +167,7 @@ fn parse_logical_and_expr(
         let (right, next_token) = parse_logical_not_expr(lexer, context)?;
         let and_result = result_val(crate::engine::types::PhpType::Bool);
         let and_result_dup = result_val(crate::engine::types::PhpType::Bool);
-        // TODO: Add BoolAnd opcode, for now use BoolXor as placeholder
-        context.emit_opcode(Opcode::BoolXor, left, right, and_result);
+        context.emit_opcode(Opcode::BoolAnd, left, right, and_result);
         left = and_result_dup;
         token = next_token;
     }
@@ -218,8 +219,11 @@ fn parse_comparison_expr_with_token(
                 | TokenType::T_IS_GREATER_OR_EQUAL
                 | TokenType::T_IS_IDENTICAL
                 | TokenType::T_IS_NOT_IDENTICAL
-        ) || is_lt || is_gt;
-        if !is_cmp { break; }
+        ) || is_lt
+            || is_gt;
+        if !is_cmp {
+            break;
+        }
 
         let (right, next_token) = parse_additive_expr(lexer, context)?;
         let (opcode, swap) = if is_lt {
@@ -309,7 +313,11 @@ fn parse_multiplicative_expr_with_initial(
 
     // Handle special cases based on token type
     let (left, token) = if initial_token.token_type == TokenType::T_STRING {
-        let val = initial_token.value.as_ref().map(|s| s.as_str()).unwrap_or("");
+        let val = initial_token
+            .value
+            .as_ref()
+            .map(|s| s.as_str())
+            .unwrap_or("");
         if val == "(" {
             let (inner, close_token) = super::parse_expression(lexer, context)?;
             if token_is_punct(&close_token, ")") {

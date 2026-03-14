@@ -25,7 +25,7 @@ fn test_opcode_enum() {
     assert_eq!(Opcode::Sub as u8, 2);
     assert_eq!(Opcode::Mul as u8, 3);
     assert_eq!(Opcode::Div as u8, 4);
-    assert_eq!(Opcode::Assign as u8, 22);
+    assert_eq!(Opcode::Assign as u8, 24);
 }
 
 #[test]

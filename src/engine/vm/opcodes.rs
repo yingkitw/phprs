@@ -21,54 +21,58 @@ pub enum Opcode {
     Pow = 12,
     BwNot = 13,
     BoolNot = 14,
-    BoolXor = 15,
-    IsIdentical = 16,
-    IsNotIdentical = 17,
-    IsEqual = 18,
-    IsNotEqual = 19,
-    IsSmaller = 20,
-    IsSmallerOrEqual = 21,
-    Assign = 22,
-    AssignDim = 23,
-    AssignObj = 24,
-    AssignStaticProp = 25,
-    AssignOp = 26,
-    Echo = 27,
-    Return = 28,
-    Jmp = 29,
-    JmpZ = 30,
-    JmpNZ = 31,
-    InitFCall = 32,       // Initialize function call
-    DoFCall = 33,         // Execute function call
-    TryCatchBegin = 34,   // Begin try block
-    TryCatchEnd = 35,     // End try block
-    CatchBegin = 36,      // Begin catch block
-    CatchEnd = 37,        // End catch block
-    FinallyBegin = 38,    // Begin finally block
-    FinallyEnd = 39,      // End finally block
-    Throw = 40,           // Throw exception
-    FetchVar = 41,        // Load variable from symbol table into temp
-    SendVal = 42,         // Push argument for function call
-    Include = 43,         // include/require
-    InitArray = 44,       // Create empty array in temp slot
-    AddArrayElement = 45, // Add element to array (op1=array temp, op2=value, extended_value for key)
-    FetchDim = 46,        // Fetch array element by index/key
-    NewObj = 47,          // Create new object instance (op1=class name, result=temp)
-    FetchObjProp = 48,    // Fetch object property (op1=obj, op2=prop name, result=temp)
-    AssignObjProp = 49,   // Assign to object property (op1=obj var, op2=prop name, result=value)
-    InitMethodCall = 50,  // Init method call (op1=obj, op2=method name)
-    DoMethodCall = 51,    // Execute method call (op1=method name, result=temp)
-    TypeCheck = 52,       // Check type of operand
-    IsSet = 53,           // Check if variable is set
-    Empty = 54,           // Check if variable is empty
-    Unset = 55,           // Unset a variable
-    Count = 56,           // Count elements in array/string
-    Keys = 57,            // Get array keys
-    Values = 58,          // Get array values
-    ArrayDiff = 59,       // Compare arrays
-    Coalesce = 60,        // Null coalescing: if op1 is not null, result=op1, else result=op2
-    JmpNullZ = 61,        // Jump if op1 is null (for ?? short-circuit)
-    QmAssign = 62,        // Ternary assign: resolve op1, store in result temp slot
+    BoolAnd = 15,
+    BoolOr = 16,
+    BoolXor = 17,
+    IsIdentical = 18,
+    IsNotIdentical = 19,
+    IsEqual = 20,
+    IsNotEqual = 21,
+    IsSmaller = 22,
+    IsSmallerOrEqual = 23,
+    Assign = 24,
+    AssignDim = 25,
+    AssignObj = 26,
+    AssignStaticProp = 27,
+    AssignOp = 28,
+    Echo = 29,
+    Return = 30,
+    Jmp = 31,
+    JmpZ = 32,
+    JmpNZ = 33,
+    InitFCall = 34,       // Initialize function call
+    DoFCall = 35,         // Execute function call
+    TryCatchBegin = 36,   // Begin try block
+    TryCatchEnd = 37,     // End try block
+    CatchBegin = 38,      // Begin catch block
+    CatchEnd = 39,        // End catch block
+    FinallyBegin = 40,    // Begin finally block
+    FinallyEnd = 41,      // End finally block
+    Throw = 42,           // Throw exception
+    FetchVar = 43,        // Load variable from symbol table into temp
+    SendVal = 44,         // Push argument for function call
+    Include = 45,         // include/require
+    InitArray = 46,       // Create empty array in temp slot
+    AddArrayElement = 47, // Add element to array (op1=array temp, op2=value, extended_value for key)
+    FetchDim = 48,        // Fetch array element by index/key
+    NewObj = 49,          // Create new object instance (op1=class name, result=temp)
+    FetchObjProp = 50,    // Fetch object property (op1=obj, op2=prop name, result=temp)
+    AssignObjProp = 51,   // Assign to object property (op1=obj var, op2=prop name, result=value)
+    InitMethodCall = 52,  // Init method call (op1=obj, op2=method name)
+    DoMethodCall = 53,    // Execute method call (op1=method name, result=temp)
+    TypeCheck = 54,       // Check type of operand
+    IsSet = 55,           // Check if variable is set
+    Empty = 56,           // Check if variable is empty
+    Unset = 57,           // Unset a variable
+    Count = 58,           // Count elements in array/string
+    Keys = 59,            // Get array keys
+    Values = 60,          // Get array values
+    ArrayDiff = 61,       // Compare arrays
+    Coalesce = 62,        // Null coalescing: if op1 is not null, result=op1, else result=op2
+    JmpNullZ = 63,        // Jump if op1 is null (for ?? short-circuit)
+    QmAssign = 64,        // Ternary assign: resolve op1, store in result temp slot
+    FeReset = 65,         // Reset array iterator for foreach
+    FeFetch = 66,         // Fetch next element from array iterator
 }
 
 /// Operation structure
@@ -159,6 +163,10 @@ pub fn get_opcode_name(opcode: Opcode) -> &'static str {
         Opcode::ArrayDiff => "ARRAY_DIFF",
         Opcode::Coalesce => "COALESCE",
         Opcode::JmpNullZ => "JMP_NULLZ",
+        Opcode::BoolAnd => "BOOL_AND",
+        Opcode::BoolOr => "BOOL_OR",
+        Opcode::FeReset => "FE_RESET",
+        Opcode::FeFetch => "FE_FETCH",
         _ => "UNKNOWN",
     }
 }

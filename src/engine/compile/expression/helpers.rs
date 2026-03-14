@@ -2,7 +2,7 @@
 
 use crate::engine::compile::context::CompileContext;
 use crate::engine::facade::{self, StdValFactory, ValFactory};
-use crate::engine::lexer::{Token, Lexer, TokenType};
+use crate::engine::lexer::{Lexer, Token, TokenType};
 use crate::engine::types::Val;
 use crate::engine::vm::{temp_var_ref, var_ref, Opcode};
 
@@ -12,26 +12,50 @@ pub(crate) fn token_is_punct(token: &Token, ch: &str) -> bool {
 }
 
 pub(crate) fn token_is_keyword(token: &Token, keyword: &str) -> bool {
-    token.token_type == TokenType::T_STRING && token.value.as_ref().map(|s| s.as_str()) == Some(keyword)
+    token.token_type == TokenType::T_STRING
+        && token.value.as_ref().map(|s| s.as_str()) == Some(keyword)
 }
 
 /// Convert a pre-consumed token into a primary Val
 pub(crate) fn token_to_primary(tok: &Token) -> Result<Val, String> {
     match tok.token_type {
         TokenType::T_LNUMBER => {
-            let num_val = tok.value.as_ref().unwrap().as_str().parse::<i64>().unwrap_or(0);
+            let num_val = tok
+                .value
+                .as_ref()
+                .unwrap()
+                .as_str()
+                .parse::<i64>()
+                .unwrap_or(0);
             Ok(facade::long_val(num_val))
         }
         TokenType::T_DNUMBER => {
-            let num_val = tok.value.as_ref().ok_or("Number token missing value")?.as_str().parse::<f64>().unwrap_or(0.0);
+            let num_val = tok
+                .value
+                .as_ref()
+                .ok_or("Number token missing value")?
+                .as_str()
+                .parse::<f64>()
+                .unwrap_or(0.0);
             Ok(facade::double_val(num_val))
         }
         TokenType::T_CONSTANT_ENCAPSED_STRING => {
-            let str_val = tok.value.as_ref().ok_or("String token missing value")?.clone();
-            Ok(Val::new(crate::engine::types::PhpValue::String(Box::new(str_val)), crate::engine::types::PhpType::String))
+            let str_val = tok
+                .value
+                .as_ref()
+                .ok_or("String token missing value")?
+                .clone();
+            Ok(Val::new(
+                crate::engine::types::PhpValue::String(Box::new(str_val)),
+                crate::engine::types::PhpType::String,
+            ))
         }
         TokenType::T_VARIABLE => {
-            let name = tok.value.as_ref().ok_or("Variable token missing value")?.as_str();
+            let name = tok
+                .value
+                .as_ref()
+                .ok_or("Variable token missing value")?
+                .as_str();
             Ok(var_ref(name))
         }
         TokenType::T_STRING => {
@@ -43,7 +67,10 @@ pub(crate) fn token_to_primary(tok: &Token) -> Result<Val, String> {
                 _ => Ok(facade::null_val()),
             }
         }
-        _ => Err(format!("Unexpected token in expression: {:?}", tok.token_type)),
+        _ => Err(format!(
+            "Unexpected token in expression: {:?}",
+            tok.token_type
+        )),
     }
 }
 
@@ -83,7 +110,8 @@ pub(crate) fn parse_match_expression(
     let mut token = lexer.next_token()?;
 
     while !token_is_punct(&token, "}") {
-        let is_default = token.token_type == TokenType::T_DEFAULT || token_is_keyword(&token, "default");
+        let is_default =
+            token.token_type == TokenType::T_DEFAULT || token_is_keyword(&token, "default");
         let (condition, next) = if is_default {
             (facade::null_val(), lexer.next_token()?)
         } else {
@@ -104,7 +132,12 @@ pub(crate) fn parse_match_expression(
             );
             token = after;
         } else {
-            let cmp = emit_binary_op(context, Opcode::IsEqual, facade::clone_val(&match_value), condition);
+            let cmp = emit_binary_op(
+                context,
+                Opcode::IsEqual,
+                facade::clone_val(&match_value),
+                condition,
+            );
             let jmp_idx = context.emit_opcode_with_index(
                 Opcode::JmpZ,
                 cmp,
@@ -184,7 +217,9 @@ fn parse_object_access(
     obj: Val,
 ) -> Result<(Val, Token), String> {
     let member_token = lexer.next_token()?;
-    let member_name = member_token.value.as_ref()
+    let member_name = member_token
+        .value
+        .as_ref()
         .ok_or("Expected property/method name after '->'")?
         .as_str();
     let member_zval = facade::string_val(member_name);
@@ -217,8 +252,14 @@ pub(crate) fn parse_method_call(
     // Parse arguments
     let mut arg_token = lexer.next_token()?;
     while !token_is_punct(&arg_token, ")") {
-        let (arg_val, after_arg) = super::operators::parse_additive_expr_with_initial(lexer, context, arg_token)?;
-        context.emit_opcode(Opcode::SendVal, arg_val, facade::null_val(), facade::null_val());
+        let (arg_val, after_arg) =
+            super::operators::parse_additive_expr_with_initial(lexer, context, arg_token)?;
+        context.emit_opcode(
+            Opcode::SendVal,
+            arg_val,
+            facade::null_val(),
+            facade::null_val(),
+        );
         if token_is_punct(&after_arg, ",") {
             arg_token = lexer.next_token()?;
         } else {
@@ -227,7 +268,12 @@ pub(crate) fn parse_method_call(
     }
 
     let call_slot = context.alloc_temp();
-    context.emit_opcode(Opcode::DoMethodCall, member_zval, obj, temp_var_ref(call_slot));
+    context.emit_opcode(
+        Opcode::DoMethodCall,
+        member_zval,
+        obj,
+        temp_var_ref(call_slot),
+    );
     Ok((temp_var_ref(call_slot), lexer.next_token()?))
 }
 
@@ -241,7 +287,8 @@ fn parse_callable_var(
     let mut current_token = lexer.next_token()?;
 
     if !token_is_punct(&current_token, ")") {
-        let (arg_val, next_token) = super::operators::parse_additive_expr_with_initial(lexer, context, current_token)?;
+        let (arg_val, next_token) =
+            super::operators::parse_additive_expr_with_initial(lexer, context, current_token)?;
         args.push(arg_val);
         current_token = next_token;
 
@@ -257,7 +304,12 @@ fn parse_callable_var(
     }
 
     // Emit InitFCall
-    context.emit_opcode(Opcode::InitFCall, facade::null_val(), facade::null_val(), facade::null_val());
+    context.emit_opcode(
+        Opcode::InitFCall,
+        facade::null_val(),
+        facade::null_val(),
+        facade::null_val(),
+    );
 
     // Emit SendVal for each argument
     for arg in args {
@@ -266,7 +318,12 @@ fn parse_callable_var(
 
     // Emit DoFCall with the callable variable as the function name
     let call_slot = context.alloc_temp();
-    context.emit_opcode(Opcode::DoFCall, callable, facade::null_val(), temp_var_ref(call_slot));
+    context.emit_opcode(
+        Opcode::DoFCall,
+        callable,
+        facade::null_val(),
+        temp_var_ref(call_slot),
+    );
     Ok((temp_var_ref(call_slot), lexer.next_token()?))
 }
 
@@ -276,25 +333,60 @@ pub(crate) fn compile_new_obj(
     context: &mut CompileContext,
 ) -> Result<(Val, Token), String> {
     let class_token = lexer.next_token()?;
-    let class_name = class_token.value.as_ref()
+    let class_name = class_token
+        .value
+        .as_ref()
         .ok_or("Expected class name after 'new'")?
         .as_str();
     let resolved_name = context.resolve_class_name(class_name);
     let class_zval = facade::string_val(&resolved_name);
     let slot = context.alloc_temp();
-    context.emit_opcode(Opcode::NewObj, class_zval, facade::null_val(), temp_var_ref(slot));
+    context.emit_opcode(
+        Opcode::NewObj,
+        class_zval,
+        facade::null_val(),
+        temp_var_ref(slot),
+    );
 
     // Check for constructor args: (...)
     let peek = lexer.next_token()?;
     if token_is_punct(&peek, "(") {
-        // TODO: pass constructor args via SendVal + DoMethodCall(__construct)
-        let mut depth = 1;
-        let mut nt = lexer.next_token()?;
-        while depth > 0 {
-            if token_is_punct(&nt, "(") { depth += 1; }
-            if token_is_punct(&nt, ")") { depth -= 1; }
-            if depth > 0 { nt = lexer.next_token()?; }
+        let mut args = Vec::new();
+        let mut arg_token = lexer.next_token()?;
+        while !token_is_punct(&arg_token, ")") {
+            let (arg_val, after_arg) =
+                super::operators::parse_additive_expr_with_initial(lexer, context, arg_token)?;
+            args.push(arg_val);
+            if token_is_punct(&after_arg, ",") {
+                arg_token = lexer.next_token()?;
+            } else {
+                arg_token = after_arg;
+            }
         }
+
+        // Emit InitMethodCall for __construct
+        let obj_temp = temp_var_ref(slot);
+        context.emit_opcode(
+            Opcode::InitMethodCall,
+            crate::engine::facade::clone_val(&obj_temp),
+            facade::string_val("__construct"),
+            facade::null_val(),
+        );
+
+        // Emit SendVal for each argument
+        for arg in args {
+            context.emit_opcode(Opcode::SendVal, arg, facade::null_val(), facade::null_val());
+        }
+
+        // Emit DoMethodCall for __construct
+        let construct_slot = context.alloc_temp();
+        context.emit_opcode(
+            Opcode::DoMethodCall,
+            facade::string_val("__construct"),
+            obj_temp,
+            temp_var_ref(construct_slot),
+        );
+
         Ok((temp_var_ref(slot), lexer.next_token()?))
     } else {
         Ok((temp_var_ref(slot), peek))
@@ -352,14 +444,20 @@ pub(crate) fn additive_loop(
 }
 
 /// Compile an interpolated string like "Hello $name, you are $age years old"
-pub(crate) fn compile_interpolated_string(s: &str, context: &mut CompileContext) -> Result<Val, String> {
+pub(crate) fn compile_interpolated_string(
+    s: &str,
+    context: &mut CompileContext,
+) -> Result<Val, String> {
     let bytes = s.as_bytes();
     let mut parts: Vec<Val> = Vec::new();
     let mut i = 0;
     let mut text_start = 0;
 
     while i < bytes.len() {
-        if bytes[i] == b'$' && i + 1 < bytes.len() && (bytes[i + 1].is_ascii_alphabetic() || bytes[i + 1] == b'_') {
+        if bytes[i] == b'$'
+            && i + 1 < bytes.len()
+            && (bytes[i + 1].is_ascii_alphabetic() || bytes[i + 1] == b'_')
+        {
             if i > text_start {
                 parts.push(facade::string_val(&s[text_start..i]));
             }
@@ -399,30 +497,50 @@ pub(crate) fn parse_array_literal(
     context: &mut CompileContext,
 ) -> Result<Val, String> {
     let arr_slot = context.alloc_temp();
-    context.emit_opcode(Opcode::InitArray, facade::null_val(), facade::null_val(), temp_var_ref(arr_slot));
+    context.emit_opcode(
+        Opcode::InitArray,
+        facade::null_val(),
+        facade::null_val(),
+        temp_var_ref(arr_slot),
+    );
 
     let mut next = lexer.next_token()?;
     if !token_is_punct(&next, "]") {
         loop {
-            let (val_zval, after_val) = super::operators::parse_additive_expr_with_initial(lexer, context, next)?;
+            let (val_zval, after_val) =
+                super::operators::parse_additive_expr_with_initial(lexer, context, next)?;
 
             if after_val.token_type == TokenType::T_DOUBLE_ARROW {
                 // key => value
                 let key_zval = val_zval;
                 let (value_zval, after_value) = super::parse_expression(lexer, context)?;
-                context.emit_opcode(Opcode::AddArrayElement, temp_var_ref(arr_slot), value_zval, key_zval);
+                context.emit_opcode(
+                    Opcode::AddArrayElement,
+                    temp_var_ref(arr_slot),
+                    value_zval,
+                    key_zval,
+                );
                 let last_idx = context.current_op_index() - 1;
                 context.update_jump_target(last_idx, 1);
                 next = after_value;
             } else {
-                context.emit_opcode(Opcode::AddArrayElement, temp_var_ref(arr_slot), val_zval, facade::null_val());
+                context.emit_opcode(
+                    Opcode::AddArrayElement,
+                    temp_var_ref(arr_slot),
+                    val_zval,
+                    facade::null_val(),
+                );
                 next = after_val;
             }
 
-            if token_is_punct(&next, "]") { break; }
+            if token_is_punct(&next, "]") {
+                break;
+            }
             if token_is_punct(&next, ",") {
                 next = lexer.next_token()?;
-                if token_is_punct(&next, "]") { break; }
+                if token_is_punct(&next, "]") {
+                    break;
+                }
                 continue;
             }
             return Err("Expected ',' or ']' in array literal".to_string());
@@ -443,7 +561,8 @@ pub(crate) fn parse_function_call(
 
     if !token_is_punct(&current_token, ")") {
         // First argument: already consumed its first token
-        let (arg_zval, next_token) = super::operators::parse_additive_expr_with_initial(lexer, context, current_token)?;
+        let (arg_zval, next_token) =
+            super::operators::parse_additive_expr_with_initial(lexer, context, current_token)?;
         args.push(arg_zval);
         current_token = next_token;
 
@@ -459,7 +578,12 @@ pub(crate) fn parse_function_call(
     }
 
     // Emit InitFCall
-    context.emit_opcode(Opcode::InitFCall, facade::null_val(), facade::null_val(), facade::null_val());
+    context.emit_opcode(
+        Opcode::InitFCall,
+        facade::null_val(),
+        facade::null_val(),
+        facade::null_val(),
+    );
 
     // Emit SendVal for each argument
     for arg in args {
@@ -469,7 +593,12 @@ pub(crate) fn parse_function_call(
     // Emit DoFCall
     let func_name_zval = facade::string_val(function_name);
     let result_slot = context.alloc_temp();
-    context.emit_opcode(Opcode::DoFCall, func_name_zval, facade::null_val(), temp_var_ref(result_slot));
+    context.emit_opcode(
+        Opcode::DoFCall,
+        func_name_zval,
+        facade::null_val(),
+        temp_var_ref(result_slot),
+    );
 
     Ok((temp_var_ref(result_slot), lexer.next_token()?))
 }

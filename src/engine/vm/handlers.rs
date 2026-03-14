@@ -228,6 +228,34 @@ pub(crate) fn execute_opcode(
             }
             Ok(ExecResult::Continue)
         }
+        Opcode::BoolAnd => {
+            let op1 = resolve_operand(&op.op1, execute_data);
+            let op2 = resolve_operand(&op.op2, execute_data);
+            let r = crate::engine::operators::zval_get_bool(&op1)
+                && crate::engine::operators::zval_get_bool(&op2);
+            let result = Val::new(
+                PhpValue::Long(if r { 1 } else { 0 }),
+                if r { PhpType::True } else { PhpType::False },
+            );
+            if let Some(slot) = result_slot(op) {
+                execute_data.set_temp(slot, result);
+            }
+            Ok(ExecResult::Continue)
+        }
+        Opcode::BoolOr => {
+            let op1 = resolve_operand(&op.op1, execute_data);
+            let op2 = resolve_operand(&op.op2, execute_data);
+            let r = crate::engine::operators::zval_get_bool(&op1)
+                || crate::engine::operators::zval_get_bool(&op2);
+            let result = Val::new(
+                PhpValue::Long(if r { 1 } else { 0 }),
+                if r { PhpType::True } else { PhpType::False },
+            );
+            if let Some(slot) = result_slot(op) {
+                execute_data.set_temp(slot, result);
+            }
+            Ok(ExecResult::Continue)
+        }
 
         // Function call operations
         Opcode::InitFCall => {
@@ -433,6 +461,76 @@ pub(crate) fn execute_opcode(
             if let Some(slot) = result_slot(op) {
                 execute_data.set_temp(slot, val);
             }
+            Ok(ExecResult::Continue)
+        }
+
+        // Foreach operations
+        Opcode::FeReset => {
+            let arr = resolve_operand(&op.op1, execute_data);
+            if let PhpValue::Array(_) = arr.value {
+                let iterator_slot = op.extended_value as usize;
+                let iterator = Val::new(PhpValue::Long(0), PhpType::Long);
+                execute_data.set_temp(iterator_slot, iterator);
+            }
+            Ok(ExecResult::Continue)
+        }
+
+        Opcode::FeFetch => {
+            let arr = resolve_operand(&op.op1, execute_data);
+            let iterator_slot = op.extended_value as usize;
+            let iterator_val = execute_data.get_temp(iterator_slot);
+            let current_idx = if let PhpValue::Long(i) = iterator_val.value {
+                i as u64
+            } else {
+                0
+            };
+
+            let (has_more, key, value) = if let PhpValue::Array(ref arr) = arr.value {
+                if current_idx < arr.n_num_of_elements as u64 {
+                    let bucket = &arr.ar_data.get(current_idx as usize).and_then(|b| Some(b));
+                    if let Some(bucket) = bucket {
+                        let has_more = current_idx + 1 < arr.n_num_of_elements as u64;
+                        let key = if let Some(ref key_str) = bucket.key {
+                            Val::new(PhpValue::String(key_str.clone()), PhpType::String)
+                        } else {
+                            Val::new(PhpValue::Long(current_idx as i64), PhpType::Long)
+                        };
+                        let value = clone_val(&bucket.val);
+                        (has_more, Some(key), Some(value))
+                    } else {
+                        (false, None, None)
+                    }
+                } else {
+                    (false, None, None)
+                }
+            } else {
+                (false, None, None)
+            };
+
+            let result_slot = if let Some(slot) = result_slot(op) {
+                slot
+            } else {
+                return Ok(ExecResult::Continue);
+            };
+
+            if has_more {
+                let next_iter =
+                    Val::new(PhpValue::Long((current_idx + 1) as i64), PhpType::Long);
+                execute_data.set_temp(iterator_slot, next_iter);
+            }
+
+            if let Some(key) = key {
+                execute_data.set_temp(result_slot, key);
+            }
+
+            if let Some(value) = value {
+                execute_data.set_temp(iterator_slot, value);
+            }
+
+            if !has_more {
+                return Ok(ExecResult::Jump(op.extended_value));
+            }
+
             Ok(ExecResult::Continue)
         }
 

@@ -7,6 +7,11 @@ mod tests;
 
 use std::collections::HashMap;
 use std::fs;
+use std::sync::Mutex;
+
+thread_local! {
+    static GLOBAL_INI: Mutex<HashMap<String, String>> = Mutex::new(HashMap::new());
+}
 
 /// INI entry with name, value, and optional section
 #[derive(Debug, Clone)]
@@ -117,13 +122,18 @@ pub fn php_ini_parse_file(filename: &str) -> Result<Vec<IniEntry>, String> {
 }
 
 /// Get INI value by name
-pub fn php_ini_get(_name: &str) -> Option<String> {
-    // TODO: Implement global INI storage
-    None
+pub fn php_ini_get(name: &str) -> Option<String> {
+    GLOBAL_INI.with(|ini| {
+        let ini = ini.lock().unwrap();
+        ini.get(name).cloned()
+    })
 }
 
 /// Set INI value
-pub fn php_ini_set(_name: &str, _value: &str) -> Result<(), String> {
-    // TODO: Implement global INI storage
-    Ok(())
+pub fn php_ini_set(name: &str, value: &str) -> Result<(), String> {
+    GLOBAL_INI.with(|ini| {
+        let mut ini = ini.lock().unwrap();
+        ini.insert(name.to_string(), value.to_string());
+        Ok(())
+    })
 }

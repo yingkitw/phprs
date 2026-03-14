@@ -103,9 +103,18 @@ impl StreamWrapper for FileStream {
         let metadata =
             std::fs::metadata(&self.path).map_err(|e| StreamError::IoError(e.to_string()))?;
 
+        let file_type = metadata.file_type();
+        let mode = if file_type.is_file() {
+            0o100000
+        } else if file_type.is_dir() {
+            0o040000
+        } else {
+            0o120000
+        };
+
         Ok(StreamStat {
             size: metadata.len(),
-            mode: 0, // TODO: Extract file mode
+            mode,
             mtime: metadata
                 .modified()
                 .and_then(|t| Ok(t.duration_since(std::time::UNIX_EPOCH).unwrap().as_secs() as i64))
@@ -289,7 +298,11 @@ fn base64_decode(data: &[u8]) -> Result<Vec<u8>, String> {
         }
     }
 
-    let filtered: Vec<u8> = data.iter().copied().filter(|b| !b.is_ascii_whitespace()).collect();
+    let filtered: Vec<u8> = data
+        .iter()
+        .copied()
+        .filter(|b| !b.is_ascii_whitespace())
+        .collect();
     let mut result = Vec::new();
     for chunk in filtered.chunks(4) {
         if chunk.len() < 4 {

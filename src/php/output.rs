@@ -25,7 +25,12 @@ impl OutputBuffer {
     }
 
     pub fn flush(&mut self) -> Result<(), String> {
-        // TODO: Implement flush to output
+        use std::io::Write;
+        std::io::stdout()
+            .write_all(&self.buffer)
+            .map_err(|e| e.to_string())?;
+        std::io::stdout().flush().map_err(|e| e.to_string())?;
+        self.buffer.clear();
         Ok(())
     }
 

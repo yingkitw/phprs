@@ -116,8 +116,16 @@ impl Gc {
             return;
         }
 
-        // TODO: Implement full mark_grey logic
-        // This would traverse the object graph and mark nodes
+        unsafe {
+            let type_info = (*ref_).gc.type_info.load(Ordering::Acquire);
+            let current_color = type_info & 0xFF0000;
+            if current_color == GcColor::Purple as u32 {
+                (*ref_).gc.type_info.store(
+                    type_info & !0xFF0000 | GcColor::Grey as u32,
+                    Ordering::Release,
+                );
+            }
+        }
     }
 
     /// Scan a grey node
@@ -126,16 +134,64 @@ impl Gc {
             return 0;
         }
 
-        // TODO: Implement full scan logic
-        // This checks refcounts and marks nodes as black or white
-        0
+        unsafe {
+            let mut type_info = (*ref_).gc.type_info.load(Ordering::Acquire);
+            let current_color = type_info & 0xFF0000;
+            if current_color != GcColor::Grey as u32 {
+                return 0;
+            }
+
+            let refcount = (*ref_).gc.refcount.load(Ordering::Acquire);
+            let is_black = refcount > 0;
+
+            type_info &= !0xFF0000;
+            type_info |= if is_black {
+                GcColor::Black as u32
+            } else {
+                GcColor::White as u32
+            };
+            (*ref_).gc.type_info.store(type_info, Ordering::Release);
+
+            if is_black {
+                1
+            } else {
+                0
+            }
+        }
     }
 
     /// Collect white nodes (garbage)
     fn collect_white(&mut self) -> u32 {
-        // TODO: Implement collection of white nodes
-        // This would free objects marked as white
-        0
+        let mut collected = 0;
+
+        for &ref_ in &self.roots {
+            unsafe {
+                if !ref_.is_null() {
+                    let type_info = (*ref_).gc.type_info.load(Ordering::Acquire);
+                    let current_color = type_info & 0xFF0000;
+                    if current_color == GcColor::White as u32 {
+                        self.free_node(ref_);
+                        collected += 1;
+                    }
+                }
+            }
+        }
+
+        collected
+    }
+
+    /// Free a node and its children
+    unsafe fn free_node(&self, ref_: *mut Refcounted) {
+        if ref_.is_null() {
+            return;
+        }
+
+        unsafe {
+            let refcount = (*ref_).gc.refcount.fetch_sub(1, Ordering::AcqRel);
+            if refcount == 1 {
+                let _ = Box::from_raw(ref_);
+            }
+        }
     }
 
     /// Get GC statistics

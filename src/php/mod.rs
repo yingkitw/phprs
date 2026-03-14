@@ -2,11 +2,14 @@
 //!
 //! Main PHP runtime implementation
 
+pub mod datetime;
 pub mod extension;
 pub mod filesystem;
 pub mod globals;
+pub mod hash;
 pub mod http_stream;
 pub mod ini;
+pub mod math;
 pub mod output;
 pub mod pdo;
 pub mod regex;

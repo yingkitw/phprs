@@ -639,6 +639,42 @@ pub(crate) fn execute_builtin_function(
             Ok(None)
         }
 
+        // --- Math functions ---
+        "abs" => crate::php::math::math_abs(args).map(Some),
+        "ceil" => crate::php::math::math_ceil(args).map(Some),
+        "floor" => crate::php::math::math_floor(args).map(Some),
+        "round" => crate::php::math::math_round(args).map(Some),
+        "sqrt" => crate::php::math::math_sqrt(args).map(Some),
+        "pow" => crate::php::math::math_pow(args).map(Some),
+        "exp" => crate::php::math::math_exp(args).map(Some),
+        "log" => crate::php::math::math_log(args).map(Some),
+        "log10" => crate::php::math::math_log10(args).map(Some),
+        "sin" => crate::php::math::math_sin(args).map(Some),
+        "cos" => crate::php::math::math_cos(args).map(Some),
+        "tan" => crate::php::math::math_tan(args).map(Some),
+        "asin" => crate::php::math::math_asin(args).map(Some),
+        "acos" => crate::php::math::math_acos(args).map(Some),
+        "atan" => crate::php::math::math_atan(args).map(Some),
+        "atan2" => crate::php::math::math_atan2(args).map(Some),
+        "pi" => crate::php::math::math_pi(args).map(Some),
+        "max" => crate::php::math::math_max(args).map(Some),
+        "min" => crate::php::math::math_min(args).map(Some),
+        "rand" => crate::php::math::math_rand(args).map(Some),
+
+        // --- Hash functions ---
+        "md5" => crate::php::hash::hash_md5(args).map(Some),
+        "sha1" => crate::php::hash::hash_sha1(args).map(Some),
+        "hash" => crate::php::hash::hash_generic(args).map(Some),
+        "base64_encode" => crate::php::hash::base64_encode(args).map(Some),
+        "base64_decode" => crate::php::hash::base64_decode(args).map(Some),
+
+        // --- DateTime functions ---
+        "time" => crate::php::datetime::time_now(args).map(Some),
+        "microtime" => crate::php::datetime::microtime(args).map(Some),
+        "date" => crate::php::datetime::date_format(args).map(Some),
+        "mktime" => crate::php::datetime::mktime(args).map(Some),
+        "strtotime" => crate::php::datetime::strtotime(args).map(Some),
+
         _ => Ok(None), // Unknown function — return None to signal not found
     }
 }
