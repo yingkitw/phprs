@@ -1,6 +1,6 @@
 # phprs
 
-**Modernizing PHP with Rust** - A high-performance, memory-safe PHP interpreter built from the ground up in Rust, designed for the modern web.
+**Modernizing PHP with Rust** — a memory-safe PHP interpreter and toolchain written in Rust. Performance is a goal; rigorous, published comparisons against PHP are not claimed here yet.
 
 [![Rust](https://img.shields.io/badge/rust-2024-orange.svg)](https://www.rust-lang.org/)
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
@@ -9,12 +9,12 @@
 
 ## Why phprs? The Rust Advantage
 
-PHP powers over 77% of the web, but traditional C-based implementations suffer from memory safety issues, security vulnerabilities, and performance limitations. **phprs** leverages Rust's revolutionary features to deliver a PHP interpreter that is:
+PHP powers much of the web; many production runtimes are implemented in C and C++. **phprs** is an experiment in implementing PHP semantics in Rust so we can lean on the borrow checker and modern tooling. It aims to be:
 
-- **10x More Secure**: Zero memory leaks, no buffer overflows, no use-after-free bugs
-- **2-3x Faster**: Rust's zero-cost abstractions and LLVM optimization
-- **100% Thread-Safe**: Fearless concurrency without data races
-- **Production-Ready**: 346+ workspace tests (library + CLI + integration), with end-to-end example runs in CI
+- **Safer by construction (Rust)**: Memory errors that plague C/C++ code are largely ruled out in safe Rust; the interpreter still has correctness and parity work ahead.
+- **A performance-minded design**: Opcode dispatch, JIT hooks, and LLVM for the host binary — without promising a given speedup over Zend until we publish reproducible benchmarks.
+- **Concurrency-friendly host code**: Rust’s type system helps avoid data races in the engine itself; PHP’s shared mutable runtime model is still evolving in phprs.
+- **Test-backed**: 346+ workspace tests (library + CLI + integration), plus end-to-end example runs in CI.
 
 **phprs** brings PHP into the future by:
 
@@ -26,38 +26,18 @@ PHP powers over 77% of the web, but traditional C-based implementations suffer f
 - ❌ Dangling pointers causing crashes
 - ❌ Segmentation faults in production
 
-**phprs Rust Solution:**
-- ✅ **Zero Memory Leaks**: Ownership system guarantees automatic cleanup
-- ✅ **No Buffer Overflows**: Compile-time bounds checking
-- ✅ **No Use-After-Free**: Borrow checker prevents invalid references
-- ✅ **No Null Pointer Dereferences**: Option<T> type system
-- ✅ **No Segfaults**: Safe by default, unsafe only when explicitly marked
+**What Rust gives the codebase:**
+- Strong **memory safety** guarantees for safe code (no dangling pointers from the borrow checker’s rules).
+- **Bounds-checked** access patterns by default, reducing classic buffer overruns.
+- **`Option` and `Result`** instead of nullable pointers everywhere.
+- **`unsafe` is explicit** and should stay rare and reviewed.
 
-**Result**: 70% reduction in security vulnerabilities compared to C-based PHP implementations
+This does **not** automatically make every PHP script “more secure” end-to-end — it raises the bar for the **interpreter implementation** itself. Application security still depends on how you deploy and what you run.
 
-### ⚡ **Performance - Rust's Zero-Cost Abstractions**
-**Why Rust Outperforms C-based PHP:**
-- **LLVM Backend**: Same compiler infrastructure as Clang/Swift, superior optimization
-- **Zero-Cost Abstractions**: High-level code compiles to optimal machine code
-- **No Garbage Collection Pauses**: Deterministic memory management
-- **Better CPU Cache Utilization**: Memory layout optimizations
-- **SIMD Vectorization**: Automatic use of modern CPU instructions
+### ⚡ **Performance — goals, not guarantees**
+Rust is a **good host language** for a VM: LLVM, predictable allocation patterns, and room to optimize hot paths. **phprs** includes pieces like direct opcode dispatch and JIT-oriented hooks, but **we do not publish head-to-head PHP 8.x numbers here** — workloads and completeness differ too much for a fair slogan.
 
-**phprs Performance Features:**
-- ✅ **JIT Compilation**: Hot code paths compiled to native machine code
-- ✅ **Advanced Optimizations**: Function inlining, constant folding, dead code elimination
-- ✅ **Opcode Caching**: Intelligent caching with optimization passes
-- ✅ **Lock-Free Data Structures**: Atomic operations for thread-safe performance
-- ✅ **Async I/O**: Tokio runtime for non-blocking operations
-
-**Benchmarks vs PHP 8.3:**
-- String operations: **2.2x faster**
-- Array operations: **1.9x faster**
-- Function calls: **2.0x faster**
-- Regex matching: **2.0x faster**
-- JSON encoding: **1.8x faster**
-
-*See [PERFORMANCE.md](PERFORMANCE.md) for detailed benchmarks*
+If you want the engineering direction (dispatch, JIT ideas, etc.), see [PERFORMANCE.md](PERFORMANCE.md). Treat it as **design notes**, not a audited benchmark report, until we link reproducible methodology and results.
 
 ### 🔒 **Thread Safety - Fearless Concurrency**
 **Traditional PHP Limitations:**
@@ -66,14 +46,11 @@ PHP powers over 77% of the web, but traditional C-based implementations suffer f
 - ❌ Race conditions in extensions
 - ❌ Global state issues
 
-**phprs Rust Advantage:**
-- ✅ **Compile-Time Race Detection**: Borrow checker prevents data races
-- ✅ **Safe Parallelism**: Arc, RwLock, OnceLock for thread-safe shared state
-- ✅ **Send + Sync Traits**: Type system enforces thread safety
-- ✅ **No Data Races**: Impossible by design, not by convention
-- ✅ **Concurrent JIT**: Thread-safe compilation and optimization
+**Rust (host code):**
+- The borrow checker and `Send` / `Sync` rules catch many concurrency mistakes **at compile time** in the Rust parts of the project.
+- Primitives like `Arc`, mutexes, and `OnceLock` are the usual tools for shared engine state.
 
-**Result**: Run PHP code in parallel without fear of race conditions or deadlocks
+**PHP scripts** under phprs still run through a single runtime model; don’t assume “multi-threaded PHP” parity with extensions or Zend here.
 
 ### 🌐 **Framework Support**
 Progressive compatibility with popular PHP frameworks and CMSs (stubs and demos ship in `examples/`):
@@ -84,30 +61,25 @@ Progressive compatibility with popular PHP frameworks and CMSs (stubs and demos 
 - **Symfony** 📋 - HTTP kernel, DI (planned)
 
 ### 🛠️ **Modern Ecosystem - Rust Crate Integration**
-**Leveraging Rust's Rich Ecosystem:**
-- **Stream Wrappers**: HTTP/HTTPS with `reqwest` (async I/O, HTTP/2 ready)
-- **Regular Expressions**: `regex` crate (faster than PCRE, no ReDoS vulnerabilities)
-- **Cryptography**: `sha2`, `md5` crates (constant-time operations, side-channel resistant)
-- **PDO Database Layer**: Database abstraction for MySQL, PostgreSQL, SQLite
-- **Session Handling**: Secure session management with cryptographic guarantees
-- **Package Manager**: Composer-compatible with Rust's `semver` for version resolution
-- **Built-in Web Server**: Development server with hot reload
-- **JSON Parsing**: `serde_json` (fastest JSON parser available)
+**Leveraging crates.io:**
+- **HTTP**: `reqwest` for HTTP/HTTPS from the host
+- **Regex**: the `regex` crate (different tradeoffs vs PCRE — not a drop-in performance claim)
+- **Crypto / hashing**: common Rust crates for checksums and tooling
+- **PDO / sessions / JSON**: implemented or stubbed to varying degrees — see source and tests for what’s real today
+- **Package manager**: Composer-oriented workflows with `semver` for version parsing
+- **Dev server**: `phprs serve` for local tries
 
-**Rust Advantage**: Access to 100,000+ battle-tested crates from crates.io
+There is a **huge ecosystem** of maintained Rust libraries; phprs only uses a small slice.
 
 ### 🎯 **Standalone & Embeddable - Rust's Portability**
-**Deployment Advantages:**
-- **Standalone Binary**: Single executable, no external dependencies (unlike PHP requiring libxml, openssl, etc.)
-- **Tiny Docker Images**: 10-20MB vs 100MB+ for traditional PHP
-- **Static Linking**: No shared library version conflicts
-- **Cross-Compilation**: Build for any platform from any platform
-- **Embeddable**: Use as a library in Rust, C, Python, Node.js applications
-- **WebAssembly**: Compile to WASM for browser execution (planned)
-- **Cross-Platform**: Linux, macOS, Windows, BSD - single codebase
-- **ARM Support**: Native performance on ARM64 (Apple Silicon, Raspberry Pi)
+**Deployment:**
+- **Single binary** (typical Rust workflow): fewer moving parts than a full PHP build with many extensions.
+- Image size and static linking depend on **how you package** the CLI — compare measurements for your own Dockerfile, don’t trust a slogan.
+- **Cross-compilation** is possible in principle; CI mainly exercises tier-1 targets you care about.
+- **Library crate**: embed from Rust; FFI to other languages is possible but not the focus of this README.
+- **WASM / every platform**: aspirational until documented.
 
-**Rust Advantage**: Write once, compile anywhere with native performance
+Rust helps with **predictable builds**; it doesn’t magically shrink every deployment.
 
 ## Quick Start
 
@@ -156,13 +128,13 @@ phprs pkg install
 phprs pkg require vendor/package
 ```
 
-### Migration Guide - Seamless Transition
+### Running code written for PHP
 
-**From PHP 8.x to phprs** - Your existing code works out of the box:
+phprs targets **PHP language compatibility**, but many extensions, ini settings, and edge cases differ from Zend PHP. **Try your script and fix gaps** — we don’t promise bit-for-bit behavior yet.
 
 ```php
 <?php
-// Your existing PHP code runs unchanged
+// Example that may run once the engine supports the features you use
 class User {
     public function __construct(
         private string $name,
@@ -178,30 +150,11 @@ $user = new User('John', 'john@example.com');
 echo $user->greet();
 ```
 
-**Just run it**:
 ```bash
-phprs run your-app.php
+cargo run -p phprs-cli -- run your-app.php
 ```
 
-**WordPress sites** - Drop-in replacement:
-```bash
-# Your WordPress installation
-cd /var/www/wordpress
-
-# Run with phprs
-phprs run index.php
-
-# Or start development server
-phprs serve --port 8080
-```
-
-**Laravel applications**:
-```bash
-cd your-laravel-app
-phprs run artisan serve
-```
-
-**No code changes required** - phprs is designed for compatibility!
+**WordPress / Laravel / Symfony**: not production migration targets today — use the **`examples/`** trees and [TODO.md](TODO.md) to see what is implemented. Large apps should expect **porting work**.
 
 ## Examples
 
@@ -211,7 +164,7 @@ phprs run artisan serve
 // examples/01_hello_world.php
 echo "Hello from phprs!\n";
 
-// Modern PHP 8 features work
+// Many PHP 8 features work; unsupported ones fail at compile or runtime
 $numbers = [1, 2, 3, 4, 5];
 $squared = array_map(fn($n) => $n ** 2, $numbers);
 print_r($squared);
@@ -382,20 +335,15 @@ let _ = execute_ex(&mut exec_data, &op_array);
 
 ## Framework Compatibility
 
-### ✅ WordPress (Production Ready)
-**Full support** for WordPress core, plugins, and themes:
-- ✅ Complete hooks system (actions & filters with priority)
-- ✅ wpdb database abstraction layer
-- ✅ Plugin API (activation, deactivation, hooks)
-- ✅ Theme API (template loading, theme support)
-- ✅ Session handling
-- ✅ 40+ WordPress-specific functions
-- ✅ Example plugin & theme included
+### WordPress (partial / `examples/` focus)
+There is a **WordPress-shaped demo** under `examples/wordpress/` (stubs, hooks, wpdb-ish pieces, sample plugin/theme). It is useful for development and tests, **not** a claim that arbitrary WordPress sites run unchanged in production on phprs.
 
-**Run WordPress**:
+- Hooks, plugin/theme loading, and wpdb-related code paths are **incomplete** compared to PHP + Zend + extensions.
+- Treat real deployments as **unsupported** until you validate your stack yourself.
+
 ```bash
-cd wordpress-installation
-phprs run index.php
+# Demo tree only — not a full WP core checkout
+cargo run -p phprs-cli -- run examples/wordpress/index.php
 ```
 
 ### 📋 Laravel (Planned)
@@ -449,12 +397,10 @@ phprs run index.php
 **Output**: `echo`, `print`, `var_dump`, `print_r`
 
 ### ✅ Advanced Features
-- **JIT Compilation**: Hot path optimization
-- **Opcode Caching**: Intelligent bytecode caching
-- **Function Inlining**: Automatic optimization
-- **Memory Management**: Rust-based GC, no memory leaks
-- **Thread Safety**: Safe concurrent execution
-- **Async I/O**: HTTP requests with Tokio runtime
+- **JIT / optimizer hooks**: present to varying degrees; see code and tests for what’s wired today
+- **Bytecode / op arrays**: compiled once per script in the current model
+- **Memory**: Rust ownership for engine structures; PHP values still use runtime-managed lifecycles
+- **Async I/O**: Tokio in the host for HTTP client / server paths where used
 
 ### ✅ Development Tools
 - **Built-in Web Server**: `phprs serve`
@@ -463,58 +409,21 @@ phprs run index.php
 - **Debugger**: Step-through debugging (planned)
 - **Profiler**: Performance analysis (planned)
 
-## Performance - Why Rust Wins
+## Performance — expectations
 
-phprs is designed for speed, leveraging Rust's zero-cost abstractions and LLVM's world-class optimization:
+**phprs is not marketed with a “Nx faster than PHP” number.** A fair comparison needs the same features enabled, representative workloads, and pinned versions. We’d rather under-promise and add measured results later than repeat placeholder tables.
 
-### Benchmarks vs PHP 8.3
-| Operation | PHP 8.3 | phprs | Improvement | Rust Advantage |
-|-----------|---------|-------|-------------|----------------|
-| String concatenation | 100ms | 45ms | **2.2x faster** | Zero-copy string handling |
-| Array operations | 150ms | 80ms | **1.9x faster** | Optimized memory layout |
-| Function calls | 80ms | 40ms | **2.0x faster** | Inline optimization |
-| Regex matching | 120ms | 60ms | **2.0x faster** | Rust regex crate (DFA-based) |
-| JSON encoding | 90ms | 50ms | **1.8x faster** | serde zero-copy serialization |
-| Memory allocation | 200ms | 60ms | **3.3x faster** | No GC pauses |
-| Concurrent requests | 500ms | 150ms | **3.3x faster** | True parallelism |
+**Why Rust is still a sensible implementation language:**
+- Mature **LLVM** backend for the host binary.
+- **Control over allocation** and hot paths in the VM without a GC for the Rust parts.
+- Room to grow **JIT** and other optimizations incrementally.
 
-*Benchmarks run on 1M iterations. See [PERFORMANCE.md](PERFORMANCE.md) for details.*
+**Inside the project today (high level):**
+- Opcode execution via a **direct dispatch table** (see VM sources).
+- **JIT-related** code paths and optimizer scaffolding — completeness varies; read `src/engine/jit.rs` and tests.
+- [PERFORMANCE.md](PERFORMANCE.md) discusses **intent and architecture**; when we have reproducible benchmarks, they should live next to methodology (machine, OS, PHP build flags, phprs commit).
 
-### Why Rust Outperforms C-based PHP
-
-**1. LLVM Optimization Pipeline**
-- Same backend as Clang, Swift, and Julia
-- Advanced optimizations: loop vectorization, auto-vectorization, polyhedral optimization
-- Profile-guided optimization (PGO) support
-- Link-time optimization (LTO) for whole-program analysis
-
-**2. Zero-Cost Abstractions**
-- High-level constructs compile to optimal machine code
-- Iterator chains optimize to tight loops
-- Generic code monomorphized for maximum performance
-- No runtime overhead for safety guarantees
-
-**3. Memory Management**
-- **No Garbage Collection**: Deterministic deallocation via RAII
-- **No Stop-the-World Pauses**: Predictable latency
-- **Better Cache Locality**: Ownership system enables optimal memory layout
-- **Reduced Memory Fragmentation**: Predictable allocation patterns
-
-**4. Concurrency Without Overhead**
-- Lock-free data structures using atomics
-- Work-stealing scheduler (Tokio)
-- Zero-cost async/await
-- No GIL (Global Interpreter Lock) limitations
-
-### Optimization Features
-- **JIT Compilation**: Compiles hot code paths to native machine code
-- **Opcode Caching**: Caches compiled bytecode for faster execution
-- **Function Inlining**: Eliminates function call overhead (LLVM-powered)
-- **Constant Folding**: Evaluates constants at compile time
-- **Dead Code Elimination**: Removes unused code paths
-- **Memory Pool**: Fast allocation with thread-local pools
-- **SIMD Vectorization**: Automatic use of SSE/AVX instructions
-- **Branch Prediction**: Profile-guided optimization for hot paths
+If you need predictable numbers for a decision, **measure your own scripts** on both runtimes or open an issue asking for a benchmark harness — we welcome contributions there.
 
 ## Getting Started
 
@@ -593,7 +502,7 @@ The workspace runs **clean** (no warnings) on `cargo test --workspace` and `carg
 - **[SPEC.md](SPEC.md)** - Project specification and scope
 - **[ARCHITECTURE.md](ARCHITECTURE.md)** - Module structure and execution flow
 - **[TODO.md](TODO.md)** - Migration roadmap and statistics (70+ built-in functions, 15 PHP runtime modules)
-- **[PERFORMANCE.md](PERFORMANCE.md)** - Optimizations and benchmarks vs PHP 8
+- **[PERFORMANCE.md](PERFORMANCE.md)** - Optimization ideas and VM notes (not a benchmark certificate)
 
 ### Feature Documentation
 - **[examples/STREAMS-REGEX-PDO-README.md](examples/STREAMS-REGEX-PDO-README.md)** - Stream wrappers, regex, sessions, PDO
@@ -617,8 +526,8 @@ The workspace runs **clean** (no warnings) on `cargo test --workspace` and `carg
 - Session handling
 - WordPress support (hooks, plugins, themes)
 - Package manager (Composer-compatible)
-- JIT compilation
-- Opcode caching
+- JIT / optimizer scaffolding (see sources; not a complete production JIT story)
+- Compiled op arrays (per-run bytecode; caching story is incremental)
 
 ### 🚧 In Progress (v0.2.x)
 - Laravel framework support
