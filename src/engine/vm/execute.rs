@@ -30,6 +30,7 @@ fn init_dispatch_table() {
         table[Opcode::Pow as usize] = execute_pow;
         table[Opcode::Concat as usize] = execute_concat;
         table[Opcode::Assign as usize] = execute_assign;
+        table[Opcode::AssignDim as usize] = execute_assign_dim;
         table[Opcode::Echo as usize] = execute_echo;
         table[Opcode::Return as usize] = execute_return;
         table[Opcode::Jmp as usize] = execute_jmp;
@@ -67,6 +68,44 @@ fn default_handler(_op: &Op, _execute_data: &mut ExecuteData) -> Result<ExecResu
     Ok(ExecResult::Continue)
 }
 
+/// Parent directory for relative includes. `None` keeps the caller's `current_script_dir`
+/// (e.g. empty filename or synthetic `Class::method` labels).
+fn script_dir_from_oparray_filename(filename: Option<&String>) -> Option<String> {
+    let f = filename?;
+    if f.is_empty() {
+        return None;
+    }
+    if f.contains("::") && !f.contains('/') && !f.contains('\\') {
+        return None;
+    }
+    std::path::Path::new(f.as_str())
+        .parent()
+        .map(|p| p.to_string_lossy().into_owned())
+        .filter(|s| !s.is_empty())
+}
+
+fn apply_script_path_constants(execute_data: &mut ExecuteData, op_array: &OpArray) {
+    if let Some(dir) = script_dir_from_oparray_filename(op_array.filename.as_ref()) {
+        execute_data.current_script_dir = Some(dir.clone());
+        let dir_val = Val::new(
+            PhpValue::String(Box::new(string_init(&dir, false))),
+            PhpType::String,
+        );
+        execute_data
+            .constants
+            .insert("__DIR__".to_string(), dir_val);
+        if let Some(ref path) = op_array.filename {
+            let file_val = Val::new(
+                PhpValue::String(Box::new(string_init(path.as_str(), false))),
+                PhpType::String,
+            );
+            execute_data
+                .constants
+                .insert("__FILE__".to_string(), file_val);
+        }
+    }
+}
+
 /// Execute op array and capture return value (optimized)
 pub fn execute_ex_returning(
     execute_data: &mut ExecuteData,
@@ -90,36 +129,11 @@ pub fn execute_ex_returning(
     }
     execute_data.op_array = Some(new_op_array);
     execute_data.current_op = 0;
-    execute_data.current_script_dir = op_array.filename.as_ref().and_then(|f| {
-        std::path::Path::new(f)
-            .parent()
-            .map(|p| p.to_string_lossy().into_owned())
-    });
-    if let Some(ref dir) = execute_data.current_script_dir {
-        let dir_val = Val::new(
-            PhpValue::String(Box::new(string_init(dir, false))),
-            PhpType::String,
-        );
-        execute_data
-            .constants
-            .insert("__DIR__".to_string(), dir_val);
-    }
-    if let Some(ref path) = op_array.filename {
-        let file_val = Val::new(
-            PhpValue::String(Box::new(string_init(path, false))),
-            PhpType::String,
-        );
-        execute_data
-            .constants
-            .insert("__FILE__".to_string(), file_val);
-    }
+    apply_script_path_constants(execute_data, op_array);
 
     // Optimized execution loop with direct dispatch
     let ops = &op_array.ops;
     let len = ops.len();
-
-    // Initialize dispatch table
-    init_dispatch_table();
 
     let mut iteration_count = 0;
     let max_iterations = 1_000_000; // Safety limit to prevent infinite loops
@@ -184,30 +198,7 @@ pub fn execute_ex(execute_data: &mut ExecuteData, op_array: &OpArray) -> PhpResu
 
     execute_data.op_array = Some(new_op_array);
     execute_data.current_op = 0;
-    execute_data.current_script_dir = op_array.filename.as_ref().and_then(|f| {
-        std::path::Path::new(f)
-            .parent()
-            .map(|p| p.to_string_lossy().into_owned())
-    });
-    // Set __DIR__ magic constant for WordPress/script compatibility
-    if let Some(ref dir) = execute_data.current_script_dir {
-        let dir_val = Val::new(
-            PhpValue::String(Box::new(string_init(dir, false))),
-            PhpType::String,
-        );
-        execute_data
-            .constants
-            .insert("__DIR__".to_string(), dir_val);
-    }
-    if let Some(ref path) = op_array.filename {
-        let file_val = Val::new(
-            PhpValue::String(Box::new(string_init(path, false))),
-            PhpType::String,
-        );
-        execute_data
-            .constants
-            .insert("__FILE__".to_string(), file_val);
-    }
+    apply_script_path_constants(execute_data, op_array);
 
     // Optimized class table transfer with capacity hints
     execute_data.class_table.reserve(op_array.class_table.len());
@@ -226,10 +217,14 @@ pub fn execute_ex(execute_data: &mut ExecuteData, op_array: &OpArray) -> PhpResu
                     .insert(prop_name.clone(), clone_val(prop_val));
             }
             for (method_name, method) in &ce.methods {
-                let mut new_op_arr = OpArray::with_capacity(
-                    method.op_array.ops.len(),
-                    format!("{}::{}", name, method_name),
-                );
+                let method_file = method
+                    .op_array
+                    .filename
+                    .clone()
+                    .filter(|f| !f.is_empty())
+                    .unwrap_or_else(|| format!("{}::{}", name, method_name));
+                let mut new_op_arr =
+                    OpArray::with_capacity(method.op_array.ops.len(), method_file);
                 new_op_arr.ops = method
                     .op_array
                     .ops

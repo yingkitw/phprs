@@ -160,6 +160,21 @@ fn compile_variable_stmt(
         let value_zval_op2 = StdValFactory::clone_val(&value_zval);
         context.emit_opcode(Opcode::Assign, var_name_zval, value_zval, value_zval_op2);
         skip_semicolon(lexer, after_expr)
+    } else if token_is_punct(&next_token, "[") {
+        // $var[key] = value;
+        let idx_first = lexer.next_token()?;
+        let (index_val, after_index) = parse_additive_expr_with_initial(lexer, context, idx_first)?;
+        if !token_is_punct(&after_index, "]") {
+            return Err("Expected ']' after array index in assignment".to_string());
+        }
+        let after_close = lexer.next_token()?;
+        if after_close.token_type != TokenType::T_EQUAL {
+            return Err("Expected '=' after array index assignment target".to_string());
+        }
+        let (value_zval, after_value) = parse_expression(lexer, context)?;
+        let var_name_zval = string_val(var_name);
+        context.emit_opcode(Opcode::AssignDim, var_name_zval, value_zval, index_val);
+        skip_semicolon(lexer, after_value)
     } else if token_is_punct(&next_token, "(") {
         // Callable variable: $var(args...)
         let var_zval = crate::engine::vm::var_ref(var_name);

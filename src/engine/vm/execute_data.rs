@@ -52,14 +52,18 @@ pub(crate) fn resolve_operand(operand: &Val, execute_data: &ExecuteData) -> Val 
             return execute_data.get_var(clean);
         }
     }
-    // Check if it's a constant identifier (bare string that might be a constant name)
-    if operand.get_type() == PhpType::String {
+    // Bare identifier constants are emitted as ConstantAst (not real string literals)
+    if operand.get_type() == PhpType::ConstantAst {
         if let PhpValue::String(name) = &operand.value {
             let name_str = name.as_str();
-            // Check if this is a constant (uppercase identifier without quotes in source)
-            if execute_data.constants.contains_key(name_str) {
-                return clone_val(execute_data.constants.get(name_str).unwrap());
+            if let Some(v) = execute_data.constants.get(name_str) {
+                return clone_val(v);
             }
+            // PHP legacy: undefined constant name becomes a string of that name
+            return Val::new(
+                PhpValue::String(Box::new(crate::engine::string::string_init(name_str, false))),
+                PhpType::String,
+            );
         }
     }
     clone_val(operand)

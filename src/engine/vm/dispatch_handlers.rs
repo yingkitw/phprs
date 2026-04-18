@@ -170,6 +170,42 @@ pub fn execute_assign(op: &Op, execute_data: &mut ExecuteData) -> Result<ExecRes
 }
 
 #[inline]
+pub fn execute_assign_dim(op: &Op, execute_data: &mut ExecuteData) -> Result<ExecResult, String> {
+    let val = resolve_operand(&op.op2, execute_data);
+    let key = resolve_operand(&op.result, execute_data);
+    if let PhpValue::String(var_s) = &op.op1.value {
+        let name = var_s.as_str();
+        let clean = if name.starts_with('$') {
+            &name[1..]
+        } else {
+            name
+        };
+        let mut container = execute_data.get_var(clean);
+        if container.get_type() == PhpType::Null {
+            container = Val::new(
+                PhpValue::Array(Box::new(crate::engine::types::PhpArray::new())),
+                PhpType::Array,
+            );
+        }
+        if let PhpValue::Array(ref mut arr) = container.value {
+            match &key.value {
+                PhpValue::Long(i) => {
+                    let _ = crate::engine::hash::hash_add_or_update(arr, None, *i as u64, val, 0);
+                }
+                PhpValue::String(ks) => {
+                    let key_zs =
+                        Box::new(crate::engine::string::string_init(ks.as_str(), false));
+                    let _ = crate::engine::hash::hash_add_or_update(arr, Some(&*key_zs), 0, val, 0);
+                }
+                _ => {}
+            }
+            execute_data.set_var(clean, container);
+        }
+    }
+    Ok(ExecResult::Continue)
+}
+
+#[inline]
 pub fn execute_echo(op: &Op, execute_data: &mut ExecuteData) -> Result<ExecResult, String> {
     let val = resolve_operand(&op.op1, execute_data);
     let s = crate::engine::operators::zval_get_string(&val);
@@ -332,6 +368,9 @@ pub fn execute_do_fcall(op: &Op, execute_data: &mut ExecuteData) -> Result<ExecR
                     execute_data.set_var(clean, arr_val);
                 }
 
+                let saved_script_dir = execute_data.current_script_dir.clone();
+                let saved_magic_dir = execute_data.constants.get("__DIR__").map(clone_val);
+                let saved_magic_file = execute_data.constants.get("__FILE__").map(clone_val);
                 // Execute the function and capture return value
                 let (_status, return_val) =
                     super::execute::execute_ex_returning(execute_data, &func_op_array);
@@ -341,6 +380,23 @@ pub fn execute_do_fcall(op: &Op, execute_data: &mut ExecuteData) -> Result<ExecR
                 execute_data.temp_vars = saved_temps;
                 execute_data.op_array = saved_op_array;
                 execute_data.current_op = saved_op;
+                execute_data.current_script_dir = saved_script_dir;
+                match saved_magic_dir {
+                    Some(v) => {
+                        execute_data.constants.insert("__DIR__".to_string(), v);
+                    }
+                    None => {
+                        execute_data.constants.remove("__DIR__");
+                    }
+                }
+                match saved_magic_file {
+                    Some(v) => {
+                        execute_data.constants.insert("__FILE__".to_string(), v);
+                    }
+                    None => {
+                        execute_data.constants.remove("__FILE__");
+                    }
+                }
 
                 // Store return value in result temp slot
                 if let Some(ret) = return_val {
@@ -657,7 +713,7 @@ pub fn execute_do_method_call(
     if let PhpValue::Object(ref obj) = obj_val.value {
         let class_name = obj.class_name.clone();
         // Extract method info (owned copies to avoid borrow conflict)
-        let method_info: Option<(Vec<String>, Vec<Op>)> = execute_data
+        let method_info: Option<(Vec<String>, Vec<Op>, String)> = execute_data
             .class_table
             .get(&class_name)
             .and_then(|ce| ce.methods.get(method_name.as_str()))
@@ -677,12 +733,21 @@ pub fn execute_do_method_call(
                         )
                     })
                     .collect();
-                (params, ops)
+                let file_label = m
+                    .op_array
+                    .filename
+                    .clone()
+                    .filter(|f| !f.is_empty())
+                    .unwrap_or_else(|| format!("{}::{}", class_name, method_name.as_str()));
+                (params, ops, file_label)
             });
 
-        if let Some((params, ops)) = method_info {
+        if let Some((params, ops, oparray_filename)) = method_info {
             let saved_current_op = execute_data.current_op;
             let saved_op_array = execute_data.op_array.take();
+            let saved_script_dir = execute_data.current_script_dir.clone();
+            let saved_magic_dir = execute_data.constants.get("__DIR__").map(clone_val);
+            let saved_magic_file = execute_data.constants.get("__FILE__").map(clone_val);
             // Set up $this
             execute_data.set_var("this", clone_val(&obj_val));
 
@@ -699,15 +764,29 @@ pub fn execute_do_method_call(
             }
 
             // Execute method
-            let mut method_op_array = OpArray::with_capacity(
-                ops.len(),
-                format!("{}::{}", class_name, method_name.as_str()),
-            );
+            let mut method_op_array = OpArray::with_capacity(ops.len(), oparray_filename);
             method_op_array.ops = ops;
             let (_status, return_val) =
                 super::execute::execute_ex_returning(execute_data, &method_op_array);
             execute_data.op_array = saved_op_array;
             execute_data.current_op = saved_current_op;
+            execute_data.current_script_dir = saved_script_dir;
+            match saved_magic_dir {
+                Some(v) => {
+                    execute_data.constants.insert("__DIR__".to_string(), v);
+                }
+                None => {
+                    execute_data.constants.remove("__DIR__");
+                }
+            }
+            match saved_magic_file {
+                Some(v) => {
+                    execute_data.constants.insert("__FILE__".to_string(), v);
+                }
+                None => {
+                    execute_data.constants.remove("__FILE__");
+                }
+            }
 
             // Store return value
             execute_data.call_args.clear();
@@ -741,6 +820,7 @@ pub fn dispatch_opcode(op: &Op, execute_data: &mut ExecuteData) -> Result<ExecRe
         Opcode::Pow => execute_pow(op, execute_data),
         Opcode::Concat => execute_concat(op, execute_data),
         Opcode::Assign => execute_assign(op, execute_data),
+        Opcode::AssignDim => execute_assign_dim(op, execute_data),
         Opcode::Echo => execute_echo(op, execute_data),
         Opcode::Return => execute_return(op, execute_data),
         Opcode::Jmp => execute_jmp(op, execute_data),

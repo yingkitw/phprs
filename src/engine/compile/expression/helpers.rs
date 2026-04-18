@@ -3,7 +3,8 @@
 use crate::engine::compile::context::CompileContext;
 use crate::engine::facade::{self, StdValFactory, ValFactory};
 use crate::engine::lexer::{Lexer, Token, TokenType};
-use crate::engine::types::Val;
+use crate::engine::string::string_init;
+use crate::engine::types::{PhpType, PhpValue, Val};
 use crate::engine::vm::{temp_var_ref, var_ref, Opcode};
 
 /// Check if token matches a specific punctuation string
@@ -606,7 +607,8 @@ pub(crate) fn parse_function_call(
 /// Emit constant(name) lookup for bare identifiers (WordPress/PHP compatibility)
 /// Returns a string Val with the constant name that will be resolved at runtime
 pub(crate) fn compile_constant_lookup(_context: &mut CompileContext, name: &str) -> Val {
-    // Return the constant name as a string literal
-    // resolve_operand will check the constants HashMap for this name
-    facade::string_val(name)
+    Val::new(
+        PhpValue::String(Box::new(string_init(name, false))),
+        PhpType::ConstantAst,
+    )
 }

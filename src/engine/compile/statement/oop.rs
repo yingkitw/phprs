@@ -51,7 +51,7 @@ fn parse_class_body(
         };
 
         if next.token_type == TokenType::T_FUNCTION {
-            next = compile_class_method(lexer, ce, visibility, is_static)?;
+            next = compile_class_method(lexer, context, ce, visibility, is_static)?;
         } else if next.token_type == TokenType::T_VARIABLE {
             next = compile_class_property(lexer, context, ce, &next)?;
         } else {
@@ -92,7 +92,14 @@ fn compile_use_trait(
                         op.extended_value,
                     ));
                 }
-                let mut new_op_array = crate::engine::vm::OpArray::new(format!("{}::{}", ce.name, method_name));
+                let method_file = method
+                    .op_array
+                    .filename
+                    .clone()
+                    .filter(|f| !f.is_empty())
+                    .unwrap_or_else(|| format!("{}::{}", ce.name, method_name));
+                let mut new_op_array =
+                    crate::engine::vm::OpArray::with_capacity(new_ops.len(), method_file);
                 new_op_array.ops = new_ops;
                 ce.methods.insert(method_name.clone(), ClassMethod {
                     name: method.name.clone(),
@@ -194,6 +201,7 @@ pub(crate) fn compile_trait(
 /// Compile a class method definition
 fn compile_class_method(
     lexer: &mut Lexer,
+    context: &CompileContext,
     ce: &mut ClassEntry,
     visibility: Visibility,
     is_static: bool,
@@ -230,8 +238,11 @@ fn compile_class_method(
         return Err("Expected '{' after method parameters".to_string());
     }
 
-    // Compile method body into a separate op array
+    // Compile method body into a separate op array (inherit source file for __FILE__ / includes)
     let mut method_context = CompileContext::new();
+    if let Some(ref f) = context.filename {
+        method_context.set_filename(f);
+    }
     let mut body_token = lexer.next_token()?;
     let mut brace_depth = 1;
     while brace_depth > 0 {

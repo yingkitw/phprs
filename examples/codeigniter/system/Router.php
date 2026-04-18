@@ -18,7 +18,7 @@ class Router {
         $controller = $parts[0];
         $action = $parts[1];
         if ($controller == 'Home' && $action == 'index') {
-            require APP_PATH . 'Controllers/Home.php';
+            require '../app/Controllers/Home.php';
             $obj = new HomeController();
             $obj->index();
         }
