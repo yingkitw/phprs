@@ -142,11 +142,11 @@
 
 ### Implementation Stats
 - **Engine**: types, string, hash, alloc, gc, operators, array_ops, lexer, compile, vm, jit, function_optimizer, opcode_cache, benchmark, perf, perf_alloc, facade, errors, exception
-- **PHP runtime**: 18 source files in php/ (added regex, http_stream, pdo, math, hash, datetime)
+- **PHP runtime**: 19 source files in php/ (added regex, http_stream, pdo, math, hash, datetime, mbstring)
 - **Framework examples**: WordPress (full), CodeIgniter 4 (bootstrap), Drupal (bootstrap)
 - **63 opcodes** (dispatch table, dispatch_handlers)
-- **100+ built-in functions** (including isset, empty, htmlspecialchars, preg_*, math functions, hash functions, datetime functions, shortcode_atts, array_merge, ucfirst, etc.)
-- **244 passing tests** (100% pass rate)
+- **110+ built-in functions** (including isset, empty, htmlspecialchars, preg_*, math functions, hash functions, datetime functions, mbstring functions, shortcode_atts, array_merge, ucfirst, etc.)
+- **271 passing tests** (100% pass rate)
 - **Zero compilation warnings** (clean build with clippy)
 - **Thread-safe** JIT and optimizer (Arc, OnceLock, RwLock)
 
@@ -253,7 +253,14 @@
 - [x] **Hash functions** - `md5()`, `sha1()`, `hash()`, `base64_encode()`, `base64_decode()`
   - [ ] `hash_hmac()`, `password_hash()`, `password_verify()`
 - [ ] **URL functions** - `parse_url()`, `http_build_query()`, `urlencode()`, `urldecode()`
-- [ ] **Multibyte string** - `mb_strlen()`, `mb_substr()`, `mb_strtolower()`, `mb_strtoupper()`, `mb_convert_encoding()`
+- [x] **Multibyte string** - `mb_strlen()`, `mb_substr()`, `mb_strtolower()`, `mb_strtoupper()`, `mb_convert_encoding()`
+  - [x] mb_strlen() with Unicode grapheme cluster support
+  - [x] mb_substr() with proper Unicode handling
+  - [x] mb_strtolower() and mb_strtoupper()
+  - [x] mb_strpos() and mb_strrpos()
+  - [x] mb_convert_encoding() (basic UTF-8 support)
+  - [x] mb_substr_count()
+  - [x] mb_strwidth() and mb_strimwidth()
 - [ ] **XML parsing** - SimpleXML, XMLReader, XMLWriter
 - [ ] **CSV handling** - `fgetcsv()`, `fputcsv()`, `str_getcsv()`
 - [ ] **Compression** - `gzcompress()`, `gzuncompress()`, `gzencode()`, `gzdecode()`

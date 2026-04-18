@@ -398,8 +398,8 @@ pub(crate) fn execute_builtin_function(
                 // Local file
                 let resolved = resolve_path_for_runtime(path_str, _execute_data);
                 match std::fs::read_to_string(&resolved) {
-                    Ok(content) => Ok(Some(string_val(&content))),
-                    Err(_) => Ok(Some(Val::new(PhpValue::Long(0), PhpType::False))),
+                Ok(content) => Ok(Some(string_val(&content))),
+                Err(_) => Ok(Some(Val::new(PhpValue::Long(0), PhpType::False))),
                 }
             }
         }
@@ -639,6 +639,96 @@ pub(crate) fn execute_builtin_function(
             Ok(None)
         }
 
+        // --- Output buffering ---
+        "ob_start" => {
+            crate::php::output::php_output_start()?;
+            Ok(Some(bool_val(true)))
+        }
+        "ob_end_clean" => match crate::php::output::php_output_end_clean() {
+            Ok(()) => Ok(Some(bool_val(true))),
+            Err(_) => Ok(Some(bool_val(false))),
+        },
+        "ob_end_flush" => match crate::php::output::php_output_end_flush() {
+            Ok(_) => Ok(Some(bool_val(true))),
+            Err(_) => Ok(Some(bool_val(false))),
+        },
+        "ob_get_clean" => {
+            let contents = crate::php::output::php_output_get_clean().unwrap_or_default();
+            Ok(Some(string_val(&contents)))
+        }
+        "ob_get_flush" => {
+            let contents = crate::php::output::php_output_get_flush().unwrap_or_default();
+            Ok(Some(string_val(&contents)))
+        }
+        "ob_get_contents" => {
+            let contents = crate::php::output::php_output_get_contents().unwrap_or_default();
+            Ok(Some(string_val(&contents)))
+        }
+        "ob_get_level" => {
+            let level = crate::php::output::php_output_get_level();
+            Ok(Some(Val::new(PhpValue::Long(level as i64), PhpType::Long)))
+        }
+        "ob_clean" => {
+            let _ = crate::php::output::php_output_clean();
+            Ok(None)
+        }
+        "ob_flush" => {
+            let _ = crate::php::output::php_output_flush();
+            Ok(None)
+        }
+        "ob_implicit_flush" => Ok(None),
+
+        // --- Error handling ---
+        "set_error_handler" => {
+            if args.is_empty() {
+                return Err("set_error_handler() expects at least 1 argument".into());
+            }
+            let prev = _execute_data.error_handler.take();
+            let handler_name = crate::engine::operators::zval_get_string(&args[0]);
+            _execute_data.error_handler = Some(handler_name.as_str().to_string());
+            Ok(Some(string_val(prev.as_deref().unwrap_or(""))))
+        }
+        "restore_error_handler" => {
+            _execute_data.error_handler = None;
+            Ok(Some(bool_val(true)))
+        }
+        "set_exception_handler" => {
+            if args.is_empty() {
+                return Err("set_exception_handler() expects at least 1 argument".into());
+            }
+            let prev = _execute_data.exception_handler.take();
+            let handler_name = crate::engine::operators::zval_get_string(&args[0]);
+            _execute_data.exception_handler = Some(handler_name.as_str().to_string());
+            Ok(Some(string_val(prev.as_deref().unwrap_or(""))))
+        }
+        "restore_exception_handler" => {
+            _execute_data.exception_handler = None;
+            Ok(Some(bool_val(true)))
+        }
+        "register_shutdown_function" => {
+            if args.is_empty() {
+                return Err("register_shutdown_function() expects at least 1 argument".into());
+            }
+            let func = crate::engine::operators::zval_get_string(&args[0]);
+            _execute_data
+                .shutdown_functions
+                .push(func.as_str().to_string());
+            Ok(None)
+        }
+        "error_reporting" => Ok(Some(Val::new(PhpValue::Long(0), PhpType::Long))),
+        "trigger_error" | "user_error" => {
+            if args.is_empty() {
+                return Err("trigger_error() expects at least 1 argument".into());
+            }
+            let msg = crate::engine::operators::zval_get_string(&args[0]);
+            eprintln!("PHP User Error: {}", msg.as_str());
+            Ok(Some(bool_val(true)))
+        }
+        "set_include_path" => Ok(Some(string_val(""))),
+        "get_include_path" => Ok(Some(string_val("."))),
+        "ini_set" => Ok(Some(Val::new(PhpValue::Long(0), PhpType::Null))),
+        "ini_get" => Ok(Some(string_val(""))),
+
         // --- Math functions ---
         "abs" => crate::php::math::math_abs(args).map(Some),
         "ceil" => crate::php::math::math_ceil(args).map(Some),
@@ -665,8 +755,18 @@ pub(crate) fn execute_builtin_function(
         "md5" => crate::php::hash::hash_md5(args).map(Some),
         "sha1" => crate::php::hash::hash_sha1(args).map(Some),
         "hash" => crate::php::hash::hash_generic(args).map(Some),
+        "hash_hmac" => crate::php::hash::hash_hmac(args).map(Some),
         "base64_encode" => crate::php::hash::base64_encode(args).map(Some),
         "base64_decode" => crate::php::hash::base64_decode(args).map(Some),
+        "crc32" => crate::php::hash::crc32(args).map(Some),
+        "bin2hex" => crate::php::hash::bin2hex(args).map(Some),
+        "hex2bin" => crate::php::hash::hex2bin(args).map(Some),
+
+        // --- Crypt functions ---
+        "random_bytes" => crate::php::hash::random_bytes(args).map(Some),
+        "random_int" => crate::php::hash::random_int(args).map(Some),
+        "password_hash" => crate::php::hash::password_hash(args).map(Some),
+        "password_verify" => crate::php::hash::password_verify(args).map(Some),
 
         // --- DateTime functions ---
         "time" => crate::php::datetime::time_now(args).map(Some),
@@ -674,6 +774,28 @@ pub(crate) fn execute_builtin_function(
         "date" => crate::php::datetime::date_format(args).map(Some),
         "mktime" => crate::php::datetime::mktime(args).map(Some),
         "strtotime" => crate::php::datetime::strtotime(args).map(Some),
+
+        // --- URL functions ---
+        "parse_url" => crate::php::url::parse_url(args).map(Some),
+        "http_build_query" => crate::php::url::http_build_query(args).map(Some),
+        "urlencode" => crate::php::url::urlencode(args).map(Some),
+        "urldecode" => crate::php::url::urldecode(args).map(Some),
+        "rawurlencode" => crate::php::url::rawurlencode(args).map(Some),
+        "rawurldecode" => crate::php::url::rawurldecode(args).map(Some),
+        "parse_str" => crate::php::url::parse_str(args).map(Some),
+        "get_headers" => crate::php::url::get_headers(args).map(Some),
+
+        // --- Multibyte string functions ---
+        "mb_strlen" => crate::php::mbstring::mb_strlen(args).map(Some),
+        "mb_substr" => crate::php::mbstring::mb_substr(args).map(Some),
+        "mb_strtolower" => crate::php::mbstring::mb_strtolower(args).map(Some),
+        "mb_strtoupper" => crate::php::mbstring::mb_strtoupper(args).map(Some),
+        "mb_strpos" => crate::php::mbstring::mb_strpos(args).map(Some),
+        "mb_strrpos" => crate::php::mbstring::mb_strrpos(args).map(Some),
+        "mb_convert_encoding" => crate::php::mbstring::mb_convert_encoding(args).map(Some),
+        "mb_substr_count" => crate::php::mbstring::mb_substr_count(args).map(Some),
+        "mb_strwidth" => crate::php::mbstring::mb_strwidth(args).map(Some),
+        "mb_strimwidth" => crate::php::mbstring::mb_strimwidth(args).map(Some),
 
         _ => Ok(None), // Unknown function — return None to signal not found
     }

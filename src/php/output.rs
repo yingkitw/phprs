@@ -1,11 +1,12 @@
 //! PHP Output Buffering
 //!
 //! Migrated from main/php_output.h and main/output.c
+//! Supports multiple buffer levels, ob_start/ob_end_clean/ob_end_flush,
+//! ob_get_contents/ob_get_clean/ob_get_flush/ob_get_level.
 
 #[cfg(test)]
 mod tests;
 
-/// Output buffer
 pub struct OutputBuffer {
     buffer: Vec<u8>,
 }
@@ -53,7 +54,6 @@ impl Default for OutputBuffer {
     }
 }
 
-// Output buffer stack (thread-local to avoid races between parallel tests)
 thread_local! {
     static OUTPUT_BUFFERS: std::cell::RefCell<Vec<OutputBuffer>> = std::cell::RefCell::new(Vec::new());
 }
@@ -78,6 +78,120 @@ pub fn php_output_end() -> Result<String, String> {
     })
 }
 
+/// End output buffering, flush contents to stdout (or parent buffer), return contents
+pub fn php_output_end_flush() -> Result<String, String> {
+    OUTPUT_BUFFERS.with(|buffers| {
+        let mut bufs = buffers.borrow_mut();
+        if let Some(buffer) = bufs.pop() {
+            let contents = buffer.get_contents_string();
+            if !bufs.is_empty() {
+                let _ = bufs.last_mut().unwrap().write(contents.as_bytes());
+            } else {
+                let _ = std::io::Write::write_all(&mut std::io::stdout(), contents.as_bytes());
+            }
+            Ok(contents)
+        } else {
+            Err("No output buffer to end".to_string())
+        }
+    })
+}
+
+/// End output buffering and discard contents
+pub fn php_output_end_clean() -> Result<(), String> {
+    OUTPUT_BUFFERS.with(|buffers| {
+        let mut bufs = buffers.borrow_mut();
+        if bufs.pop().is_some() {
+            Ok(())
+        } else {
+            Err("No output buffer to end".to_string())
+        }
+    })
+}
+
+/// Get current buffer level (number of active buffers)
+pub fn php_output_get_level() -> usize {
+    OUTPUT_BUFFERS.with(|buffers| buffers.borrow().len())
+}
+
+/// Get contents of current buffer without ending it
+pub fn php_output_get_contents() -> Result<String, String> {
+    OUTPUT_BUFFERS.with(|buffers| {
+        let bufs = buffers.borrow();
+        if let Some(buffer) = bufs.last() {
+            Ok(buffer.get_contents_string())
+        } else {
+            Ok(String::new())
+        }
+    })
+}
+
+/// Get contents and clean the current buffer (without ending it)
+pub fn php_output_get_clean() -> Result<String, String> {
+    OUTPUT_BUFFERS.with(|buffers| {
+        let mut bufs = buffers.borrow_mut();
+        if let Some(buffer) = bufs.last_mut() {
+            let contents = buffer.get_contents_string();
+            buffer.clean();
+            Ok(contents)
+        } else {
+            Ok(String::new())
+        }
+    })
+}
+
+/// Get contents, flush to stdout/parent, and clean the current buffer
+pub fn php_output_get_flush() -> Result<String, String> {
+    OUTPUT_BUFFERS.with(|buffers| {
+        let mut bufs = buffers.borrow_mut();
+        let len = bufs.len();
+        if len == 0 {
+            return Ok(String::new());
+        }
+        let contents = bufs.last().unwrap().get_contents_string();
+        bufs.last_mut().unwrap().clean();
+        if len > 1 {
+            let content_bytes = contents.as_bytes().to_vec();
+            bufs[len - 2].write(&content_bytes)?;
+        } else {
+            let _ = std::io::Write::write_all(&mut std::io::stdout(), contents.as_bytes());
+        }
+        Ok(contents)
+    })
+}
+
+/// Clean (erase) the current output buffer
+pub fn php_output_clean() -> Result<(), String> {
+    OUTPUT_BUFFERS.with(|buffers| {
+        let mut bufs = buffers.borrow_mut();
+        if let Some(buffer) = bufs.last_mut() {
+            buffer.clean();
+            Ok(())
+        } else {
+            Err("No output buffer to clean".to_string())
+        }
+    })
+}
+
+/// Flush the current output buffer (send to stdout/parent)
+pub fn php_output_flush() -> Result<(), String> {
+    OUTPUT_BUFFERS.with(|buffers| {
+        let mut bufs = buffers.borrow_mut();
+        let len = bufs.len();
+        if len == 0 {
+            return Err("No output buffer to flush".to_string());
+        }
+        let contents = bufs.last().unwrap().get_contents_string();
+        bufs.last_mut().unwrap().clean();
+        if len > 1 {
+            let content_bytes = contents.as_bytes().to_vec();
+            bufs[len - 2].write(&content_bytes)?;
+        } else {
+            let _ = std::io::Write::write_all(&mut std::io::stdout(), contents.as_bytes());
+        }
+        Ok(())
+    })
+}
+
 /// Write to current output buffer
 pub fn php_output_write(data: &[u8]) -> Result<usize, String> {
     OUTPUT_BUFFERS.with(|buffers| {
@@ -85,7 +199,6 @@ pub fn php_output_write(data: &[u8]) -> Result<usize, String> {
         if let Some(buffer) = bufs.last_mut() {
             buffer.write(data)
         } else {
-            // No buffer, write directly (would go to stdout in real implementation)
             Ok(data.len())
         }
     })
@@ -93,7 +206,6 @@ pub fn php_output_write(data: &[u8]) -> Result<usize, String> {
 
 /// Write string to output
 pub fn php_printf(format: &str, args: &[&str]) -> Result<(), String> {
-    // Simple printf implementation
     let mut result = format.to_string();
     for (i, arg) in args.iter().enumerate() {
         result = result.replace(&format!("{{{i}}}"), arg);

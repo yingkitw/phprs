@@ -4,7 +4,7 @@
 
 use super::context::CompileContext;
 use super::statement::parse_statement_block;
-use crate::engine::lexer::{Token, Lexer, TokenType};
+use crate::engine::lexer::{Lexer, Token, TokenType};
 use crate::engine::types::Val;
 
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -20,23 +20,38 @@ fn is_punct(token: &Token, ch: &str) -> bool {
 fn is_type_hint(token: &Token) -> bool {
     if token.token_type == TokenType::T_STRING {
         if let Some(ref val) = token.value {
-            return matches!(val.as_str(), "int" | "string" | "float" | "bool" | "array" | "object" | "mixed" | "void" | "never" | "self" | "static" | "iterable");
+            return matches!(
+                val.as_str(),
+                "int"
+                    | "string"
+                    | "float"
+                    | "bool"
+                    | "array"
+                    | "object"
+                    | "mixed"
+                    | "void"
+                    | "never"
+                    | "self"
+                    | "static"
+                    | "iterable"
+            );
         }
     }
     token.token_type == TokenType::T_ARRAY || token.token_type == TokenType::T_CALLABLE
 }
 
 /// Parse parameter list (the opening '(' has already been consumed)
-/// Returns the list of parameter names. Supports type declarations.
+/// Returns (param_names, variadic_param_name). Supports type declarations and variadic params.
 fn parse_params(
     lexer: &mut Lexer,
     context: &mut CompileContext,
-) -> Result<Vec<String>, String> {
+) -> Result<(Vec<String>, Option<String>), String> {
     let mut params = Vec::new();
+    let mut variadic = None;
     let mut current_token = lexer.next_token()?;
 
     if is_punct(&current_token, ")") {
-        return Ok(params);
+        return Ok((params, variadic));
     }
 
     loop {
@@ -50,11 +65,37 @@ fn parse_params(
             current_token = lexer.next_token()?;
         }
 
+        // Check for variadic: ...$param
+        let is_variadic = if current_token.token_type == TokenType::T_ELLIPSIS {
+            current_token = lexer.next_token()?;
+            true
+        } else {
+            false
+        };
+
         if current_token.token_type != TokenType::T_VARIABLE {
-            return Err(format!("Expected variable parameter in function definition, got {:?}", current_token.token_type));
+            return Err(format!(
+                "Expected variable parameter in function definition, got {:?}",
+                current_token.token_type
+            ));
         }
 
         let param_name = current_token.value.as_ref().unwrap().as_str();
+
+        if is_variadic {
+            variadic = Some(param_name.to_string());
+            params.push(param_name.to_string());
+            current_token = lexer.next_token()?;
+            // Variadic must be the last parameter
+            if is_punct(&current_token, ",") {
+                return Err("Variadic parameter must be the last parameter".to_string());
+            }
+            if !is_punct(&current_token, ")") {
+                return Err("Expected ')' after variadic parameter".to_string());
+            }
+            break;
+        }
+
         params.push(param_name.to_string());
 
         current_token = lexer.next_token()?;
@@ -76,7 +117,7 @@ fn parse_params(
         current_token = lexer.next_token()?;
     }
 
-    Ok(params)
+    Ok((params, variadic))
 }
 
 /// Skip return type declaration after ')' if present: ): type
@@ -162,10 +203,7 @@ fn compile_function_body(
 }
 
 /// Compile function definition: function name($param1, $param2) { body }
-pub fn compile_function(
-    lexer: &mut Lexer,
-    context: &mut CompileContext,
-) -> Result<Token, String> {
+pub fn compile_function(lexer: &mut Lexer, context: &mut CompileContext) -> Result<Token, String> {
     let name_token = lexer.next_token()?;
 
     // If the next token is '(' — this is a closure used as a statement (rare but valid)
@@ -186,9 +224,15 @@ pub fn compile_function(
     }
 
     let params = parse_params(lexer, context)?;
-    let mut func_op_array = compile_function_body(lexer, context, function_name, name_token.lineno)?;
+    let mut func_op_array =
+        compile_function_body(lexer, context, function_name, name_token.lineno)?;
     // Store param names so the VM can bind arguments
-    func_op_array.vars = params.iter().map(|p| crate::engine::vm::var_ref(p)).collect();
+    func_op_array.vars = params
+        .0
+        .iter()
+        .map(|p| crate::engine::vm::var_ref(p))
+        .collect();
+    func_op_array.variadic_param = params.1;
 
     context
         .function_table
@@ -242,21 +286,33 @@ fn compile_closure_inner(
     };
 
     if !is_punct(&next, "{") {
-        return Err(format!("Expected '{{' in closure, got {:?}", next.token_type));
+        return Err(format!(
+            "Expected '{{' in closure, got {:?}",
+            next.token_type
+        ));
     }
 
-    let closure_name = format!("__closure_{}", CLOSURE_COUNTER.fetch_add(1, Ordering::Relaxed));
+    let closure_name = format!(
+        "__closure_{}",
+        CLOSURE_COUNTER.fetch_add(1, Ordering::Relaxed)
+    );
     let mut func_context = CompileContext::new();
     func_context.set_filename(context.filename.as_deref().unwrap_or(""));
     func_context.set_line(lineno);
     func_context.op_array.function_name = Some(closure_name.clone());
-    func_context.op_array.vars = params.iter().chain(captures.iter()).map(|p| {
-        crate::engine::vm::var_ref(p)
-    }).collect();
+    func_context.op_array.vars = params
+        .0
+        .iter()
+        .chain(captures.iter())
+        .map(|p| crate::engine::vm::var_ref(p))
+        .collect();
+    func_context.op_array.variadic_param = params.1;
 
     parse_statement_block(lexer, &mut func_context)?;
     let func_op_array = func_context.finalize();
-    context.function_table.store_function(&closure_name, func_op_array);
+    context
+        .function_table
+        .store_function(&closure_name, func_op_array);
 
     let val = crate::engine::facade::string_val(&closure_name);
     let next_token = lexer.next_token()?;

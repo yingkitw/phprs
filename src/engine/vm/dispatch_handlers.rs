@@ -228,7 +228,8 @@ pub fn execute_do_fcall(op: &Op, execute_data: &mut ExecuteData) -> Result<ExecR
             }
 
             // Try user-defined function table - optimized lookup
-            let func_data: Option<(Vec<String>, super::opcodes::OpArray)> = execute_data
+            let func_data: Option<(Vec<String>, Option<String>, super::opcodes::OpArray)> =
+                execute_data
                 .function_table
                 .as_ref()
                 .and_then(|ft| {
@@ -253,6 +254,7 @@ pub fn execute_do_fcall(op: &Op, execute_data: &mut ExecuteData) -> Result<ExecR
                             }
                         })
                         .collect();
+                        let variadic = func_op_array.variadic_param.clone();
                     // Clone the op array with capacity
                     let mut cloned = super::opcodes::OpArray::with_capacity(
                         func_op_array.ops.len(),
@@ -268,10 +270,10 @@ pub fn execute_do_fcall(op: &Op, execute_data: &mut ExecuteData) -> Result<ExecR
                             op.extended_value,
                         ));
                     }
-                    (param_names, cloned)
-                });
+                        (param_names, variadic, cloned)
+                    });
 
-            if let Some((param_names, func_op_array)) = func_data {
+            if let Some((param_names, variadic_param, func_op_array)) = func_data {
                 // Note: JIT compilation check removed to prevent deadlock
                 // The function will be JIT compiled on subsequent calls if it's hot enough
 
@@ -284,8 +286,16 @@ pub fn execute_do_fcall(op: &Op, execute_data: &mut ExecuteData) -> Result<ExecR
                 // Set up fresh symbol table for function scope
                 execute_data.symbol_table = Some(crate::engine::types::PhpArray::new());
 
+                // Determine the number of regular (non-variadic) parameters
+                let regular_count = if variadic_param.is_some() {
+                    param_names.len().saturating_sub(1)
+                } else {
+                    param_names.len()
+                };
+
                 // Bind arguments to parameter names - optimized
                 for (i, arg) in args.iter().enumerate() {
+                    if i < regular_count {
                     if let Some(name) = param_names.get(i) {
                         if !name.is_empty() {
                             let clean = if name.starts_with('$') {
@@ -296,6 +306,30 @@ pub fn execute_do_fcall(op: &Op, execute_data: &mut ExecuteData) -> Result<ExecR
                             execute_data.set_var(clean, clone_val(arg));
                         }
                     }
+                    }
+                }
+
+                // Pack extra arguments into an array for the variadic parameter
+                if let Some(ref var_name) = variadic_param {
+                    let mut arr = crate::engine::types::PhpArray::new();
+                    let mut idx: u64 = 0;
+                    for arg in args.iter().skip(regular_count) {
+                        let _ = crate::engine::hash::hash_add_or_update(
+                            &mut arr,
+                            None,
+                            idx,
+                            clone_val(arg),
+                            0,
+                        );
+                        idx += 1;
+                    }
+                    let arr_val = Val::new(PhpValue::Array(Box::new(arr)), PhpType::Array);
+                    let clean = if var_name.starts_with('$') {
+                        &var_name[1..]
+                    } else {
+                        var_name.as_str()
+                    };
+                    execute_data.set_var(clean, arr_val);
                 }
 
                 // Execute the function and capture return value
@@ -384,9 +418,29 @@ pub fn execute_include(op: &Op, execute_data: &mut ExecuteData) -> Result<ExecRe
             execute_data.included_files.insert(resolved.clone());
             let saved_op_array = execute_data.op_array.take();
             let saved_current_op = execute_data.current_op;
+            let saved_script_dir = execute_data.current_script_dir.clone();
+            let saved_magic_dir = execute_data.constants.get("__DIR__").map(clone_val);
+            let saved_magic_file = execute_data.constants.get("__FILE__").map(clone_val);
             let result = super::execute::execute_ex(execute_data, &included_op_array);
             execute_data.op_array = saved_op_array;
             execute_data.current_op = saved_current_op;
+            execute_data.current_script_dir = saved_script_dir;
+            match saved_magic_dir {
+                Some(v) => {
+                    execute_data.constants.insert("__DIR__".to_string(), v);
+                }
+                None => {
+                    execute_data.constants.remove("__DIR__");
+                }
+            }
+            match saved_magic_file {
+                Some(v) => {
+                    execute_data.constants.insert("__FILE__".to_string(), v);
+                }
+                None => {
+                    execute_data.constants.remove("__FILE__");
+                }
+            }
             if result == crate::engine::types::PhpResult::Failure {
                 return Err(format!("Failed to execute included file: {}", resolved));
             }

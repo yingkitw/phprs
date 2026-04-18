@@ -104,6 +104,12 @@ pub struct ExecuteData {
     pub current_script_dir: Option<String>,
     /// If set by exit()/die(), script should terminate with this code
     pub exit_requested: Option<i64>,
+    /// Error handler function name (set by set_error_handler())
+    pub error_handler: Option<String>,
+    /// Exception handler function name (set by set_exception_handler())
+    pub exception_handler: Option<String>,
+    /// Shutdown function names (registered by register_shutdown_function())
+    pub shutdown_functions: Vec<String>,
 }
 
 impl ExecuteData {
@@ -120,6 +126,9 @@ impl ExecuteData {
             constants: std::collections::HashMap::new(),
             current_script_dir: None,
             exit_requested: None,
+            error_handler: None,
+            exception_handler: None,
+            shutdown_functions: Vec::new(),
         }
     }
 

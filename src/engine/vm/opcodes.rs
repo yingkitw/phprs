@@ -107,6 +107,7 @@ pub struct OpArray {
     pub line_end: u32,
     pub function_name: Option<String>,
     pub class_table: std::collections::HashMap<String, crate::engine::types::ClassEntry>,
+    pub variadic_param: Option<String>,
 }
 
 impl OpArray {
@@ -119,6 +120,7 @@ impl OpArray {
             line_end: 0,
             class_table: std::collections::HashMap::new(),
             function_name: None,
+            variadic_param: None,
         }
     }
 
@@ -132,6 +134,7 @@ impl OpArray {
             line_end: 0,
             class_table: std::collections::HashMap::new(),
             function_name: None,
+            variadic_param: None,
         }
     }
 
