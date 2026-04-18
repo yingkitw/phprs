@@ -22,7 +22,7 @@ fn test_gc_set_threshold() {
 
 #[test]
 fn test_gc_should_collect() {
-    let mut gc = Gc::new();
+    let gc = Gc::new();
     gc.set_threshold(5);
 
     // Initially should not collect
@@ -43,7 +43,5 @@ fn test_gc_collect_cycles() {
 fn test_gc_stats() {
     let gc = Gc::new();
     let stats = gc.get_stats();
-    assert!(stats.root_count >= 0);
-    assert!(stats.collected >= 0);
     assert!(stats.threshold > 0);
 }

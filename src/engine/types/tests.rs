@@ -33,8 +33,7 @@ fn test_string_new() {
 fn test_string_hash() {
     let s1 = PhpString::new("test", false);
     let s2 = PhpString::new("test", false);
-    // Hash should be computed
-    assert!(s1.h >= 0);
+    assert_eq!(s1.h, s2.h);
 }
 
 #[test]

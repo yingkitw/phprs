@@ -366,7 +366,7 @@ mod tests {
 
         // Test compilation
         let op_array = OpArray::new("test.php".to_string());
-        let compiled_fn = jit.compile_function("add", &op_array).unwrap();
+        let _compiled_fn = jit.compile_function("add", &op_array).unwrap();
 
         assert!(jit.get_compiled_function("add").is_some());
 

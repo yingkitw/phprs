@@ -52,6 +52,7 @@ impl Config {
     }
 
     /// Get the cache directory for package metadata
+    #[allow(dead_code)]
     pub fn metadata_cache_dir(&self) -> PathBuf {
         self.cache_dir.join("metadata")
     }
@@ -67,6 +68,7 @@ impl Config {
     }
 
     /// Get the autoloader path
+    #[allow(dead_code)]
     pub fn autoloader_path(&self) -> PathBuf {
         self.vendor_dir.join("autoload.php")
     }

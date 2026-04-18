@@ -3,12 +3,16 @@
 //! Handles compilation of control flow structures (if, while, for, foreach)
 
 use super::context::CompileContext;
-use super::expression::parse_expression;
+use super::expression::helpers::{
+    additive_loop, multiplicative_loop, parse_access_chain, token_is_punct, token_to_primary,
+};
+use super::expression::operators::parse_comparison_expr_with_token;
+use super::expression::{parse_additive_expr_with_initial, parse_expression};
 use super::statement::parse_statement_block;
-use crate::engine::facade::{null_val, result_val, zero_val};
+use crate::engine::facade::{clone_val, null_val, result_val, string_val, zero_val};
 use crate::engine::lexer::{Lexer, Token, TokenType};
 use crate::engine::types::Val;
-use crate::engine::vm::{temp_var_ref, Opcode};
+use crate::engine::vm::{temp_var_ref, Op, Opcode};
 
 /// Compile if statement: if (condition) { body } [else { body }]
 pub fn compile_if(lexer: &mut Lexer, context: &mut CompileContext) -> Result<Token, String> {
@@ -93,19 +97,16 @@ pub fn compile_while(lexer: &mut Lexer, context: &mut CompileContext) -> Result<
         return Err("Expected '(' after 'while'".to_string());
     }
 
-    // Parse condition expression first
-    let (condition, _) = parse_expression(lexer, context)?;
+    // Condition must be re-evaluated each iteration: loop head starts *before* condition ops.
+    let loop_start_index = context.current_op_index();
 
-    // Expect closing parenthesis
-    let paren_token = lexer.next_token()?;
+    // Parse condition; parse_expression returns the next token (should be ')')
+    let (condition, paren_token) = parse_expression(lexer, context)?;
     if paren_token.token_type != TokenType::T_STRING
         || paren_token.value.as_ref().map(|s| s.as_str()) != Some(")")
     {
         return Err("Expected ')' after while condition".to_string());
     }
-
-    // Mark the start of the loop (condition check location)
-    let loop_start_index = context.current_op_index();
 
     // Emit conditional jump to skip body if condition is false (JmpZ)
     let while_zero = zero_val();
@@ -149,55 +150,53 @@ pub fn compile_for(lexer: &mut Lexer, context: &mut CompileContext) -> Result<To
         return Err("Expected '(' after 'for'".to_string());
     }
 
-    // Parse initialization expressions (can be empty)
+    // Parse initialization expressions (can be empty); supports `$a = expr`, comma-separated clauses, and expression inits (e.g. `$i++`).
     let init_token = lexer.next_token()?;
-    if init_token.token_type != TokenType::T_STRING
-        || init_token.value.as_ref().map(|s| s.as_str()) != Some(";")
-    {
-        // Has initialization - parse as expression
+    if !token_is_punct(&init_token, ";") {
         let mut current_token = init_token;
         loop {
-            if current_token.token_type == TokenType::T_STRING
-                && current_token.value.as_ref().map(|s| s.as_str()) == Some(";")
-            {
+            if token_is_punct(&current_token, ";") {
                 break;
             }
-            // Parse expression (this will consume tokens)
-            let (_, next_tok) = parse_expression(lexer, context)?;
-            current_token = next_tok;
-            if current_token.token_type == TokenType::T_STRING
-                && current_token.value.as_ref().map(|s| s.as_str()) == Some(";")
-            {
+            current_token = if current_token.token_type == TokenType::T_VARIABLE {
+                let peek = lexer.next_token()?;
+                if peek.token_type == TokenType::T_EQUAL {
+                    let var_name = current_token.value.as_ref().unwrap().as_str();
+                    let (value_zval, after_expr) = parse_expression(lexer, context)?;
+                    let var_name_zval = string_val(var_name);
+                    let value_zval_op2 = clone_val(&value_zval);
+                    context.emit_opcode(Opcode::Assign, var_name_zval, value_zval, value_zval_op2);
+                    after_expr
+                } else {
+                    let initial_zval = token_to_primary(&current_token, context)?;
+                    let (left, tok) = parse_access_chain(lexer, context, initial_zval, peek)?;
+                    let (left, tok) = multiplicative_loop(lexer, context, left, tok)?;
+                    let (_v, after) = additive_loop(lexer, context, left, tok)?;
+                    after
+                }
+            } else {
+                let (_v, after) = parse_additive_expr_with_initial(lexer, context, current_token)?;
+                after
+            };
+            if token_is_punct(&current_token, ",") {
+                current_token = lexer.next_token()?;
+                continue;
+            }
+            if token_is_punct(&current_token, ";") {
                 break;
             }
+            return Err(format!(
+                "Expected ',' or ';' after for-loop initializer, got {:?}",
+                current_token.token_type
+            ));
         }
     }
 
-    // Emit unconditional jump (will be updated to point to condition check after body)
-    let zero_val1 = Val::new(
-        crate::engine::types::PhpValue::Long(0),
-        crate::engine::types::PhpType::Long,
-    );
-    let zero_val2 = Val::new(
-        crate::engine::types::PhpValue::Long(0),
-        crate::engine::types::PhpType::Long,
-    );
-    let result_val = Val::new(
-        crate::engine::types::PhpValue::Long(0),
-        crate::engine::types::PhpType::Bool,
-    );
-    let jmp_to_cond_index =
-        context.emit_opcode_with_index(Opcode::Jmp, zero_val1, zero_val2, result_val);
+    // Loop head: condition is checked before each body (PHP: for (init; cond; incr) { body }).
+    let loop_head_index = context.current_op_index();
 
-    // Mark the start of the loop body
-    let loop_start_index = context.current_op_index();
-
-    // Parse condition expression (can be empty - if empty, condition is always true)
     let cond_token = lexer.next_token()?;
-    let (condition, cond_next_token) = if cond_token.token_type == TokenType::T_STRING
-        && cond_token.value.as_ref().map(|s| s.as_str()) == Some(";")
-    {
-        // Empty condition - always true
+    let (condition, cond_next_token) = if token_is_punct(&cond_token, ";") {
         (
             Val::new(
                 crate::engine::types::PhpValue::Long(1),
@@ -206,39 +205,36 @@ pub fn compile_for(lexer: &mut Lexer, context: &mut CompileContext) -> Result<To
             cond_token,
         )
     } else {
-        // Has condition - parse it
-        parse_expression(lexer, context)?
+        parse_comparison_expr_with_token(lexer, context, Some(cond_token))?
     };
 
-    // Expect semicolon after condition
-    let _semicolon_token = if cond_next_token.token_type == TokenType::T_STRING
-        && cond_next_token.value.as_ref().map(|s| s.as_str()) == Some(";")
-    {
-        cond_next_token
-    } else {
+    if !token_is_punct(&cond_next_token, ";") {
         return Err("Expected ';' after for condition".to_string());
-    };
+    }
 
-    // Parse increment expressions (can be empty)
+    let for_zero = zero_val();
+    let for_jmpz_result = result_val(crate::engine::types::PhpType::Bool);
+    let jmpz_exit_index = context.emit_opcode_with_index(
+        Opcode::JmpZ,
+        clone_val(&condition),
+        for_zero,
+        for_jmpz_result,
+    );
+
+    // Parse increment but emit after the body (source order is cond; incr) { body }).
     let incr_token = lexer.next_token()?;
-    let _increment_end_token = if incr_token.token_type == TokenType::T_STRING
-        && incr_token.value.as_ref().map(|s| s.as_str()) == Some(")")
-    {
-        // Empty increment
-        incr_token
+    let incr_ops: Vec<Op> = if token_is_punct(&incr_token, ")") {
+        Vec::new()
     } else {
-        // Has increment - parse it (simplified: single expression)
-        let (_, incr_next_token) = parse_expression(lexer, context)?;
-        // Expect closing parenthesis
-        if incr_next_token.token_type != TokenType::T_STRING
-            || incr_next_token.value.as_ref().map(|s| s.as_str()) != Some(")")
-        {
+        let incr_begin = context.current_op_index();
+        let (_, incr_next_token) = parse_additive_expr_with_initial(lexer, context, incr_token)?;
+        if !token_is_punct(&incr_next_token, ")") {
             return Err("Expected ')' after for increment".to_string());
         }
-        incr_next_token
+        let incr_end = context.current_op_index();
+        context.op_array.ops.drain(incr_begin..incr_end).collect()
     };
 
-    // Parse for body (statements in braces)
     let brace_token = lexer.next_token()?;
     if brace_token.token_type != TokenType::T_STRING
         || brace_token.value.as_ref().map(|s| s.as_str()) != Some("{")
@@ -246,56 +242,20 @@ pub fn compile_for(lexer: &mut Lexer, context: &mut CompileContext) -> Result<To
         return Err("Expected '{' after for loop".to_string());
     }
 
-    // Parse statements in the for body
     parse_statement_block(lexer, context)?;
 
-    // Mark condition check location
-    let cond_check_index = context.current_op_index();
+    context.op_array.ops.extend(incr_ops);
 
-    // Update the initial jump to point to condition check
-    context.update_jump_target(jmp_to_cond_index, cond_check_index as u32);
+    let back_z1 = zero_val();
+    let back_z2 = zero_val();
+    let back_r = result_val(crate::engine::types::PhpType::Bool);
+    let jmp_back_index =
+        context.emit_opcode_with_index(Opcode::Jmp, back_z1, back_z2, back_r);
+    context.update_jump_target(jmp_back_index, loop_head_index as u32);
 
-    // Compile condition check (re-evaluate condition)
-    let cond_zero_val = Val::new(
-        crate::engine::types::PhpValue::Long(0),
-        crate::engine::types::PhpType::Long,
-    );
-    let cond_result_val = Val::new(
-        crate::engine::types::PhpValue::Long(0),
-        crate::engine::types::PhpType::Bool,
-    );
-    // Create a copy of condition for the jump
-    let condition_copy = match &condition.value {
-        crate::engine::types::PhpValue::Long(l) => Val::new(
-            crate::engine::types::PhpValue::Long(*l),
-            condition.get_type(),
-        ),
-        crate::engine::types::PhpValue::Double(d) => Val::new(
-            crate::engine::types::PhpValue::Double(*d),
-            condition.get_type(),
-        ),
-        crate::engine::types::PhpValue::String(s) => {
-            let str_copy = crate::engine::string::string_init(s.as_str(), false);
-            Val::new(
-                crate::engine::types::PhpValue::String(Box::new(str_copy)),
-                condition.get_type(),
-            )
-        }
-        _ => Val::new(
-            crate::engine::types::PhpValue::Long(1),
-            crate::engine::types::PhpType::Bool,
-        ),
-    };
-    let jmp_back_index = context.emit_opcode_with_index(
-        Opcode::JmpNZ,
-        condition_copy,
-        cond_zero_val,
-        cond_result_val,
-    );
-    // Update the jump target to point back to loop start
-    context.update_jump_target(jmp_back_index, loop_start_index as u32);
+    let after_loop = context.current_op_index() as u32;
+    context.update_jump_target(jmpz_exit_index, after_loop);
 
-    // After for loop, get the next token
     Ok(lexer.next_token()?)
 }
 
@@ -309,12 +269,9 @@ pub fn compile_foreach(lexer: &mut Lexer, context: &mut CompileContext) -> Resul
         return Err("Expected '(' after 'foreach'".to_string());
     }
 
-    // Parse array/iterable expression
-    let (_array_expr, _) = parse_expression(lexer, context)?;
-
-    // Expect 'as' keyword
-    let as_token = lexer.next_token()?;
-    if as_token.token_type != TokenType::T_AS {
+    // Parse array/iterable expression (next token is often `as` — do not drop it)
+    let (array_expr, after_expr) = parse_expression(lexer, context)?;
+    if after_expr.token_type != TokenType::T_AS {
         return Err("Expected 'as' after foreach array expression".to_string());
     }
 
@@ -324,76 +281,46 @@ pub fn compile_foreach(lexer: &mut Lexer, context: &mut CompileContext) -> Resul
         return Err("Expected variable after 'as' in foreach".to_string());
     }
 
-    let _value_var_name = value_token.value.as_ref().unwrap().as_str();
+    let value_var_name = value_token.value.as_ref().unwrap().as_str();
 
-    // Check if there's a key variable (key => value syntax)
     let next_after_value = lexer.next_token()?;
-    let (has_key, _key_name) = if next_after_value.token_type == TokenType::T_DOUBLE_ARROW {
-        // Has key => value syntax
-        let key_token = lexer.next_token()?;
-        if key_token.token_type != TokenType::T_VARIABLE {
-            return Err("Expected variable after '=>' in foreach".to_string());
-        }
-        let key_name = key_token.value.as_ref().unwrap().as_str().to_string();
-        (true, Some(key_name))
-    } else {
-        // No key, just value
-        if next_after_value.token_type != TokenType::T_STRING
-            || next_after_value.value.as_ref().map(|s| s.as_str()) != Some(")")
-        {
-            return Err("Expected ')' or '=>' after foreach value variable".to_string());
-        }
-        (false, None)
-    };
-
-    // Expect closing parenthesis
-    let paren_token = if has_key {
-        lexer.next_token()?
-    } else {
-        next_after_value
-    };
-    if paren_token.token_type != TokenType::T_STRING
-        || paren_token.value.as_ref().map(|s| s.as_str()) != Some(")")
+    if next_after_value.token_type == TokenType::T_DOUBLE_ARROW {
+        return Err("foreach with key => value is not yet supported".to_string());
+    }
+    if next_after_value.token_type != TokenType::T_STRING
+        || next_after_value.value.as_ref().map(|s| s.as_str()) != Some(")")
     {
-        return Err("Expected ')' after foreach variables".to_string());
+        return Err("Expected ')' after foreach value variable".to_string());
     }
 
-    // Mark the start of the loop (after reset/fetch operations)
-    let loop_start_index = context.current_op_index();
-
-    // Emit FE_RESET opcode to reset array iterator
     let iterator_slot = context.alloc_temp();
+    let value_slot = context.alloc_temp();
+
     context.emit_opcode(
         Opcode::FeReset,
-        _array_expr.clone(),
+        array_expr.clone(),
         null_val(),
         temp_var_ref(iterator_slot),
     );
 
-    // Emit FE_FETCH opcode to fetch next element
+    // Loop head: re-enter here (not before FeReset, or the iterator would reset every iteration).
+    let loop_start_index = context.current_op_index();
+
     let end_jmp_idx = context.emit_opcode_with_index(
         Opcode::FeFetch,
-        _array_expr,
-        null_val(),
+        array_expr,
+        temp_var_ref(value_slot),
         temp_var_ref(iterator_slot),
     );
 
-    // Store value in variable (and optionally key)
-    if let Some(ref key_name) = _key_name {
-        let key_var = crate::engine::vm::var_ref(key_name);
-        context.emit_opcode(
-            Opcode::Assign,
-            key_var,
-            temp_var_ref(iterator_slot),
-            null_val(),
-        );
-    }
-    let value_var = crate::engine::vm::var_ref(_value_var_name);
+    let value_var = crate::engine::vm::var_ref(value_var_name);
+    let value_ref = temp_var_ref(value_slot);
+    let value_ref_assign = clone_val(&value_ref);
     context.emit_opcode(
         Opcode::Assign,
         value_var,
-        temp_var_ref(iterator_slot),
-        null_val(),
+        value_ref,
+        value_ref_assign,
     );
 
     // Parse foreach body (statements in braces)
@@ -407,11 +334,6 @@ pub fn compile_foreach(lexer: &mut Lexer, context: &mut CompileContext) -> Resul
     // Parse statements in the foreach body
     parse_statement_block(lexer, context)?;
 
-    // Update FE_FETCH jump target to point to end of loop
-    let end_idx = context.current_op_index();
-    context.update_jump_target(end_jmp_idx, end_idx as u32);
-
-    // Emit unconditional jump back to loop start (fetch next element)
     let jmp_zero_val1 = Val::new(
         crate::engine::types::PhpValue::Long(0),
         crate::engine::types::PhpType::Long,
@@ -426,10 +348,12 @@ pub fn compile_foreach(lexer: &mut Lexer, context: &mut CompileContext) -> Resul
     );
     let jmp_back_index =
         context.emit_opcode_with_index(Opcode::Jmp, jmp_zero_val1, jmp_zero_val2, jmp_result_val);
-    // Update jump to point back to loop start
     context.update_jump_target(jmp_back_index, loop_start_index as u32);
 
-    // After foreach loop, get the next token
+    // FeFetch jumps here when the iterator is exhausted (must be *after* the back-jmp).
+    let after_foreach = context.current_op_index() as u32;
+    context.update_jump_target(end_jmp_idx, after_foreach);
+
     Ok(lexer.next_token()?)
 }
 

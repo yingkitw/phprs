@@ -100,6 +100,7 @@ fn format_map(map: &HashMap<String, Vec<String>>) -> String {
 }
 
 /// Generate classmap autoloader
+#[allow(dead_code)]
 pub fn generate_classmap(vendor_dir: &Path, classmap: &HashMap<String, String>) -> Result<()> {
     if classmap.is_empty() {
         return Ok(());
@@ -131,6 +132,7 @@ return array(
 }
 
 /// Scan PHP files and extract class names
+#[allow(dead_code)]
 pub fn scan_classes_from_directory(dir: &Path) -> Result<HashMap<String, String>> {
     let mut classmap = HashMap::new();
     scan_directory_recursive(dir, dir, &mut classmap)?;
@@ -138,6 +140,7 @@ pub fn scan_classes_from_directory(dir: &Path) -> Result<HashMap<String, String>
 }
 
 /// Recursively scan directory for PHP files and extract classes
+#[allow(dead_code)]
 fn scan_directory_recursive(
     root: &Path,
     current_dir: &Path,
@@ -168,6 +171,7 @@ fn scan_directory_recursive(
 }
 
 /// Extract class names from a PHP file
+#[allow(dead_code)]
 fn extract_classes_from_file(path: &Path) -> Result<Vec<String>> {
     let content =
         fs::read_to_string(path).map_err(|e| format!("Failed to read file {:?}: {}", path, e))?;
@@ -264,7 +268,6 @@ mod tests {
     #[test]
     fn test_extract_classes_from_file() {
         use std::fs;
-        use std::io::Write;
 
         let temp_dir = std::env::temp_dir();
         let test_file = temp_dir.join("test_class.php");

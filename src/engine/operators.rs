@@ -189,7 +189,6 @@ pub fn zval_mod(z1: &Val, z2: &Val) -> Result<Val, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::engine::string::string_init;
 
     #[test]
     fn test_zval_get_long() {

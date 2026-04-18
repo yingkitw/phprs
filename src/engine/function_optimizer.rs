@@ -470,7 +470,7 @@ mod tests {
             },
         );
 
-        let metadata = optimizer.analyze_function("test_function", &op_array);
+        let _metadata = optimizer.analyze_function("test_function", &op_array);
         assert!(optimizer.should_inline("test_function"));
 
         if let Ok(inlined) = optimizer.generate_inlined_function("test_function", &op_array) {

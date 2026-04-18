@@ -3,7 +3,7 @@
 use crate::php::variables::{normalize_variable_name, php_register_variable};
 use crate::engine::hash::hash_find;
 use crate::engine::string::string_init;
-use crate::engine::types::{PhpArray, PhpType, PhpValue, Val};
+use crate::engine::types::PhpArray;
 
 #[test]
 fn test_normalize_variable_name() {

@@ -20,6 +20,7 @@ pub enum PkgError {
     VersionNotFound { package: String, version: String },
 
     #[error("Dependency resolution failed: {0}")]
+    #[allow(dead_code)]
     DependencyResolution(String),
 
     #[error("Network error: {0}")]

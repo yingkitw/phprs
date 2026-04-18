@@ -6,11 +6,15 @@ use phprs::errors::{
     php_error, error_at_line, set_error_handler, PhpError, ErrorType,
 };
 use std::sync::atomic::{AtomicU32, Ordering};
+use std::sync::Mutex;
 
 static ERROR_COUNT: AtomicU32 = AtomicU32::new(0);
+/// Serialize tests that touch the process-wide error handler (otherwise parallel `cargo test` races).
+static ERROR_HANDLER_TESTS_LOCK: Mutex<()> = Mutex::new(());
 
 #[test]
 fn test_error_reporting() {
+    let _guard = ERROR_HANDLER_TESTS_LOCK.lock().unwrap();
     // Reset counter
     ERROR_COUNT.store(0, Ordering::Relaxed);
 
@@ -24,13 +28,14 @@ fn test_error_reporting() {
     php_error(ErrorType::Warning, "Test warning");
     php_error(ErrorType::Error, "Test error");
 
-    // Handler should have been called (may be called 3 times or more due to default handler)
+    // Handler should have been called for each reported error.
     let count = ERROR_COUNT.load(Ordering::Relaxed);
-    assert!(count >= 0); // At minimum, errors should be reported
+    assert!(count >= 3);
 }
 
 #[test]
 fn test_error_with_location() {
+    let _guard = ERROR_HANDLER_TESTS_LOCK.lock().unwrap();
     ERROR_COUNT.store(0, Ordering::Relaxed);
 
     set_error_handler(|error: &PhpError| {
@@ -46,13 +51,13 @@ fn test_error_with_location() {
 
     error_at_line(ErrorType::Parse, "test.php", 42, "Parse error");
 
-    // Handler should have been called
     let count = ERROR_COUNT.load(Ordering::Relaxed);
-    assert!(count >= 0);
+    assert!(count >= 1);
 }
 
 #[test]
 fn test_different_error_types() {
+    let _guard = ERROR_HANDLER_TESTS_LOCK.lock().unwrap();
     let error_types = vec![
         ErrorType::Error,
         ErrorType::Warning,
@@ -70,6 +75,7 @@ fn test_different_error_types() {
 
 #[test]
 fn test_error_handler_replacement() {
+    let _guard = ERROR_HANDLER_TESTS_LOCK.lock().unwrap();
     // Test that we can set and replace error handlers
     set_error_handler(|_error: &PhpError| {
         // First handler

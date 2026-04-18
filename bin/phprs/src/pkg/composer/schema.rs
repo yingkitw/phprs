@@ -296,6 +296,7 @@ impl ComposerJson {
     }
 
     /// Add a requirement
+    #[allow(dead_code)]
     pub fn add_require(&mut self, package: String, version: String) {
         if let Some(ref mut require) = self.require {
             require.insert(package, version);

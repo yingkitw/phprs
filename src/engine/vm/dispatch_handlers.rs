@@ -134,6 +134,68 @@ pub fn execute_mod(op: &Op, execute_data: &mut ExecuteData) -> Result<ExecResult
 }
 
 #[inline]
+pub fn execute_bool_not(op: &Op, execute_data: &mut ExecuteData) -> Result<ExecResult, String> {
+    let val = resolve_operand(&op.op1, execute_data);
+    let b = !crate::engine::operators::zval_get_bool(&val);
+    let result = Val::new(
+        PhpValue::Long(if b { 1 } else { 0 }),
+        if b { PhpType::True } else { PhpType::False },
+    );
+    if let Some(slot) = result_slot(op) {
+        execute_data.set_temp(slot, result);
+    }
+    Ok(ExecResult::Continue)
+}
+
+#[inline]
+pub fn execute_bool_and(op: &Op, execute_data: &mut ExecuteData) -> Result<ExecResult, String> {
+    let op1 = resolve_operand(&op.op1, execute_data);
+    let op2 = resolve_operand(&op.op2, execute_data);
+    let r = crate::engine::operators::zval_get_bool(&op1)
+        && crate::engine::operators::zval_get_bool(&op2);
+    let result = Val::new(
+        PhpValue::Long(if r { 1 } else { 0 }),
+        if r { PhpType::True } else { PhpType::False },
+    );
+    if let Some(slot) = result_slot(op) {
+        execute_data.set_temp(slot, result);
+    }
+    Ok(ExecResult::Continue)
+}
+
+#[inline]
+pub fn execute_bool_or(op: &Op, execute_data: &mut ExecuteData) -> Result<ExecResult, String> {
+    let op1 = resolve_operand(&op.op1, execute_data);
+    let op2 = resolve_operand(&op.op2, execute_data);
+    let r = crate::engine::operators::zval_get_bool(&op1)
+        || crate::engine::operators::zval_get_bool(&op2);
+    let result = Val::new(
+        PhpValue::Long(if r { 1 } else { 0 }),
+        if r { PhpType::True } else { PhpType::False },
+    );
+    if let Some(slot) = result_slot(op) {
+        execute_data.set_temp(slot, result);
+    }
+    Ok(ExecResult::Continue)
+}
+
+#[inline]
+pub fn execute_bool_xor(op: &Op, execute_data: &mut ExecuteData) -> Result<ExecResult, String> {
+    let op1 = resolve_operand(&op.op1, execute_data);
+    let op2 = resolve_operand(&op.op2, execute_data);
+    let r = crate::engine::operators::zval_get_bool(&op1)
+        ^ crate::engine::operators::zval_get_bool(&op2);
+    let result = Val::new(
+        PhpValue::Long(if r { 1 } else { 0 }),
+        if r { PhpType::True } else { PhpType::False },
+    );
+    if let Some(slot) = result_slot(op) {
+        execute_data.set_temp(slot, result);
+    }
+    Ok(ExecResult::Continue)
+}
+
+#[inline]
 pub fn execute_jmp(op: &Op, _execute_data: &mut ExecuteData) -> Result<ExecResult, String> {
     Ok(ExecResult::Jump(op.extended_value))
 }
@@ -559,6 +621,73 @@ pub fn execute_init_array(op: &Op, execute_data: &mut ExecuteData) -> Result<Exe
 }
 
 #[inline]
+fn temp_slot_index(v: &Val) -> Option<usize> {
+    if is_temp_ref(v) {
+        if let PhpValue::Long(i) = v.value {
+            return Some(i as usize);
+        }
+    }
+    None
+}
+
+/// foreach: op1 = array, result = iterator temp (next numeric index to read)
+#[inline]
+pub fn execute_fe_reset(op: &Op, execute_data: &mut ExecuteData) -> Result<ExecResult, String> {
+    let arr = resolve_operand(&op.op1, execute_data);
+    let Some(iter_slot) = result_slot(op) else {
+        return Ok(ExecResult::Continue);
+    };
+    if matches!(arr.value, PhpValue::Array(_)) {
+        execute_data.set_temp(
+            iter_slot,
+            Val::new(PhpValue::Long(0), PhpType::Long),
+        );
+    }
+    Ok(ExecResult::Continue)
+}
+
+/// foreach: op1 = array, op2 = temp slot for current element, result = iterator temp
+#[inline]
+pub fn execute_fe_fetch(op: &Op, execute_data: &mut ExecuteData) -> Result<ExecResult, String> {
+    let arr = resolve_operand(&op.op1, execute_data);
+    let Some(iter_slot) = result_slot(op) else {
+        return Ok(ExecResult::Continue);
+    };
+    let Some(value_slot) = temp_slot_index(&op.op2) else {
+        return Ok(ExecResult::Continue);
+    };
+
+    let PhpValue::Array(ref arr) = arr.value else {
+        return Ok(ExecResult::Jump(op.extended_value));
+    };
+
+    let iter_val = execute_data.get_temp(iter_slot);
+    let current_idx = if let PhpValue::Long(i) = iter_val.value {
+        i as u64
+    } else {
+        0
+    };
+
+    if current_idx >= arr.n_num_of_elements as u64 {
+        return Ok(ExecResult::Jump(op.extended_value));
+    }
+
+    let Some(bucket) = arr.ar_data.get(current_idx as usize) else {
+        return Ok(ExecResult::Jump(op.extended_value));
+    };
+    let elem = clone_val(&bucket.val);
+    execute_data.set_temp(value_slot, elem);
+
+    let next_idx = current_idx + 1;
+    execute_data.set_temp(
+        iter_slot,
+        Val::new(PhpValue::Long(next_idx as i64), PhpType::Long),
+    );
+
+    Ok(ExecResult::Continue)
+}
+
+#[inline]
 pub fn execute_add_array_element(
     op: &Op,
     execute_data: &mut ExecuteData,
@@ -818,6 +947,10 @@ pub fn dispatch_opcode(op: &Op, execute_data: &mut ExecuteData) -> Result<ExecRe
         Opcode::Div => execute_div(op, execute_data),
         Opcode::Mod => execute_mod(op, execute_data),
         Opcode::Pow => execute_pow(op, execute_data),
+        Opcode::BoolNot => execute_bool_not(op, execute_data),
+        Opcode::BoolAnd => execute_bool_and(op, execute_data),
+        Opcode::BoolOr => execute_bool_or(op, execute_data),
+        Opcode::BoolXor => execute_bool_xor(op, execute_data),
         Opcode::Concat => execute_concat(op, execute_data),
         Opcode::Assign => execute_assign(op, execute_data),
         Opcode::AssignDim => execute_assign_dim(op, execute_data),

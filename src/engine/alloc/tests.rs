@@ -3,9 +3,14 @@
 use crate::engine::alloc::{
     get_allocation_count, get_memory_usage, get_peak_memory_usage, pefree, pemalloc,
 };
+use std::sync::Mutex;
+
+/// Global alloc stats are process-wide; parallel `cargo test` otherwise races these assertions.
+static ALLOC_TESTS_LOCK: Mutex<()> = Mutex::new(());
 
 #[test]
 fn test_pemalloc_non_persistent() {
+    let _guard = ALLOC_TESTS_LOCK.lock().unwrap();
     // Get initial count (may have other allocations from previous tests)
     let initial_count = get_allocation_count();
     let size = 1024;
@@ -28,6 +33,7 @@ fn test_pemalloc_non_persistent() {
 
 #[test]
 fn test_pemalloc_persistent() {
+    let _guard = ALLOC_TESTS_LOCK.lock().unwrap();
     // Persistent allocations use a separate HashMap (not NON_PERSISTENT_STATS),
     // so get_allocation_count() does not change. Just verify alloc/free work.
     let size = 2048;
@@ -43,8 +49,9 @@ fn test_pemalloc_persistent() {
 
 #[test]
 fn test_memory_usage_tracking() {
+    let _guard = ALLOC_TESTS_LOCK.lock().unwrap();
     let initial_usage = get_memory_usage();
-    let initial_peak = get_peak_memory_usage();
+    let _initial_peak = get_peak_memory_usage();
 
     let size = 4096;
     let ptr = unsafe { pemalloc(size, false) };
@@ -66,6 +73,7 @@ fn test_memory_usage_tracking() {
 
 #[test]
 fn test_multiple_allocations() {
+    let _guard = ALLOC_TESTS_LOCK.lock().unwrap();
     let initial_count = get_allocation_count();
 
     let ptr1 = unsafe { pemalloc(100, false) };
@@ -90,6 +98,7 @@ fn test_multiple_allocations() {
 
 #[test]
 fn test_zero_size_allocation() {
+    let _guard = ALLOC_TESTS_LOCK.lock().unwrap();
     let ptr = unsafe { pemalloc(0, false) };
     // Zero-size allocation should still return a valid pointer (implementation dependent)
     unsafe {

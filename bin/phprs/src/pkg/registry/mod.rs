@@ -2,4 +2,4 @@
 
 mod packagist;
 
-pub use packagist::{PackageDist, PackageMetadata, PackageSource, PackagistClient, VersionMetadata};
+pub use packagist::{PackageMetadata, PackagistClient, VersionMetadata};

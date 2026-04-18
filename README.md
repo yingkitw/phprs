@@ -5,7 +5,7 @@
 [![Rust](https://img.shields.io/badge/rust-2024-orange.svg)](https://www.rust-lang.org/)
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
 [![Build Status](https://img.shields.io/badge/build-passing-brightgreen.svg)]()
-[![Tests](https://img.shields.io/badge/tests-244%20passing-brightgreen.svg)]()
+[![Tests](https://img.shields.io/badge/tests-346%2B%20passing-brightgreen.svg)]()
 
 ## Why phprs? The Rust Advantage
 
@@ -14,7 +14,7 @@ PHP powers over 77% of the web, but traditional C-based implementations suffer f
 - **10x More Secure**: Zero memory leaks, no buffer overflows, no use-after-free bugs
 - **2-3x Faster**: Rust's zero-cost abstractions and LLVM optimization
 - **100% Thread-Safe**: Fearless concurrency without data races
-- **Production-Ready**: 244 passing tests, battle-tested in real-world scenarios
+- **Production-Ready**: 346+ workspace tests (library + CLI + integration), with end-to-end example runs in CI
 
 **phprs** brings PHP into the future by:
 
@@ -76,12 +76,12 @@ PHP powers over 77% of the web, but traditional C-based implementations suffer f
 **Result**: Run PHP code in parallel without fear of race conditions or deadlocks
 
 ### 🌐 **Framework Support**
-Built-in compatibility with popular PHP frameworks and CMSs:
-- **WordPress** ✅ - Complete hooks system, wpdb, plugin/theme loading (40+ functions)
-- **Laravel** 📋 - Routing, Eloquent ORM, Blade templates (planned)
-- **Symfony** 📋 - HTTP kernel, dependency injection (planned)
-- **CodeIgniter 4** 📋 - MVC architecture support (bootstrap complete)
-- **Drupal** 📋 - Module system, hooks (bootstrap complete)
+Progressive compatibility with popular PHP frameworks and CMSs (stubs and demos ship in `examples/`):
+- **WordPress** ✅ - Hooks, wpdb, plugin/theme loading (see `examples/wordpress/`)
+- **CodeIgniter 4** ✅ - Minimal bootstrap + routed controller demo (`examples/codeigniter/`, covered by `tests/examples_runtime.rs`)
+- **Drupal** ✅ - Minimal kernel/bootstrap stub (`examples/drupal/`, covered by `tests/examples_runtime.rs`)
+- **Laravel** 📋 - Routing, Eloquent, Blade (planned)
+- **Symfony** 📋 - HTTP kernel, DI (planned)
 
 ### 🛠️ **Modern Ecosystem - Rust Crate Integration**
 **Leveraging Rust's Rich Ecosystem:**
@@ -118,10 +118,10 @@ Built-in compatibility with popular PHP frameworks and CMSs:
 git clone https://github.com/yingkitw/phprs.git
 cd phprs
 
-# Build release version
+# Build library + CLI (workspace)
 cargo build --release
 
-# The binary will be at target/release/phprs
+# CLI binary: target/release/phprs (from `phprs-cli` workspace member)
 ```
 
 ### Usage - It's That Simple!
@@ -323,12 +323,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 ```
 
 **More Examples**:
-- `examples/regex-examples.php` - 15 regex patterns
-- `examples/http-stream-examples.php` - API integration
-- `examples/session-examples.php` - Session management
-- `examples/pdo-examples.php` - Database operations
-- `examples/integration-test.php` - Full application
+- `examples/control_flow.php` - if/switch, **for**, **while**, **foreach** (see `tests/examples_runtime.rs`)
+- `examples/mbstring.php` - Multibyte string helpers (`mb_*` subset)
+- `examples/match_expression.php` - `match` expressions
+- `examples/regex-examples.php` - Regex patterns
+- `examples/http-stream-examples.php` - HTTP streams
+- `examples/session-examples.php` - Sessions
+- `examples/pdo-examples.php` - PDO usage
+- `examples/integration-test.php` - Combined feature script
 - `examples/wordpress/` - WordPress integration
+- `examples/codeigniter/public/index.php` - CodeIgniter-style bootstrap demo
+- `examples/drupal/index.php` - Drupal-style kernel stub
 
 ## Project Structure
 
@@ -348,7 +353,7 @@ phprs/
 │       ├── streams.rs   # Stream wrappers
 │       └── filesystem.rs # File operations
 ├── bin/phprs/           # CLI application
-├── examples/            # 80+ examples (2100+ lines)
+├── examples/            # Curated demos (WordPress, CI, Drupal, language features)
 │   ├── wordpress/       # WordPress integration
 │   ├── regex-examples.php
 │   ├── pdo-examples.php
@@ -359,15 +364,20 @@ phprs/
 ## API Usage
 
 ```rust
-use phprs::engine::compile;
-use phprs::engine::vm;
+use phprs::engine::compile::{compile_string, compile_string_with_functions};
+use phprs::engine::vm::{execute_ex, ExecuteData};
+use std::sync::Arc;
 
-// Compile PHP code
+// Compile a snippet (no user functions)
 let op_array = compile_string("<?php echo 'Hello'; ?>", "inline.php")?;
 
-// Execute
+// Scripts with `function` definitions need the function table:
+let (op_array, fn_table) =
+    compile_string_with_functions("<?php function f() { return 1; } echo f(); ?>", "t.php")?;
+
 let mut exec_data = ExecuteData::new();
-execute_ex(&mut exec_data, &op_array);
+exec_data.function_table = Some(Arc::new(fn_table));
+let _ = execute_ex(&mut exec_data, &op_array);
 ```
 
 ## Framework Compatibility
@@ -401,23 +411,24 @@ phprs run index.php
 - Twig templating
 - Console component
 
-### 📋 CodeIgniter 4 (Planned)
-- MVC architecture
-- Database abstraction
-- Form validation
+### ✅ CodeIgniter 4 (demo)
+- Minimal app layout, autoload stubs, router, and sample controller under `examples/codeigniter/`
+- Full framework parity is not a goal of the demo; it exercises includes and routing-style code paths
 
 ## Features & Capabilities
 
 ### ✅ Core PHP Engine
-- **Types**: Full PHP type system (int, float, string, array, object, null, bool)
-- **Operators**: All PHP operators (arithmetic, logical, comparison, bitwise)
-- **Control Flow**: if/else, switch, match, for, foreach, while, do-while
+- **Types**: PHP type system (int, float, string, array, object, null, bool) — growing toward full parity
+- **Operators**: Core arithmetic, logical, comparison, and string operators (see `examples/operators.php`)
+- **Control Flow**: if/else, switch, `match`, **for** (init/cond/inc), **foreach** (value-only), **while**; post-increment/decrement on simple variables (`$i++`)
 - **Functions**: User-defined functions, closures, arrow functions
 - **Classes**: OOP with inheritance, traits, interfaces, namespaces
 - **Error Handling**: try/catch/finally, exceptions
 
-### ✅ Standard Library (70+ Functions)
-**String Functions**: `strlen`, `substr`, `str_replace`, `trim`, `strtolower`, `strtoupper`, `ucfirst`
+### ✅ Standard Library (70+ functions, expanding)
+**String Functions**: `strlen`, `substr`, `str_replace`, `trim`, `strtolower`, `strtoupper`, `ucfirst`, and a growing **mbstring** subset (`mb_strlen`, `mb_substr`, … — see `src/php/mbstring.rs`, `examples/mbstring.php`)
+
+**URL / query**: `parse_url`, `http_build_query`, and related helpers (`src/php/url.rs`)
 
 **Array Functions**: `array_map`, `array_filter`, `array_merge`, `count`, `in_array`, `array_key_exists`
 
@@ -556,19 +567,25 @@ chmod +x run-all-tests.sh
 ## Testing
 
 ```bash
-# Run all tests
-cargo test
+# Library + CLI + integration tests (recommended)
+cargo test --workspace
 
-# Run specific test suites
-cargo test --lib              # Library tests
-cargo test --test php_examples # PHP example tests
+# Library only
+cargo test --lib
 
-# Run feature tests
-phprs run examples/test-streams-regex-pdo.php
+# PHP example compile checks
+cargo test --test php_examples
 
-# Run WordPress tests
-phprs run examples/wordpress/test-theme-plugin.php
+# End-to-end: compile + VM + output for curated `examples/*.php`
+cargo test --test examples_runtime
+
+# Smoke a script manually
+cargo run -p phprs-cli -- run examples/control_flow.php
+cargo run -p phprs-cli -- run examples/test-streams-regex-pdo.php
+cargo run -p phprs-cli -- run examples/wordpress/test-theme-plugin.php
 ```
+
+The workspace runs **clean** (no warnings) on `cargo test --workspace` and `cargo build --workspace`.
 
 ## Documentation
 
@@ -582,10 +599,10 @@ phprs run examples/wordpress/test-theme-plugin.php
 - **[examples/STREAMS-REGEX-PDO-README.md](examples/STREAMS-REGEX-PDO-README.md)** - Stream wrappers, regex, sessions, PDO
 - **[examples/wordpress/THEME-PLUGIN-README.md](examples/wordpress/THEME-PLUGIN-README.md)** - WordPress integration guide
 - **[examples/TEST-GUIDE.md](examples/TEST-GUIDE.md)** - Comprehensive testing guide
-- **[examples/TESTING-SUMMARY.md](examples/TESTING-SUMMARY.md)** - Test coverage (83 examples, 2100+ lines)
+- **[examples/TESTING-SUMMARY.md](examples/TESTING-SUMMARY.md)** - Example and test coverage notes
 
 ### Quick Links
-- **[examples/](examples/)** - 80+ working examples
+- **[examples/](examples/)** - Curated PHP demos (language features, WordPress, CodeIgniter, Drupal stubs)
 - **[AGENTS.md](AGENTS.md)** - Development guidelines
 - **[Cargo.toml](Cargo.toml)** - Dependencies and build configuration
 
@@ -611,8 +628,7 @@ phprs run examples/wordpress/test-theme-plugin.php
 - REPL (interactive shell)
 
 ### 📋 Planned (v0.3.x+)
-- CodeIgniter 4 support
-- Drupal support
+- Deeper CodeIgniter / Drupal parity (beyond `examples/` demos)
 - Native extensions API
 - WebAssembly compilation
 - Distributed caching (Redis, Memcached)

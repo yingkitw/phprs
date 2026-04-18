@@ -153,6 +153,17 @@ fn compile_variable_stmt(
     let var_name = token.value.as_ref().unwrap().as_str();
     let next_token = lexer.next_token()?;
 
+    if next_token.token_type == TokenType::T_INC || next_token.token_type == TokenType::T_DEC {
+        let initial_zval = super::expression::helpers::token_to_primary(token, context)?;
+        let (_v, after) = super::expression::helpers::parse_access_chain(
+            lexer,
+            context,
+            initial_zval,
+            next_token,
+        )?;
+        return skip_semicolon(lexer, after);
+    }
+
     if next_token.token_type == TokenType::T_EQUAL {
         // Variable assignment: $var = expression
         let (value_zval, after_expr) = parse_expression(lexer, context)?;

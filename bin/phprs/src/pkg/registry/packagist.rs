@@ -198,6 +198,7 @@ impl PackagistClient {
 }
 
 /// Packagist API response
+#[allow(dead_code)]
 #[derive(Debug, Deserialize)]
 struct PackagistResponse {
     #[serde(default)]
@@ -209,6 +210,7 @@ struct PackagistResponse {
 }
 
 /// Version metadata from Packagist
+#[allow(dead_code)]
 #[derive(Debug, Clone, Deserialize)]
 pub struct VersionMetadata {
     pub version: String,
@@ -239,6 +241,7 @@ pub struct VersionMetadata {
 }
 
 /// Package source (VCS)
+#[allow(dead_code)]
 #[derive(Debug, Clone, Deserialize)]
 pub struct PackageSource {
     #[serde(rename = "type")]
@@ -248,6 +251,7 @@ pub struct PackageSource {
 }
 
 /// Package distribution (downloadable archive)
+#[allow(dead_code)]
 #[derive(Debug, Clone, Deserialize)]
 pub struct PackageDist {
     #[serde(rename = "type")]

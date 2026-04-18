@@ -28,6 +28,10 @@ fn init_dispatch_table() {
         table[Opcode::Div as usize] = execute_div;
         table[Opcode::Mod as usize] = execute_mod;
         table[Opcode::Pow as usize] = execute_pow;
+        table[Opcode::BoolNot as usize] = execute_bool_not;
+        table[Opcode::BoolAnd as usize] = execute_bool_and;
+        table[Opcode::BoolOr as usize] = execute_bool_or;
+        table[Opcode::BoolXor as usize] = execute_bool_xor;
         table[Opcode::Concat as usize] = execute_concat;
         table[Opcode::Assign as usize] = execute_assign;
         table[Opcode::AssignDim as usize] = execute_assign_dim;
@@ -58,6 +62,8 @@ fn init_dispatch_table() {
         table[Opcode::IsNotEqual as usize] = execute_is_not_equal;
         table[Opcode::IsSmaller as usize] = execute_is_smaller;
         table[Opcode::IsSmallerOrEqual as usize] = execute_is_smaller_or_equal;
+        table[Opcode::FeReset as usize] = execute_fe_reset;
+        table[Opcode::FeFetch as usize] = execute_fe_fetch;
 
         table
     });

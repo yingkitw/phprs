@@ -1,7 +1,7 @@
 //! Unit tests for PHP SAPI
 
 use crate::php::sapi::{
-    php_cli_shutdown, php_cli_startup, sapi_shutdown, sapi_startup, SapiHeader, SapiModule,
+    php_cli_shutdown, php_cli_startup, sapi_shutdown, sapi_startup, SapiModule,
 };
 
 #[test]

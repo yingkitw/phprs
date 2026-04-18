@@ -18,7 +18,7 @@ pub(crate) fn token_is_keyword(token: &Token, keyword: &str) -> bool {
 }
 
 /// Convert a pre-consumed token into a primary Val
-pub(crate) fn token_to_primary(tok: &Token) -> Result<Val, String> {
+pub(crate) fn token_to_primary(tok: &Token, context: &mut CompileContext) -> Result<Val, String> {
     match tok.token_type {
         TokenType::T_LNUMBER => {
             let num_val = tok
@@ -65,7 +65,7 @@ pub(crate) fn token_to_primary(tok: &Token) -> Result<Val, String> {
                 "true" => Ok(StdValFactory::bool_val(true)),
                 "false" => Ok(StdValFactory::bool_val(false)),
                 "null" => Ok(facade::null_val()),
-                _ => Ok(facade::null_val()),
+                _ => Ok(compile_constant_lookup(context, val)),
             }
         }
         _ => Err(format!(
@@ -180,6 +180,19 @@ pub(crate) fn parse_match_expression(
 
 /// Parse the object access chain: $var[idx], $var->prop, $var->method(args...)
 /// Shared between parse_primary_expr and parse_multiplicative_expr_with_initial
+fn local_var_name_from_var_ref(val: &Val) -> Option<String> {
+    if val.get_type() != PhpType::Undef {
+        return None;
+    }
+    if let PhpValue::String(s) = &val.value {
+        let n = s.as_str();
+        let clean = if n.starts_with('$') { &n[1..] } else { n };
+        Some(clean.to_string())
+    } else {
+        None
+    }
+}
+
 pub(crate) fn parse_access_chain(
     lexer: &mut Lexer,
     context: &mut CompileContext,
@@ -204,6 +217,50 @@ pub(crate) fn parse_access_chain(
             let (call_result, call_next) = parse_callable_var(lexer, context, result)?;
             result = call_result;
             next = call_next;
+        } else if next.token_type == TokenType::T_INC {
+            let name = local_var_name_from_var_ref(&result)
+                .ok_or_else(|| "Post-increment requires a simple variable".to_string())?;
+            let old_slot = context.alloc_temp();
+            context.emit_opcode(
+                Opcode::FetchVar,
+                facade::clone_val(&result),
+                facade::null_val(),
+                temp_var_ref(old_slot),
+            );
+            let one = facade::long_val(1);
+            let new_val = emit_binary_op(
+                context,
+                Opcode::Add,
+                facade::clone_val(&result),
+                one,
+            );
+            let var_name_zval = facade::string_val(&name);
+            let new_val_op2 = StdValFactory::clone_val(&new_val);
+            context.emit_opcode(Opcode::Assign, var_name_zval, new_val, new_val_op2);
+            result = temp_var_ref(old_slot);
+            next = lexer.next_token()?;
+        } else if next.token_type == TokenType::T_DEC {
+            let name = local_var_name_from_var_ref(&result)
+                .ok_or_else(|| "Post-decrement requires a simple variable".to_string())?;
+            let old_slot = context.alloc_temp();
+            context.emit_opcode(
+                Opcode::FetchVar,
+                facade::clone_val(&result),
+                facade::null_val(),
+                temp_var_ref(old_slot),
+            );
+            let one = facade::long_val(1);
+            let new_val = emit_binary_op(
+                context,
+                Opcode::Sub,
+                facade::clone_val(&result),
+                one,
+            );
+            let var_name_zval = facade::string_val(&name);
+            let new_val_op2 = StdValFactory::clone_val(&new_val);
+            context.emit_opcode(Opcode::Assign, var_name_zval, new_val, new_val_op2);
+            result = temp_var_ref(old_slot);
+            next = lexer.next_token()?;
         } else {
             break;
         }

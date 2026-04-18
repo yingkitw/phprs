@@ -71,7 +71,7 @@ mod lexer_tests {
             ("\"test\\nescape\"", "test\\nescape"),
         ];
 
-        for (input, expected) in &test_cases {
+        for (input, _expected) in &test_cases {
             let mut lexer = Lexer::new(input);
             let token = lexer.next_token().unwrap();
             assert_eq!(

@@ -196,7 +196,7 @@ fn parse_logical_not_expr(
 }
 
 /// Parse comparison expression with optional pre-consumed token
-fn parse_comparison_expr_with_token(
+pub(crate) fn parse_comparison_expr_with_token(
     lexer: &mut Lexer,
     context: &mut CompileContext,
     initial_token: Option<Token>,
@@ -309,7 +309,7 @@ fn parse_multiplicative_expr_with_initial(
     }
 
     // Convert token to primary Val
-    let initial_zval = token_to_primary(&initial_token)?;
+    let initial_zval = token_to_primary(&initial_token, context)?;
 
     // Handle special cases based on token type
     let (left, token) = if initial_token.token_type == TokenType::T_STRING {

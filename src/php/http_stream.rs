@@ -113,8 +113,6 @@ pub fn file_get_contents_http(url: &str) -> Result<String, String> {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    
     #[test]
     fn test_http_stream_creation() {
         // This test would require network access

@@ -2,7 +2,7 @@
 
 use crate::engine::compile::{compile_file, compile_string, CompileContext};
 use crate::engine::types::Val;
-use crate::engine::vm::{Op, Opcode};
+use crate::engine::vm::Opcode;
 
 #[test]
 fn test_compile_context_new() {

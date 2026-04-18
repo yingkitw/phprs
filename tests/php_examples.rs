@@ -1,9 +1,10 @@
 //! PHP Examples Test Cases
 //!
-//! Tests that verify the PHP-RS engine can compile and execute PHP files from examples/
+//! Tests that verify the PHP-RS engine can compile (and lightly execute) PHP files from `examples/`.
+//! For **end-to-end** runs with stdout assertions (tutorials + framework demos), see `examples_runtime.rs`.
 
 use phprs::engine::compile::{compile_file, compile_string};
-use phprs::engine::types::{PhpResult, PhpType, PhpValue, Val};
+use phprs::engine::types::PhpResult;
 use phprs::engine::vm::{execute_ex, ExecuteData, OpArray};
 use std::fs;
 use std::path::Path;
@@ -26,12 +27,6 @@ fn test_php_file_compilation(filepath: &str) -> Result<OpArray, String> {
     );
 
     Ok(op_array)
-}
-
-/// Test helper: Execute a compiled op array
-fn test_execute_op_array(op_array: &OpArray) -> PhpResult {
-    let mut execute_data = ExecuteData::new();
-    execute_ex(&mut execute_data, op_array)
 }
 
 #[test]
