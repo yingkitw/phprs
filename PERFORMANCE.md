@@ -1,333 +1,85 @@
-# phprs Performance - Why Rust Dominates
+# phprs performance notes
 
-This document explains how phprs leverages Rust's revolutionary features to achieve **2-3x better performance** than C-based PHP 8.3, while maintaining 100% memory safety.
+This document describes **optimization techniques used in phprs** and **how to measure** behavior. It does **not** claim that phprs is faster than PHP unless you have **reproducible, documented** experiments for your workload.
 
-## 🏆 The Rust Performance Advantage
+## Evidence policy
 
-### Why Rust Outperforms C-Based PHP
+- **Do not** treat language-level or design arguments as proof that phprs beats stock PHP. Those are *hypotheses* until measured.
+- **Do** report numbers only when you can point to: PHP and phprs versions, exact commands or scripts, hardware/OS, iteration counts, and (for memory) how usage was measured.
+- The in-tree benchmark helpers may compare against **placeholder baselines** for development; those are **not** substitutes for measuring real `php` on the same machine.
 
-**1. LLVM Optimization Infrastructure**
-- **Same backend as Clang, Swift, Julia**: World-class optimization
-- **Advanced optimizations**: Loop vectorization, polyhedral optimization, auto-vectorization
-- **Profile-Guided Optimization (PGO)**: Runtime profiling for better code generation
-- **Link-Time Optimization (LTO)**: Whole-program analysis and optimization
-- **Better register allocation**: Superior to GCC's register allocator
+## What phprs implements (implementation facts)
 
-**2. Zero-Cost Abstractions**
-- **High-level code → Optimal machine code**: No runtime overhead for safety
-- **Iterator fusion**: Multiple iterator chains compile to single tight loop
-- **Monomorphization**: Generic code specialized for each type (no vtable overhead)
-- **Inline everything**: Cross-crate inlining with LTO
-- **No hidden costs**: What you see is what you get
+These are features that exist in the codebase; they are **not** automatic proof of end-to-end speedup versus PHP.
 
-**3. Memory Management Without GC**
-- **No Garbage Collection pauses**: Deterministic deallocation via RAII
-- **No Stop-the-World**: Predictable, consistent latency
-- **Better cache locality**: Ownership system enables optimal memory layout
-- **Reduced fragmentation**: Predictable allocation/deallocation patterns
-- **Stack allocation**: More values on stack vs heap (faster access)
+### VM and execution
 
-**4. Concurrency Without Locks**
-- **Lock-free data structures**: Atomic operations for thread-safe performance
-- **Work-stealing scheduler**: Tokio's efficient task distribution
-- **Zero-cost async/await**: State machines compiled at compile time
-- **No GIL**: True parallelism without Global Interpreter Lock
-- **MPSC channels**: Fast message passing between threads
+- **Dispatch**: Computed-style opcode dispatch (vs a large `match` on hot paths) to reduce branch overhead.
+- **Memory for execution**: Pre-sized buffers where the code path expects known capacity.
+- **Hot paths**: Some paths use `unsafe` only where invariants are documented and checked elsewhere—this is a tradeoff, not a guarantee of winning vs PHP.
 
-**5. Modern CPU Features**
-- **SIMD auto-vectorization**: Automatic use of SSE/AVX/NEON instructions
-- **Branch prediction hints**: Compiler inserts optimal hints
-- **Cache-friendly data structures**: Better memory layout
-- **Prefetching**: Automatic memory prefetch optimization
+### JIT, opcode cache, and function optimizer
 
-## 🚀 Performance Improvements Overview
+- **JIT**: Hot-function detection (e.g. threshold around 100 invocations), limited native-style compilation paths for small/hot regions.
+- **Opcode cache**: LRU-style caching with basic vs more aggressive optimization passes (constant folding, DCE, etc., as implemented).
+- **Function optimizer**: Call-frequency tracking, complexity heuristics, selective inlining.
 
-### 1. **VM Execution Engine Optimizations**
-- **Direct Function Dispatch**: Replaced match statement with computed goto style dispatch table for ~2-3x faster opcode execution
-- **Pre-allocated Memory**: Exact capacity allocation prevents reallocations during execution
-- **Unsafe Memory Access**: Used unchecked access for hot paths with bounds checking validation
-- **Inline Function Calls**: Direct function calls instead of dynamic dispatch for critical opcodes
+### Memory and strings
 
-### 2. **JIT Compilation System**
-- **Hot Code Detection**: Automatic identification of frequently executed functions (>100 calls)
-- **Native Code Generation**: Compiles hot PHP functions to optimized Rust code
-- **Inline Optimization**: Inlines small functions to eliminate call overhead
-- **Execution Counters**: Tracks function call frequency for intelligent compilation
+- **Pools / builders**: Small-object pooling and string builders aimed at reducing allocator churn for typical patterns.
+- **String ops**: Interning, hashing, and concatenation paths tuned for the interpreter’s representation—not necessarily identical to PHP’s C implementation.
 
-### 3. **Memory Management Optimizations**
-- **Memory Pool Allocation**: Custom allocator for small objects with reuse patterns
-- **Zero-Copy String References**: Minimizes allocations for string operations
-- **Smart Pre-allocation**: Predicts memory needs for arrays and strings
-- **Memory Usage Statistics**: Real-time tracking of allocation patterns
+### Arrays
 
-### 4. **String Operations Performance**
-- **Fast Concatenation**: Pre-allocated string builder with exact capacity
-- **Hash Function Optimization**: Optimized DJBX33A hash implementation
-- **String Interning**: Caches frequently used strings
-- **Zero-Copy Operations**: Minimizes memory copying in string operations
+- **Optimized array type**: Alternate array representation for paths that use it; behavior and wins depend on workload.
 
-### 5. **Array Operations Enhancements**
-- **Optimized Array Structure**: Custom array implementation with better memory layout
-- **Fast Lookup**: Cached string keys with hash-based indexing
-- **Bulk Operations**: Optimized map, filter, and reduce operations
-- **Memory-Efficient Iteration**: Zero-allocation array traversal
+## Why Rust *can* help (theory, not a phprs scorecard)
 
-### 6. **Function Call Optimizations**
-- **Call Frequency Analysis**: Tracks function call patterns
-- **Automatic Inlining**: Inlines small, frequently called functions
-- **Parameter Binding Optimization**: Efficient argument passing
-- **Return Value Optimization**: Minimizes copying of return values
+Rust’s toolchain and language model **can** enable optimizations (LLVM pipeline, monomorphization, ownership-based layout, fearless concurrency in **Rust** code). Whether that translates into **faster PHP programs in phprs** is **workload- and implementation-dependent** and must be measured.
 
-### 7. **Opcode Caching System**
-- **Multi-Level Caching**: Basic and aggressive optimization levels
-- **LRU Eviction**: Intelligent cache management with size limits
-- **Optimization Passes**: Constant folding, dead code elimination, loop optimization
-- **Cache Statistics**: Real-time performance metrics
+Avoid comparing Rust’s LLVM backend to “GCC vs Clang” or other engines in this doc unless you cite **specific, controlled** measurements relevant to phprs.
 
-### 8. **Advanced Optimizations**
-- **Branch Prediction**: Adds hints for conditional jumps
-- **Loop Optimization**: Detects and optimizes common loop patterns
-- **Constant Folding**: Pre-computes constant expressions
-- **Dead Code Elimination**: Removes unreachable code
+## How to run what we have today
 
-## 📊 Performance Benchmarks - Rust vs C-based PHP
-
-### Benchmark Results (phprs vs PHP 8.3)
-
-| Operation | PHP 8.3 | phprs (Rust) | Speedup | Rust Advantage |
-|-----------|---------|--------------|---------|----------------|
-| **String concatenation** | 100ms | 45ms | **2.2x** | Zero-copy string handling, no GC |
-| **Array operations** | 150ms | 80ms | **1.9x** | Optimized memory layout, cache-friendly |
-| **Function calls** | 80ms | 40ms | **2.0x** | LLVM inline optimization |
-| **Regex matching** | 120ms | 60ms | **2.0x** | Rust regex crate (DFA-based, no ReDoS) |
-| **JSON encoding** | 90ms | 50ms | **1.8x** | serde zero-copy serialization |
-| **Memory allocation** | 200ms | 60ms | **3.3x** | No GC pauses, RAII |
-| **Concurrent requests** | 500ms | 150ms | **3.3x** | True parallelism, no GIL |
-| **Loop operations** | 150ms | 90ms | **1.7x** | Loop unrolling, vectorization |
-| **Hash table lookup** | 100ms | 55ms | **1.8x** | Better hash function, cache locality |
-| **Type checking** | 80ms | 35ms | **2.3x** | Compile-time type information |
-
-**Average Performance Improvement: 2.2x faster than PHP 8.3**
-
-*Benchmarks run on 1M iterations, Apple M1 Pro, 16GB RAM*
-
-### Real-World Application Benchmarks
-
-| Application Type | PHP 8.3 (req/sec) | phprs (req/sec) | Speedup |
-|------------------|-------------------|-----------------|---------|
-| **WordPress homepage** | 450 | 980 | **2.2x** |
-| **REST API (JSON)** | 2,500 | 5,200 | **2.1x** |
-| **Database queries** | 1,200 | 2,400 | **2.0x** |
-| **File operations** | 800 | 1,650 | **2.1x** |
-| **Template rendering** | 600 | 1,300 | **2.2x** |
-
-### Memory Usage Comparison
-
-| Scenario | PHP 8.3 Memory | phprs Memory | Reduction |
-|----------|----------------|--------------|-----------|
-| **Idle process** | 8MB | 2MB | **75%** |
-| **WordPress site** | 45MB | 18MB | **60%** |
-| **1000 requests** | 120MB | 35MB | **71%** |
-| **Peak usage** | 256MB | 80MB | **69%** |
-
-**Why Rust Uses Less Memory:**
-- No garbage collector overhead
-- Efficient memory layout (ownership system)
-- Stack allocation where possible
-- No reference counting overhead for primitives
-
-## 🛠️ Implementation Details
-
-### JIT Compiler Features
-- Compilation threshold: 100 executions
-- Supported optimizations: arithmetic, string operations, simple functions
-- Native code generation with Rust performance
-- Automatic hot path detection
-
-### Memory Pool Implementation
-- 8 size classes: 8, 16, 32, 64, 128, 256, 512, 1024 bytes
-- Per-thread memory pools for thread safety
-- Automatic pool management with size limits
-- Zero-allocation fast paths for common operations
-
-### Opcode Cache Features
-- Cache size: 1000 entries (configurable)
-- LRU eviction policy
-- Two optimization levels: Basic and Aggressive
-- Real-time statistics tracking
-
-### Function Optimizer Features
-- Complexity analysis: Trivial, Simple, Moderate, Complex, VeryComplex
-- Automatic inlining for small functions
-- Call frequency tracking
-- Optimization statistics
-
-## 🔧 Usage
-
-### Running Benchmarks
 ```bash
+cargo build --release
 cargo run --example performance_demo
-cargo run --example benchmark
 ```
 
-### Checking Optimization Statistics
+If you add a dedicated benchmark binary or example, document the exact invocation here when you publish results.
+
+For optimization introspection (API surface may change—refer to source):
+
 ```rust
 use phprs::engine::{jit, opcode_cache, function_optimizer};
 
-// JIT statistics
 let jit_stats = jit::get_jit_compiler().get_stats();
-println!("JIT functions compiled: {}", jit_stats.0);
-
-// Cache statistics
 let cache_stats = opcode_cache::get_opcode_cache().get_stats();
-println!("Cache hits: {}", cache_stats.0);
-
-// Function optimizer statistics
 let func_stats = function_optimizer::get_function_optimizer().get_stats();
-println!("Functions inlined: {}", func_stats.1);
 ```
 
-## 🎯 Performance Tips
+## Publishing a real phprs vs PHP comparison
 
-1. **Enable Release Mode**: Always use `cargo build --release`
-2. **Warm Up JIT**: Allow hot functions to reach compilation threshold
-3. **Use Optimized Arrays**: Prefer `OptimizedArray` over standard arrays
-4. **Leverage String Builder**: Use `StringBuilder` for concatenations
-5. **Monitor Cache**: Check cache hit rates for optimal performance
+When you have measured data, add a subsection under **Measured results** with:
 
-## 🦀 Rust-Specific Optimizations
+1. **Versions**: `php -v`, phprs commit or release tag, Rust toolchain (`rustc --version`).
+2. **Hardware/OS**: CPU model, RAM, OS build.
+3. **Workload**: Minimal script or app under test; warm-up policy; iteration count.
+4. **Metrics**: Wall time, CPU time if available, peak RSS (define tool: `time`, `perf`, `/usr/bin/time -l`, etc.).
+5. **Raw output**: Logs or JSON paths (e.g. `benchmark_results.json`) committed or linked.
 
-### 1. Zero-Copy String Operations
-```rust
-// Rust: No allocation for substring
-let s = "Hello, World!";
-let sub = &s[0..5];  // Just a reference, zero-cost
+Until that exists, **do not** fill in speedup tables from estimates.
 
-// C PHP: Must allocate new string
-char* sub = substr(s, 0, 5);  // malloc() call
-```
+## Operational tips (release builds)
 
-### 2. Iterator Fusion
-```rust
-// Rust: Compiles to single tight loop
-let result: Vec<_> = vec![1, 2, 3, 4, 5]
-    .iter()
-    .map(|x| x * 2)
-    .filter(|x| x > &5)
-    .collect();
+1. Use **`cargo build --release`** for meaningful timing.
+2. If JIT is relevant, allow enough iterations for hot functions to cross the compile threshold before timing steady state.
+3. Treat cache and optimizer statistics as **diagnostics**, not as proof of superiority over PHP.
 
-// C PHP: Multiple loops, multiple allocations
-$result = array_filter(
-    array_map(fn($x) => $x * 2, [1, 2, 3, 4, 5]),
-    fn($x) => $x > 5
-);
-```
+## Future work
 
-### 3. Monomorphization vs Virtual Dispatch
-```rust
-// Rust: Specialized code for each type (no vtable)
-fn process<T: Display>(value: T) {
-    println!("{}", value);
-}
-process(42);      // Specialized for i32
-process("hello"); // Specialized for &str
+Possible directions (each needs measurement): PGO, explicit SIMD for hot kernels, parallel array ops, broader async I/O integration, WASM target, etc.
 
-// C PHP: Dynamic dispatch overhead
-zval_dtor(value);  // Must check type at runtime
-```
+---
 
-### 4. Stack Allocation
-```rust
-// Rust: Stack allocated (fast)
-let array = [1, 2, 3, 4, 5];
-
-// C PHP: Heap allocated (slower)
-zval* array = emalloc(sizeof(zval));
-```
-
-### 5. Compile-Time Constant Folding
-```rust
-// Rust: Computed at compile time
-const RESULT: i32 = 2 + 3 * 4;  // = 14, no runtime cost
-
-// C PHP: Computed at runtime
-$result = 2 + 3 * 4;  // Opcodes: MUL, ADD
-```
-
-## 🔮 Future Optimizations
-
-### Planned Rust-Powered Enhancements
-
-1. **LLVM PGO Integration**: Profile-guided optimization for hot paths
-2. **SIMD Explicit Vectorization**: Manual SIMD for critical operations
-3. **Parallel Array Operations**: Rayon for parallel map/filter/reduce
-4. **Async I/O Everywhere**: Tokio for all I/O operations
-5. **WebAssembly Target**: Compile PHP to WASM for browser execution
-6. **GPU Acceleration**: CUDA/OpenCL for compute-intensive operations
-7. **Better Type Inference**: Leverage Rust's type system for PHP optimization
-8. **Cross-Language LTO**: Optimize across Rust and C FFI boundaries
-
-## 📈 Monitoring Performance
-
-The performance benchmark suite provides comprehensive metrics:
-- Operations per second for each benchmark
-- Memory usage statistics
-- Cache hit/miss ratios
-- JIT compilation statistics
-- Function optimization metrics
-
-Results are exported to `benchmark_results.json` for detailed analysis.
-
-## 🏆 Conclusion - Rust's Decisive Advantage
-
-### Performance Summary
-phprs achieves **2.2x average speedup** over PHP 8.3 through Rust's revolutionary features:
-
-**Speed Improvements:**
-- ✅ **2.2x faster** on average across all operations
-- ✅ **3.3x faster** memory allocation (no GC pauses)
-- ✅ **3.3x faster** concurrent requests (true parallelism)
-- ✅ **2.3x faster** type checking (compile-time information)
-- ✅ **2.2x faster** string operations (zero-copy)
-
-**Memory Improvements:**
-- ✅ **70% less memory** usage on average
-- ✅ **75% smaller** idle process footprint
-- ✅ **No GC pauses** for predictable latency
-- ✅ **Better cache locality** from ownership system
-
-**Security Improvements:**
-- ✅ **Zero memory leaks** (ownership system)
-- ✅ **Zero buffer overflows** (bounds checking)
-- ✅ **Zero use-after-free** (borrow checker)
-- ✅ **Zero data races** (type system)
-- ✅ **70% fewer CVEs** compared to C-based PHP
-
-### Why Rust Wins
-
-**C-based PHP (Zend Engine) Limitations:**
-- ❌ Manual memory management → memory leaks
-- ❌ Garbage collection → unpredictable pauses
-- ❌ TSRM overhead → poor concurrency
-- ❌ Runtime type checking → slower execution
-- ❌ Limited optimization → GCC/Clang constraints
-
-**Rust-based phprs Advantages:**
-- ✅ Ownership system → zero memory leaks
-- ✅ No GC → deterministic performance
-- ✅ Fearless concurrency → true parallelism
-- ✅ Compile-time types → faster execution
-- ✅ LLVM backend → superior optimization
-
-### The Bottom Line
-
-**phprs is not just faster—it's fundamentally better engineered.**
-
-By leveraging Rust's memory safety, zero-cost abstractions, and LLVM optimization, phprs delivers:
-- **2-3x better performance** than C-based PHP
-- **70% fewer security vulnerabilities**
-- **100% memory safety** without runtime overhead
-- **True parallelism** without data races
-- **Production-ready** with 244 passing tests
-
-**Rust makes phprs the most secure, fastest, and most reliable PHP interpreter available.**
+**Summary:** phprs includes many performance-oriented implementations; **claims relative to PHP require experiments**. This file should stay aligned with what is measured, not what sounds plausible.
