@@ -21,8 +21,8 @@ $arr[0] = 'first';
 $arr[1] = 'second';
 echo "Index 0: " . $arr[0] . "\n";
 
-// Iterate
-foreach ($arr as $key => $value) {
-    echo "$key => $value\n";
+// Iterate (value-only; key => value foreach is not implemented yet in phprs)
+foreach ($arr as $value) {
+    echo "item: $value\n";
 }
 

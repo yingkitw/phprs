@@ -236,6 +236,7 @@ pub(crate) fn execute_builtin_function(
         "is_array" => Ok(Some(type_check(args, |t| t == PhpType::Array))),
         "is_string" => Ok(Some(type_check(args, |t| t == PhpType::String))),
         "is_int" | "is_integer" | "is_long" => Ok(Some(type_check(args, |t| t == PhpType::Long))),
+        "is_float" | "is_double" => Ok(Some(type_check(args, |t| t == PhpType::Double))),
         "is_bool" => Ok(Some(type_check(args, |t| {
             t == PhpType::True || t == PhpType::False
         }))),

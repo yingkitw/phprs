@@ -680,6 +680,7 @@ pub fn hex2bin(args: &[Val]) -> Result<Val, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::engine::operators::zval_get_long;
 
     #[test]
     fn test_md5() {
@@ -722,5 +723,73 @@ mod tests {
         )])
         .unwrap();
         assert_eq!(zval_get_string(&decoded).as_str(), "hello world");
+    }
+
+    #[test]
+    fn test_hash_md5_algo() {
+        let h = hash_generic(&[
+            Val::new(
+                PhpValue::String(Box::new(crate::engine::string::string_init("md5", false))),
+                PhpType::String,
+            ),
+            Val::new(
+                PhpValue::String(Box::new(crate::engine::string::string_init("test", false))),
+                PhpType::String,
+            ),
+        ])
+        .unwrap();
+        assert_eq!(zval_get_string(&h).as_str().len(), 32);
+    }
+
+    #[test]
+    fn test_hash_hmac_sha256() {
+        let h = hash_hmac(&[
+            Val::new(
+                PhpValue::String(Box::new(crate::engine::string::string_init("sha256", false))),
+                PhpType::String,
+            ),
+            Val::new(
+                PhpValue::String(Box::new(crate::engine::string::string_init("data", false))),
+                PhpType::String,
+            ),
+            Val::new(
+                PhpValue::String(Box::new(crate::engine::string::string_init("secret", false))),
+                PhpType::String,
+            ),
+        ])
+        .unwrap();
+        assert_eq!(zval_get_string(&h).as_str().len(), 64);
+    }
+
+    #[test]
+    fn test_crc32_bin2hex_hex2bin_roundtrip() {
+        let c = crc32(&[Val::new(
+            PhpValue::String(Box::new(crate::engine::string::string_init("abc", false))),
+            PhpType::String,
+        )])
+        .unwrap();
+        assert_ne!(zval_get_long(&c), 0);
+
+        let hx = bin2hex(&[Val::new(
+            PhpValue::String(Box::new(crate::engine::string::string_init("Hi", false))),
+            PhpType::String,
+        )])
+        .unwrap();
+        assert_eq!(zval_get_string(&hx).as_str(), "4869");
+
+        let back = hex2bin(&[hx]).unwrap();
+        assert_eq!(zval_get_string(&back).as_str(), "Hi");
+    }
+
+    #[test]
+    fn test_random_bytes_and_int() {
+        let b = random_bytes(&[Val::new(PhpValue::Long(4), PhpType::Long)]).unwrap();
+        assert!(!zval_get_string(&b).as_str().is_empty());
+        let i = random_int(&[
+            Val::new(PhpValue::Long(100), PhpType::Long),
+            Val::new(PhpValue::Long(100), PhpType::Long),
+        ])
+        .unwrap();
+        assert_eq!(zval_get_long(&i), 100);
     }
 }

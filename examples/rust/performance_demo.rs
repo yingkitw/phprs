@@ -1,10 +1,10 @@
 //! Performance test demonstration
 
-use phprs::engine::{benchmark, function_optimizer, jit, opcode_cache, perf_alloc};
+use phprs::engine::{function_optimizer, jit, opcode_cache, perf_alloc};
 
 fn main() {
-    println!("🚀 phprs - High Performance PHP Interpreter");
-    println!("Demonstrating optimizations that outperform PHP 8\n");
+    println!("phprs — performance-oriented interpreter components (demo)");
+    println!("This demo exercises internal optimizations; compare to PHP only with your own benchmarks.\n");
 
     // Test optimized memory allocation
     println!("📊 Testing Memory Optimizations:");
@@ -25,7 +25,7 @@ fn main() {
 
     // Test opcode cache
     println!("\n💾 Testing Opcode Cache:");
-    let cache = opcode_cache::get_opcode_cache();
+    let _cache = opcode_cache::get_opcode_cache();
     println!("  ✓ Cache initialized successfully");
 
     // Test function optimizer
@@ -43,8 +43,7 @@ fn main() {
     ));
     println!("  ✓ Optimized array push: {} elements", array.len());
 
-    println!("\n✅ All optimizations working correctly!");
-    println!("🎯 Ready to outperform PHP 8!");
+    println!("\n✅ Demo completed (optimizations exercised).");
 
     // Run a small benchmark demo
     println!("\n🏁 Running Mini Benchmark:");

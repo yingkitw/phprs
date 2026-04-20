@@ -536,4 +536,19 @@ mod tests {
         assert_eq!(result.memory_used, 1024);
         assert!(result.ops_per_second > 0.0);
     }
+
+    #[test]
+    fn test_export_results_json_shape() {
+        let mut suite = BenchmarkSuite::new();
+        suite.results.push(BenchmarkResult::new(
+            "simple_arithmetic",
+            100,
+            Duration::from_millis(10),
+            0,
+        ));
+        let json = suite.export_results();
+        assert!(json.contains("simple_arithmetic"));
+        assert!(json.contains("ops_per_second"));
+        assert!(json.contains("speedup_vs_php8"));
+    }
 }

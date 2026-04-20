@@ -114,3 +114,48 @@ fn example_mbstring_runs() {
     assert!(matches!(r, PhpResult::Success), "vm result: {r:?}, output: {out:?}");
     assert!(!out.trim().is_empty(), "expected mbstring example output");
 }
+
+#[test]
+fn example_basic_types_runs() {
+    let (r, out) = run_example_phprs("basic_types.php").expect("run");
+    assert!(matches!(r, PhpResult::Success), "vm result: {r:?}, output: {out:?}");
+    assert!(out.contains("Long value: 42"), "output: {out:?}");
+    assert!(out.contains("Hello, phprs!"), "output: {out:?}");
+    assert!(out.contains("Null is null: yes"), "output: {out:?}");
+}
+
+#[test]
+fn example_string_operations_runs() {
+    let (r, out) = run_example_phprs("string_operations.php").expect("run");
+    assert!(matches!(r, PhpResult::Success), "vm result: {r:?}, output: {out:?}");
+    assert!(out.contains("Concatenation (2 strings): HelloWorld"), "output: {out:?}");
+    assert!(out.contains("Length of 'Hello': 5"), "output: {out:?}");
+}
+
+#[test]
+fn example_array_operations_runs() {
+    let (r, out) = run_example_phprs("array_operations.php").expect("run");
+    assert!(matches!(r, PhpResult::Success), "vm result: {r:?}, output: {out:?}");
+    assert!(out.contains("Array size:"), "output: {out:?}");
+    assert!(out.contains("Name: PHP-RS"), "output: {out:?}");
+    assert!(out.contains("Index 0: first"), "output: {out:?}");
+    let items = out.lines().filter(|l| l.starts_with("item:")).count();
+    assert!(items >= 3, "expected foreach items, output: {out:?}");
+}
+
+#[test]
+fn example_variables_runs() {
+    let (r, out) = run_example_phprs("variables.php").expect("run");
+    assert!(matches!(r, PhpResult::Success), "vm result: {r:?}, output: {out:?}");
+    assert!(out.contains("Counter: 42"), "output: {out:?}");
+    assert!(out.contains("pi is float: yes"), "output: {out:?}");
+    assert!(out.contains("active is bool: yes"), "output: {out:?}");
+}
+
+#[test]
+fn example_filesystem_runs() {
+    let (r, out) = run_example_phprs("filesystem.php").expect("run");
+    assert!(matches!(r, PhpResult::Success), "vm result: {r:?}, output: {out:?}");
+    assert!(out.contains("Does '.' exist? yes"), "output: {out:?}");
+    assert!(out.contains("Contents length:"), "output: {out:?}");
+}

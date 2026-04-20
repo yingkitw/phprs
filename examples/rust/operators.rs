@@ -11,8 +11,8 @@ fn main() {
     println!("=== phprs Operators Example ===\n");
 
     // Create operands
-    let a = Zval::new(PhpValue::Long(10), PhpType::Long);
-    let b = Zval::new(PhpValue::Long(3), PhpType::Long);
+    let a = Val::new(PhpValue::Long(10), PhpType::Long);
+    let b = Val::new(PhpValue::Long(3), PhpType::Long);
 
     // Arithmetic operations
     let result_add = zval_add(&a, &b);
@@ -64,7 +64,7 @@ fn main() {
         cmp1
     );
 
-    let c = Zval::new(PhpValue::Long(10), PhpType::Long);
+    let c = Val::new(PhpValue::Long(10), PhpType::Long);
     let cmp2 = zval_compare(&a, &c);
     println!(
         "  {} vs {}: {:?}",
@@ -74,7 +74,7 @@ fn main() {
     );
 
     // Type conversion
-    let double_val = Zval::new(PhpValue::Double(42.5), PhpType::Double);
+    let double_val = Val::new(PhpValue::Double(42.5), PhpType::Double);
     println!("\nType conversions:");
     println!(
         "  Double {} as long: {}",

@@ -13,10 +13,6 @@ echo "Name: $name\n";
 echo "Pi: $pi\n";
 echo "Active: " . ($active ? 'true' : 'false') . "\n";
 
-// Variable variables
-$var_name = "counter";
-echo "Variable variable: " . $$var_name . "\n";
-
 // Type checking
 echo "\nType checking:\n";
 echo "counter is int: " . (is_int($counter) ? 'yes' : 'no') . "\n";

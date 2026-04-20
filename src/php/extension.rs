@@ -36,3 +36,17 @@ impl Default for ModuleEntry {
         Self::new("unknown")
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::ModuleEntry;
+
+    #[test]
+    fn module_entry_builder() {
+        let mut m = ModuleEntry::new("test").with_version("1.2.3");
+        m.add_function("foo");
+        assert_eq!(m.name, "test");
+        assert_eq!(m.version, "1.2.3");
+        assert_eq!(m.functions, vec!["foo".to_string()]);
+    }
+}

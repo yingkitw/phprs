@@ -2,21 +2,19 @@
 //!
 //! Demonstrates PHP error handling system
 
-use phprs::errors::{
-    php_error, php_error_at_line, php_set_error_handler, PhpError, PhpErrorType,
-};
+use phprs::errors::{error_at_line, php_error, set_error_handler, ErrorType, PhpError};
 
 fn main() {
     println!("=== phprs Error Handling Example ===\n");
 
     // Set a custom error handler
-    php_set_error_handler(|error: &PhpError| {
+    set_error_handler(|error: &PhpError| {
         println!(
             "[Custom Handler] {}: {}",
             match error.r#type {
-                PhpErrorType::Error => "ERROR",
-                PhpErrorType::Warning => "WARNING",
-                PhpErrorType::Notice => "NOTICE",
+                ErrorType::Error => "ERROR",
+                ErrorType::Warning => "WARNING",
+                ErrorType::Notice => "NOTICE",
                 _ => "OTHER",
             },
             error.message
@@ -26,14 +24,14 @@ fn main() {
     // Report different types of errors
     println!("Reporting errors:\n");
 
-    php_error(PhpErrorType::Notice, "This is a notice");
-    php_error(PhpErrorType::Warning, "This is a warning");
-    php_error(PhpErrorType::Error, "This is an error");
+    php_error(ErrorType::Notice, "This is a notice");
+    php_error(ErrorType::Warning, "This is a warning");
+    php_error(ErrorType::Error, "This is an error");
 
     // Report error with file and line
     println!("\nError with location:");
-    php_error_at_line(
-        PhpErrorType::Parse,
+    error_at_line(
+        ErrorType::Parse,
         "example.php",
         42,
         "Parse error: unexpected token",

@@ -207,7 +207,11 @@ pub fn math_rand(args: &[Val]) -> Result<Val, String> {
         .unwrap()
         .as_nanos() as u64;
     
-    let random = ((seed * 1103515245 + 12345) / 65536) % 32768;
+    let random = (seed
+        .wrapping_mul(1103515245)
+        .wrapping_add(12345)
+        / 65536)
+        % 32768;
     
     if args.len() >= 2 {
         let min = zval_get_long(&args[0]);
@@ -265,5 +269,28 @@ mod tests {
     fn test_min_max() {
         assert_eq!(zval_get_long(&math_max(&[Val::new(PhpValue::Long(1), PhpType::Long), Val::new(PhpValue::Long(5), PhpType::Long), Val::new(PhpValue::Long(3), PhpType::Long)]).unwrap()), 5);
         assert_eq!(zval_get_long(&math_min(&[Val::new(PhpValue::Long(1), PhpType::Long), Val::new(PhpValue::Long(5), PhpType::Long), Val::new(PhpValue::Long(3), PhpType::Long)]).unwrap()), 1);
+    }
+
+    #[test]
+    fn test_exp_log_log10() {
+        assert!((zval_get_double(&math_exp(&[Val::new(PhpValue::Double(1.0), PhpType::Double)]).unwrap()) - std::f64::consts::E).abs() < 1e-9);
+        assert!((zval_get_double(&math_log(&[Val::new(PhpValue::Double(std::f64::consts::E), PhpType::Double)]).unwrap()) - 1.0).abs() < 1e-9);
+        assert!((zval_get_double(&math_log10(&[Val::new(PhpValue::Double(100.0), PhpType::Double)]).unwrap()) - 2.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn test_tan_atan2_atan_asin_acos() {
+        assert!((zval_get_double(&math_tan(&[Val::new(PhpValue::Double(0.0), PhpType::Double)]).unwrap()) - 0.0).abs() < 1e-9);
+        assert!((zval_get_double(&math_atan2(&[Val::new(PhpValue::Double(1.0), PhpType::Double), Val::new(PhpValue::Double(1.0), PhpType::Double)]).unwrap()) - std::f64::consts::FRAC_PI_4).abs() < 1e-9);
+        assert!((zval_get_double(&math_atan(&[Val::new(PhpValue::Double(1.0), PhpType::Double)]).unwrap()) - std::f64::consts::FRAC_PI_4).abs() < 1e-9);
+        assert!((zval_get_double(&math_asin(&[Val::new(PhpValue::Double(1.0), PhpType::Double)]).unwrap()) - std::f64::consts::FRAC_PI_2).abs() < 1e-9);
+        assert!((zval_get_double(&math_acos(&[Val::new(PhpValue::Double(1.0), PhpType::Double)]).unwrap()) - 0.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn test_pi_and_rand() {
+        assert!((zval_get_double(&math_pi(&[]).unwrap()) - std::f64::consts::PI).abs() < 1e-9);
+        let r = math_rand(&[Val::new(PhpValue::Long(5), PhpType::Long), Val::new(PhpValue::Long(5), PhpType::Long)]).unwrap();
+        assert_eq!(zval_get_long(&r), 5);
     }
 }

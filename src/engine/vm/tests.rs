@@ -18,6 +18,21 @@ fn run_php_code(code: &str) -> (PhpResult, String) {
 }
 
 #[test]
+fn test_compile_is_float_and_is_double_builtins() {
+    let (r, out) = run_php_code(
+        r#"<?php
+echo (is_float(3.14) ? '1' : '0') . (is_double(3.14) ? '1' : '0');
+echo (is_float(7) ? '1' : '0');
+"#,
+    );
+    assert!(matches!(r, PhpResult::Success), "out={out:?}");
+    assert!(
+        out.starts_with("11") && out.contains('0'),
+        "expected float=true and int=false, out={out:?}"
+    );
+}
+
+#[test]
 fn test_opcode_enum() {
     // Verify opcode enum values
     assert_eq!(Opcode::Nop as u8, 0);

@@ -1,6 +1,6 @@
 [package]
 name = "phprs"
-version = "0.1.7"
+version = "0.1.8"
 authors = ["Ying kit WONG"]
 license = "Apache-2.0"
 description = "A PHP interpreter with build/package manager written in Rust"
@@ -65,6 +65,43 @@ debug = true
 opt-level = 1
 debug = true
 incremental = true
+
+# Rust examples live under examples/rust/; register each target explicitly.
+[[example]]
+name = "basic_types"
+path = "examples/rust/basic_types.rs"
+
+[[example]]
+name = "error_handling"
+path = "examples/rust/error_handling.rs"
+
+[[example]]
+name = "filesystem"
+path = "examples/rust/filesystem.rs"
+
+[[example]]
+name = "hash_table"
+path = "examples/rust/hash_table.rs"
+
+[[example]]
+name = "memory_management"
+path = "examples/rust/memory_management.rs"
+
+[[example]]
+name = "operators"
+path = "examples/rust/operators.rs"
+
+[[example]]
+name = "performance_demo"
+path = "examples/rust/performance_demo.rs"
+
+[[example]]
+name = "runtime"
+path = "examples/rust/runtime.rs"
+
+[[example]]
+name = "string_operations"
+path = "examples/rust/string_operations.rs"
 
 # Workspace for binary crates
 [workspace]

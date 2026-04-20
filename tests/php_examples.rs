@@ -31,14 +31,14 @@ fn test_php_file_compilation(filepath: &str) -> Result<OpArray, String> {
 
 #[test]
 fn test_basic_types_php_compilation() {
-    // This test may fail until we implement var_dump, true/false, null, arrays
     let result = test_php_file_compilation("basic_types.php");
-    if let Ok(op_array) = result {
-        assert!(op_array.filename.is_some());
-    } else {
-        // Compilation may fail for unsupported features - that's okay for now
-        eprintln!("Note: basic_types.php compilation failed (expected for unsupported features)");
-    }
+    assert!(
+        result.is_ok(),
+        "basic_types.php should compile: {:?}",
+        result.err()
+    );
+    let op_array = result.unwrap();
+    assert!(op_array.filename.is_some());
 }
 
 #[test]
@@ -145,6 +145,7 @@ fn test_all_php_examples_exist() {
     // Verify all expected PHP example files exist
     let examples = vec![
         "01_hello_world.php",
+        "basic_types.php",
         "string_operations.php",
         "array_operations.php",
         "operators.php",
@@ -236,6 +237,7 @@ fn test_php_examples_compilation_batch() {
         "string_operations.php",
         "array_operations.php",
         "operators.php",
+        "variables.php",
     ];
 
     let mut success_count = 0;

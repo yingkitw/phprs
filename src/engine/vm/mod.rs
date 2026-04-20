@@ -17,6 +17,9 @@
 #[cfg(test)]
 mod tests;
 
+#[cfg(test)]
+mod builtin_capability_tests;
+
 mod builtins;
 pub mod dispatch_handlers;
 pub mod execute;

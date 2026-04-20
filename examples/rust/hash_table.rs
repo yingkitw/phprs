@@ -47,7 +47,7 @@ fn main() {
     }
 
     println!("\nHash table contents:");
-    for (i, bucket) in ht.data.iter().enumerate() {
+    for (i, bucket) in ht.ar_data.iter().enumerate() {
         if let Some(ref key) = bucket.key {
             println!("  [{}] '{}' => {:?}", i, key.as_str(), bucket.val);
         } else {
