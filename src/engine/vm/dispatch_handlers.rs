@@ -12,6 +12,28 @@ use super::opcodes::{Op, OpArray, Opcode};
 use crate::engine::jit::{increment_execution_counter, try_inline_operation};
 use crate::engine::types::{PhpType, PhpValue, Val};
 
+/// Resolve a relative include/require path like PHP: try the path relative to the process
+/// current working directory first, then relative to the including script's directory.
+#[inline]
+fn resolve_include_path(path_str: &str, script_dir: Option<&str>) -> String {
+    use std::path::Path;
+    if path_str.starts_with('/')
+        || (path_str.len() >= 2 && path_str.get(1..2) == Some(":"))
+    {
+        return path_str.to_string();
+    }
+    if let Ok(cwd) = std::env::current_dir() {
+        let p = cwd.join(path_str);
+        if p.is_file() {
+            return p.to_string_lossy().into_owned();
+        }
+    }
+    if let Some(dir) = script_dir {
+        return Path::new(dir).join(path_str).to_string_lossy().into_owned();
+    }
+    path_str.to_string()
+}
+
 #[inline]
 pub fn execute_nop(_op: &Op, _execute_data: &mut ExecuteData) -> Result<ExecResult, String> {
     Ok(ExecResult::Continue)
@@ -516,16 +538,7 @@ pub fn execute_include(op: &Op, execute_data: &mut ExecuteData) -> Result<ExecRe
     let path_val = resolve_operand(&op.op1, execute_data);
     let path = crate::engine::operators::zval_get_string(&path_val);
     let path_str = path.as_str();
-    let resolved =
-        if path_str.starts_with('/') || (path_str.len() >= 2 && path_str.get(1..2) == Some(":")) {
-            path_str.to_string()
-        } else if let Some(ref dir) = execute_data.current_script_dir {
-            let mut p = std::path::PathBuf::from(dir);
-            p.push(path_str);
-            p.to_string_lossy().into_owned()
-        } else {
-            path_str.to_string()
-        };
+    let resolved = resolve_include_path(path_str, execute_data.current_script_dir.as_deref());
 
     let is_once = op.extended_value == 2 || op.extended_value == 3;
     if is_once && execute_data.included_files.contains(&resolved) {

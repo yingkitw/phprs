@@ -64,10 +64,14 @@ $passwords = [
 ];
 
 // At least 8 chars, 1 uppercase, 1 lowercase, 1 digit, 1 special char
-$strong_pattern = '/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]{8,}$/';
-
+// (phprs uses the Rust regex engine — no look-ahead; use several checks.)
 foreach ($passwords as $pass) {
-    $is_strong = preg_match($strong_pattern, $pass);
+    $long_enough = strlen($pass) >= 8;
+    $has_lower = preg_match('/[a-z]/', $pass);
+    $has_upper = preg_match('/[A-Z]/', $pass);
+    $has_digit = preg_match('/[0-9]/', $pass);
+    $has_special = preg_match('/[@$!%*?&]/', $pass);
+    $is_strong = $long_enough && $has_lower && $has_upper && $has_digit && $has_special;
     echo "  $pass: " . ($is_strong ? "✓ Strong" : "✗ Weak") . "\n";
 }
 echo "\n";
@@ -101,14 +105,14 @@ echo "  Name: " . $fields[0] . " " . $fields[1] . "\n\n";
 // Example 9: Case-Insensitive Search
 echo "Example 9: Case-Insensitive Matching\n";
 $text = "The Quick Brown Fox";
-$patterns = [
-    '/quick/' => 'Case-sensitive',
-    '/quick/i' => 'Case-insensitive'
-];
-foreach ($patterns as $pattern => $desc) {
-    $match = preg_match($pattern, $text);
-    echo "  $desc ($pattern): " . ($match ? "Match" : "No match") . "\n";
-}
+$pattern_cs = '/quick/';
+$desc_cs = 'Case-sensitive';
+$match_cs = preg_match($pattern_cs, $text);
+echo "  $desc_cs ($pattern_cs): " . ($match_cs ? "Match" : "No match") . "\n";
+$pattern_ci = '/quick/i';
+$desc_ci = 'Case-insensitive';
+$match_ci = preg_match($pattern_ci, $text);
+echo "  $desc_ci ($pattern_ci): " . ($match_ci ? "Match" : "No match") . "\n";
 echo "\n";
 
 // Example 10: Word Boundary Matching

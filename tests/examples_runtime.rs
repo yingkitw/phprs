@@ -159,3 +159,39 @@ fn example_filesystem_runs() {
     assert!(out.contains("Does '.' exist? yes"), "output: {out:?}");
     assert!(out.contains("Contents length:"), "output: {out:?}");
 }
+
+/// Every **root-level** `examples/*.php` script must compile and finish with [`PhpResult::Success`].
+/// Nested demos (framework trees) are covered by their own tests below.
+#[test]
+fn examples_root_php_scripts_all_run() {
+    let root = examples_root();
+    let mut names: Vec<String> = std::fs::read_dir(&root)
+        .expect("read examples/")
+        .filter_map(|e| e.ok())
+        .map(|e| e.path())
+        .filter(|p| {
+            p.extension()
+                .is_some_and(|ext| ext.eq_ignore_ascii_case("php"))
+        })
+        .filter_map(|p| p.file_name().map(|n| n.to_string_lossy().into_owned()))
+        .filter(|n| !n.starts_with('.'))
+        .collect();
+    names.sort();
+    assert!(
+        !names.is_empty(),
+        "expected at least one examples/*.php entrypoint"
+    );
+    for name in &names {
+        let (r, out) = run_example_phprs(name).unwrap_or_else(|e| {
+            panic!("examples/{name}: failed to compile or run: {e}");
+        });
+        assert!(
+            matches!(r, PhpResult::Success),
+            "examples/{name}: unexpected VM result {r:?}, output: {out:?}"
+        );
+        assert!(
+            !out.trim().is_empty(),
+            "examples/{name}: expected non-empty stdout"
+        );
+    }
+}
