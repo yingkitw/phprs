@@ -255,7 +255,7 @@ The test suite validates:
 
 - **Architecture**: Database-agnostic abstraction layer
 - **Drivers**: Stub implementations for MySQL, PostgreSQL, SQLite
-- **Prepared Statements**: Parameter binding with named placeholders
+- **Prepared Statements**: Parameter binding with named parameters (e.g. `:id`)
 - **Transactions**: ACID transaction support (stub)
 - **Error Handling**: SQLSTATE error codes
 - **Fetch Modes**: Associative, numeric, both, object

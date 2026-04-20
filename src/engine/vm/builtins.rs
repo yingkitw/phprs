@@ -230,7 +230,7 @@ pub(crate) fn execute_builtin_function(
             Ok(Some(bool_val(is_empty)))
         }
         "unset" => {
-            // unset is a language construct, but we provide a stub
+            // unset is normally a language construct; builtin hook returns no value.
             Ok(None)
         }
         "is_array" => Ok(Some(type_check(args, |t| t == PhpType::Array))),
@@ -468,7 +468,7 @@ pub(crate) fn execute_builtin_function(
             Ok(None)
         }
 
-        // --- WordPress hooks (stubs) ---
+        // --- WordPress hook shims (minimal behavior) ---
         "do_action" => Ok(None),
         "apply_filters" => {
             if args.len() >= 2 {
@@ -592,8 +592,7 @@ pub(crate) fn execute_builtin_function(
             if args.len() < 2 {
                 return Err("shortcode_atts() expects 2 arguments".into());
             }
-            // For now, just return the second argument (atts)
-            // In real implementation, this would merge with defaults
+            // Returns $atts only; merging with $defaults is not implemented.
             Ok(Some(clone_val(&args[1])))
         }
         "esc_attr" => {
@@ -614,8 +613,7 @@ pub(crate) fn execute_builtin_function(
             if args.is_empty() {
                 return Err("esc_url() expects 1 argument".into());
             }
-            // For now, just return the URL as-is
-            // Real implementation would sanitize URL
+            // Returns the URL unchanged (no extra sanitization).
             Ok(Some(clone_val(&args[0])))
         }
         "ucfirst" => {

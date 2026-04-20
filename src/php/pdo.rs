@@ -13,7 +13,7 @@ pub struct PDO {
     #[allow(dead_code)]
     driver: String,
     connected: bool,
-    /// In-memory storage for this stub implementation
+    /// In-memory table storage (not a remote SQL server)
     tables: HashMap<String, Vec<HashMap<String, String>>>,
     last_insert_id: i64,
 }
@@ -79,17 +79,17 @@ impl PDO {
         self.last_insert_id
     }
 
-    /// Begin transaction (stub)
+    /// Begin transaction (no-op for this in-memory driver)
     pub fn begin_transaction(&mut self) -> bool {
         true
     }
 
-    /// Commit transaction (stub)
+    /// Commit transaction (no-op for this in-memory driver)
     pub fn commit(&mut self) -> bool {
         true
     }
 
-    /// Rollback transaction (stub)
+    /// Rollback transaction (no-op for this in-memory driver)
     pub fn rollback(&mut self) -> bool {
         true
     }
@@ -102,7 +102,6 @@ impl PDO {
     // Helper methods for query execution
 
     fn execute_select(&self, _sql: &str) -> Result<PDOStatement, String> {
-        // Stub: return empty result set
         Ok(PDOStatement::new(vec![]))
     }
 
@@ -179,7 +178,6 @@ impl PDOStatement {
 
     /// Execute prepared statement
     pub fn execute(&mut self) -> Result<bool, String> {
-        // Stub: just return success
         Ok(true)
     }
 

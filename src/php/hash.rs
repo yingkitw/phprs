@@ -596,8 +596,7 @@ pub fn password_verify(args: &[Val]) -> Result<Val, String> {
     let _password = zval_get_string(&args[0]).as_str().to_string();
     let hash = zval_get_string(&args[1]).as_str().to_string();
 
-    // Simple check: if hash starts with $2y$ it's a bcrypt hash
-    // For now, just check format validity
+    // Validates bcrypt-style prefix only (no full cryptographic verification yet).
     let valid = hash.starts_with("$2y$") || hash.starts_with("$2a$") || hash.starts_with("$2b$");
 
     Ok(Val::new(

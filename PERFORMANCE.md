@@ -6,7 +6,7 @@ This document describes **optimization techniques used in phprs** and **how to m
 
 - **Do not** treat language-level or design arguments as proof that phprs beats stock PHP. Those are *hypotheses* until measured.
 - **Do** report numbers only when you can point to: PHP and phprs versions, exact commands or scripts, hardware/OS, iteration counts, and (for memory) how usage was measured.
-- The in-tree benchmark helpers may compare against **placeholder baselines** for development; those are **not** substitutes for measuring real `php` on the same machine.
+- The in-tree benchmark suite reports **phprs-only** throughput in `benchmark_results.json` (no bundled stock-PHP baseline).
 
 ## What phprs implements (implementation facts)
 

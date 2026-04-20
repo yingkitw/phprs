@@ -488,10 +488,10 @@ pub enum Visibility {
     Private,
 }
 
-/// Placeholder for object handlers (vtable)
+/// Object handler table (Zend `zend_object_handlers`); reserved for future use in phprs.
 #[derive(Debug)]
 pub struct PhpObjectHandlers;
 
-/// Placeholder for function type
+/// Function metadata type; reserved for future use in phprs.
 #[derive(Debug)]
 pub struct PhpFunction;

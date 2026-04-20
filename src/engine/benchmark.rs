@@ -1,13 +1,12 @@
-//! Performance Benchmark Suite
+//! Performance benchmark suite for phprs internals.
 //!
-//! Comprehensive benchmarks demonstrating performance improvements over PHP 8
+//! Reports phprs throughput only. There is no bundled comparison to stock PHP; add your own measurements if needed.
 
 use crate::engine::array_ops::{ArrayOps, OptimizedArray};
 use crate::engine::perf_alloc::StringBuilder;
 use crate::engine::types::{PhpType, PhpValue, Val};
 use crate::engine::vm::{execute_ex, Op, OpArray, Opcode};
 use crate::vm::execute_data::ExecuteData;
-use std::collections::HashMap;
 use std::time::{Duration, Instant};
 
 /// Benchmark result
@@ -40,30 +39,13 @@ impl BenchmarkResult {
 /// Benchmark suite
 pub struct BenchmarkSuite {
     results: Vec<BenchmarkResult>,
-    php8_baseline: HashMap<String, f64>,
 }
 
 impl BenchmarkSuite {
     pub fn new() -> Self {
         Self {
             results: Vec::new(),
-            php8_baseline: Self::load_php8_baseline(),
         }
-    }
-
-    /// Load PHP 8 baseline performance data
-    fn load_php8_baseline() -> HashMap<String, f64> {
-        let mut baseline = HashMap::new();
-
-        // PHP 8 baseline performance (operations per second)
-        baseline.insert("simple_arithmetic".to_string(), 50_000_000.0);
-        baseline.insert("string_operations".to_string(), 10_000_000.0);
-        baseline.insert("array_operations".to_string(), 5_000_000.0);
-        baseline.insert("function_calls".to_string(), 2_000_000.0);
-        baseline.insert("loop_operations".to_string(), 15_000_000.0);
-        baseline.insert("memory_operations".to_string(), 8_000_000.0);
-
-        baseline
     }
 
     /// Run all benchmarks
@@ -377,41 +359,11 @@ impl BenchmarkSuite {
     /// Print performance summary
     fn print_summary(&self) {
         println!("\n{}", "=".repeat(60));
-        println!("PERFORMANCE SUMMARY");
+        println!("PHPRS BENCHMARK SUMMARY (ops/sec)");
         println!("{}", "=".repeat(60));
 
-        let mut total_speedup = 0.0;
-        let mut benchmark_count = 0;
-
         for result in &self.results {
-            if let Some(php8_baseline) = self.php8_baseline.get(&result.name) {
-                let speedup = result.ops_per_second / php8_baseline;
-                total_speedup += speedup;
-                benchmark_count += 1;
-
-                println!(
-                    "{:<20} | {:>12.2} ops/sec | {:>8.2}x vs PHP 8",
-                    result.name, result.ops_per_second, speedup
-                );
-            } else {
-                println!(
-                    "{:<20} | {:>12.2} ops/sec | {:>8}",
-                    result.name, result.ops_per_second, "N/A"
-                );
-            }
-        }
-
-        if benchmark_count > 0 {
-            let avg_speedup = total_speedup / benchmark_count as f64;
-            println!("\nAVERAGE SPEEDUP: {:.2}x faster than PHP 8", avg_speedup);
-
-            if avg_speedup > 1.5 {
-                println!("🚀 EXCELLENT: Significant performance improvement achieved!");
-            } else if avg_speedup > 1.2 {
-                println!("✅ GOOD: Noticeable performance improvement achieved!");
-            } else {
-                println!("⚠️  NEEDS WORK: Further optimization required.");
-            }
+            println!("{:<20} | {:>12.2} ops/sec", result.name, result.ops_per_second);
         }
 
         // Print optimization statistics
@@ -482,14 +434,6 @@ impl BenchmarkSuite {
                 serde_json::Value::Number(serde_json::Number::from(result.memory_used as i64)),
             );
 
-            if let Some(php8_baseline) = self.php8_baseline.get(&result.name) {
-                let speedup = result.ops_per_second / php8_baseline;
-                result_data.insert(
-                    "speedup_vs_php8".to_string(),
-                    serde_json::Value::Number(serde_json::Number::from_f64(speedup).unwrap()),
-                );
-            }
-
             results_map.insert(result.name.clone(), serde_json::Value::Object(result_data));
         }
 
@@ -523,7 +467,6 @@ mod tests {
     fn test_benchmark_suite_creation() {
         let suite = BenchmarkSuite::new();
         assert!(suite.results.is_empty());
-        assert!(!suite.php8_baseline.is_empty());
     }
 
     #[test]
@@ -549,6 +492,6 @@ mod tests {
         let json = suite.export_results();
         assert!(json.contains("simple_arithmetic"));
         assert!(json.contains("ops_per_second"));
-        assert!(json.contains("speedup_vs_php8"));
+        assert!(!json.contains("speedup_vs_php8"));
     }
 }

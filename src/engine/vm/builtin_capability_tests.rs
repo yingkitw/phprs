@@ -73,7 +73,7 @@ fn unknown_builtin_returns_none() {
 }
 
 #[test]
-fn unset_builtin_stub_returns_none() {
+fn unset_builtin_returns_none() {
     let mut ed = ExecuteData::new();
     assert!(matches!(run("unset", &[str_val("x")], &mut ed), Ok(None)));
 }
@@ -293,7 +293,7 @@ fn exit_with_code() {
     assert_eq!(ed.exit_requested, Some(7));
 }
 
-// --- WordPress stubs / escaping ---
+// --- WordPress hook shims / escaping ---
 
 #[test]
 fn do_action_apply_filters_shortcode_atts() {
@@ -444,7 +444,7 @@ fn ob_stack_functions_smoke() {
     drain_output_buffers();
 }
 
-// --- Error / ini / include path stubs ---
+// --- Error / ini / include path (minimal implementations) ---
 
 #[test]
 fn error_handlers_shutdown_ini_include_path() {

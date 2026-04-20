@@ -411,7 +411,7 @@ cargo run -p phprs-cli -- run examples/wordpress/index.php
 
 ## Performance — expectations
 
-**phprs is not marketed with a “Nx faster than PHP” number.** A fair comparison needs the same features enabled, representative workloads, and pinned versions. We’d rather under-promise and add measured results later than repeat placeholder tables.
+**phprs is not marketed with a “Nx faster than PHP” number.** A fair comparison needs the same features enabled, representative workloads, and pinned versions. We’d rather under-promise and add measured results later than publish invented comparison tables.
 
 **Why Rust is still a sensible implementation language:**
 - Mature **LLVM** backend for the host binary.

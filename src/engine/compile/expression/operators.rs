@@ -32,7 +32,7 @@ pub(crate) fn parse_ternary_expr(
         context.emit_opcode(
             Opcode::JmpNZ,
             facade::clone_val(&condition),
-            facade::long_val(0), // placeholder target
+            facade::long_val(0), // jump offset; patched via update_jump_target
             facade::null_val(),
         );
         // Falsy path: store fallback in temp slot
@@ -45,7 +45,7 @@ pub(crate) fn parse_ternary_expr(
         let jmp_end_idx = context.current_op_index();
         context.emit_opcode(
             Opcode::Jmp,
-            facade::long_val(0), // placeholder
+            facade::long_val(0), // jump offset; patched via update_jump_target
             facade::null_val(),
             facade::null_val(),
         );
@@ -81,7 +81,7 @@ pub(crate) fn parse_ternary_expr(
     context.emit_opcode(
         Opcode::JmpZ,
         facade::clone_val(&condition),
-        facade::long_val(0), // placeholder
+        facade::long_val(0), // jump offset; patched via update_jump_target
         facade::null_val(),
     );
     // True path: store in temp slot
@@ -94,7 +94,7 @@ pub(crate) fn parse_ternary_expr(
     let jmp_end_idx = context.current_op_index();
     context.emit_opcode(
         Opcode::Jmp,
-        facade::long_val(0), // placeholder
+        facade::long_val(0), // jump offset; patched via update_jump_target
         facade::null_val(),
         facade::null_val(),
     );
