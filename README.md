@@ -369,8 +369,13 @@ cargo run -p phprs-cli -- run examples/wordpress/index.php
 - **Types**: PHP type system (int, float, string, array, object, null, bool) — growing toward full parity
 - **Operators**: Core arithmetic, logical, comparison, and string operators (see `examples/operators.php`)
 - **Control Flow**: if/else, switch, `match`, **for** (init/cond/inc), **foreach** (value-only), **while**; post-increment/decrement on simple variables (`$i++`)
-- **Functions**: User-defined functions, closures, arrow functions
-- **Classes**: OOP with inheritance, traits, interfaces, namespaces
+- **Functions**: User-defined functions, closures, arrow functions, variadic params (`...$args`), named arguments (`func(param: value)`)
+- **Classes**: OOP with inheritance, traits, interfaces, namespaces, static properties/methods (`ClassName::$prop`, `ClassName::method()`)
+- **Late Static Binding**: `static::` keyword resolved at runtime via `called_class`
+- **Magic Methods**: `__get`, `__set`, `__call`, `__callStatic` fallbacks in VM handlers
+- **Anonymous Classes**: `new class { ... }` with optional extends/implements
+- **Enums**: Pure enums and backed enums (`enum Color: string { case Red = 'red'; }`)
+- **Union / Intersection Types**: `int|string`, `Countable&ArrayAccess` parsing in params and return types
 - **Error Handling**: try/catch/finally, exceptions
 
 ### ✅ Standard Library (70+ functions, expanding)
@@ -518,7 +523,7 @@ The workspace runs **clean** (no warnings) on `cargo test --workspace` and `carg
 ## Roadmap
 
 ### ✅ Completed (v0.1.x)
-- Core PHP engine with 63 opcodes
+- Core PHP engine with 67 opcodes (added FetchStaticProp, DoStaticCall, CloneObj, SendValNamed)
 - 70+ built-in functions
 - Regular expressions (PCRE-compatible)
 - HTTP/HTTPS stream wrappers
@@ -528,6 +533,8 @@ The workspace runs **clean** (no warnings) on `cargo test --workspace` and `carg
 - Package manager (Composer-compatible)
 - JIT / optimizer scaffolding (see sources; not a complete production JIT story)
 - Compiled op arrays (per-run bytecode; caching story is incremental)
+- Static properties/methods, late static binding, magic methods, anonymous classes
+- Variadic functions, named arguments, union/intersection types, enums (PHP 8.1)
 
 ### 🚧 In Progress (v0.2.x)
 - Laravel framework support

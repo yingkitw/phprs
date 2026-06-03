@@ -52,6 +52,8 @@ pub fn keyword_to_token(keyword: &str) -> TokenType {
         "require_once" => TokenType::T_REQUIRE_ONCE,
         "match" => TokenType::T_MATCH,
         "yield" => TokenType::T_YIELD,
+        "enum" => TokenType::T_ENUM,
+        "readonly" => TokenType::T_READONLY,
         _ => TokenType::T_STRING,
     }
 }

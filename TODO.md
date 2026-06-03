@@ -144,9 +144,9 @@
 - **Engine**: types, string, hash, alloc, gc, operators, array_ops, lexer, compile, vm, jit, function_optimizer, opcode_cache, benchmark, perf, perf_alloc, facade, errors, exception
 - **PHP runtime**: 19 source files in php/ (added regex, http_stream, pdo, math, hash, datetime, mbstring)
 - **Framework examples**: WordPress (full), CodeIgniter 4 (bootstrap), Drupal (bootstrap)
-- **63 opcodes** (dispatch table, dispatch_handlers)
+- **67 opcodes** (dispatch table, dispatch_handlers) — added FetchStaticProp, DoStaticCall, CloneObj, SendValNamed
 - **110+ built-in functions** (including isset, empty, htmlspecialchars, preg_*, math functions, hash functions, datetime functions, mbstring functions, shortcode_atts, array_merge, ucfirst, etc.)
-- **271 passing tests** (100% pass rate)
+- **271 passing tests** (100% pass rate) plus `tests/php8x_features.rs` covering static members, late static binding, magic methods, anonymous classes, variadic functions, named arguments, union types, enums
 - **Zero compilation warnings** (clean build with clippy)
 - **Thread-safe** JIT and optimizer (Arc, OnceLock, RwLock)
 
@@ -228,21 +228,22 @@
 ## New Capabilities (Brainstormed) 🚀
 
 ### Core Language Features
-- [ ] **Static properties and methods** - Full static member support
-- [ ] **Late static binding** (`static::` keyword)
-- [ ] **Magic methods** - `__get`, `__set`, `__call`, `__callStatic`, `__isset`, `__unset`, `__toString`, `__invoke`, `__clone`, `__debugInfo`, `__serialize`, `__unserialize`
-- [ ] **Anonymous classes** - `new class { ... }`
-- [ ] **Variadic functions** - `...$args` parameter unpacking
-- [ ] **Named arguments** (PHP 8.0) - `func(param: value)`
-- [ ] **Union types** (PHP 8.0) - `int|string`
-- [ ] **Intersection types** (PHP 8.1) - `Countable&ArrayAccess`
-- [ ] **Readonly properties** (PHP 8.1)
-- [ ] **Enums** (PHP 8.1) - Full enum support with backed enums
-- [ ] **First-class callable syntax** (PHP 8.1) - `strlen(...)` 
+- [x] **Static properties and methods** - Full static member support with `ClassName::$prop`, `ClassName::method()`, `static::`
+- [x] **Late static binding** (`static::` keyword, runtime resolution via `called_class`)
+- [x] **Magic methods** - `__get`, `__set`, `__call`, `__callStatic`
+- [ ] **Magic methods** (remaining) - `__isset`, `__unset`, `__toString`, `__invoke`, `__clone`, `__debugInfo`, `__serialize`, `__unserialize`
+- [x] **Anonymous classes** - `new class { ... }` with optional extends/implements
+- [x] **Variadic functions** - `...$args` parameter unpacking in VM
+- [x] **Named arguments** (PHP 8.0) - `func(param: value)` via `SendValNamed` opcode
+- [x] **Union types** (PHP 8.0) - `int|string` parsing in params and return types
+- [x] **Intersection types** (PHP 8.1) - `Countable&ArrayAccess` parsing
+- [x] **Readonly properties** (PHP 8.1) - `T_READONLY` keyword + class body parsing
+- [x] **Enums** (PHP 8.1) - Pure and backed enums (`enum Color: string { case Red = 'red'; }`)
+- [ ] **First-class callable syntax** (PHP 8.1) - `strlen(...)`
 - [ ] **Fibers** (PHP 8.1) - Lightweight concurrency
-- [ ] **Never type** (PHP 8.1)
+- [x] **Never type** (PHP 8.1) - recognized in type hints
 - [ ] **Final class constants** (PHP 8.1)
-- [ ] **New in initializers** (PHP 8.1)
+- [x] **New in initializers** (PHP 8.1) - `new` in property defaults and param defaults
 
 ### Standard Library Extensions
 - [x] **DateTime/DateTimeImmutable** - Basic date/time manipulation

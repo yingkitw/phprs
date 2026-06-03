@@ -5,7 +5,7 @@
 //! ## Module Structure
 //! - `oop` — Class definition compilation
 
-mod oop;
+pub(crate) mod oop;
 
 use super::context::CompileContext;
 use super::control_flow::{compile_for, compile_foreach, compile_if, compile_throw, compile_try_catch, compile_while};
@@ -102,6 +102,7 @@ pub fn parse_statement(
         TokenType::T_THROW => compile_throw(lexer, context),
         TokenType::T_FUNCTION => compile_function(lexer, context),
         TokenType::T_CLASS => oop::compile_class(lexer, context),
+        TokenType::T_ENUM => oop::compile_enum(lexer, context),
         TokenType::T_TRAIT => oop::compile_trait(lexer, context),
         TokenType::T_RETURN => compile_return(lexer, context),
         TokenType::T_YIELD => compile_yield(lexer, context),
@@ -236,12 +237,9 @@ fn compile_object_stmt(
         );
         let mut arg_token = lexer.next_token()?;
         while !token_is_punct(&arg_token, ")") {
-            let (arg_val, after_arg) = parse_additive_expr_with_initial(lexer, context, arg_token)?;
-            context.emit_opcode(Opcode::SendVal, arg_val, zero_val(), zero_val());
-            if token_is_punct(&after_arg, ",") {
+            arg_token = crate::engine::compile::expression::helpers::parse_call_arg(lexer, context, arg_token)?;
+            if token_is_punct(&arg_token, ",") {
                 arg_token = lexer.next_token()?;
-            } else {
-                arg_token = after_arg;
             }
         }
         let call_slot = context.alloc_temp();

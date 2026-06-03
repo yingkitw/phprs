@@ -37,10 +37,10 @@ src/
 │   ├── operators.rs  # Type conversion and operators
 │   ├── array_ops.rs  # Array operations and optimizations
 │   ├── vm/           # Virtual machine
-│   │   ├── opcodes.rs        # 63 opcode definitions
-│   │   ├── execute_data.rs   # Execution context
+│   │   ├── opcodes.rs        # 67 opcode definitions
+│   │   ├── execute_data.rs   # Execution context (includes called_class for late static binding, call_arg_names for named args)
 │   │   ├── dispatch_handlers.rs # Dispatch table (computed goto style)
-│   │   ├── handlers.rs       # Opcode handler implementations
+│   │   ├── handlers.rs       # Opcode handler implementations (static props, static calls, magic methods)
 │   │   ├── builtins.rs       # 40+ PHP functions
 │   │   └── execute.rs        # Main execution loop
 │   ├── compile/      # Compiler
@@ -105,21 +105,22 @@ Output
 
 ## Virtual Machine
 
-### Opcodes (63 total)
+### Opcodes (67 total)
 - Arithmetic: Add, Sub, Mul, Div, Mod, Pow
 - Comparison: IsEqual, IsNotEqual, IsSmaller, IsSmallerOrEqual, IsIdentical, IsNotIdentical
 - Logical: BoolNot, BoolXor
 - Bitwise: BwAnd, BwOr, BwXor, BwNot, Sl, Sr
 - String: Concat
 - Control: Jmp, JmpZ, JmpNZ, JmpNullZ, Return
-- Variables: FetchVar, Assign, SendVal, InitFCall, IsSet, Empty, Unset
+- Variables: FetchVar, Assign, SendVal, SendValNamed, InitFCall, IsSet, Empty, Unset
 - Arrays: InitArray, AddArrayElement, FetchDim, Count, Keys, Values, ArrayDiff
 - Type: TypeCheck
 - Null coalescing: Coalesce
-- OOP: NewObj, FetchObjProp, InitMethodCall, AssignObjProp, DoMethodCall
+- OOP: NewObj, CloneObj, FetchObjProp, FetchStaticProp, InitMethodCall, AssignObjProp,
+        AssignStaticProp, DoMethodCall, DoStaticCall
 - Functions: DoFCall, Include
-- Other: Nop, Echo, AssignDim, AssignObj, AssignStaticProp, AssignOp, InitArray,
-          NewObj, Throw, TryCatchBegin, TryCatchEnd, CatchBegin, CatchEnd,
+- Other: Nop, Echo, AssignDim, AssignObj, AssignOp, InitArray,
+          Throw, TryCatchBegin, TryCatchEnd, CatchBegin, CatchEnd,
           FinallyBegin, FinallyEnd, TypeCheck, QmAssign (ternary assign)
 
 ### Built-in Functions (40+)
@@ -150,13 +151,14 @@ phprs pkg build           # Build project
 - Dark/light theme
 - Multi-language (EN/中文/日本語)
 
-## Framework support (planned)
+## Framework support
 
-Roadmap items in [TODO.md](TODO.md):
+Current support and roadmap items in [TODO.md](TODO.md):
 
-- **CodeIgniter 4**: Bootstrap, autoloading, routing, controllers
-- **Drupal**: Bootstrap (index.php → Drupal.php), kernel, module system
-- **WordPress**: Bootstrap (index.php → wp-blog-header.php → wp-load.php → wp-settings.php), wp-config and wpdb, hooks/filters (do_action, apply_filters), theme and plugin loading
+- **WordPress** (demo): Bootstrap (index.php → wp-blog-header.php → wp-load.php → wp-settings.php), wp-config and wpdb, hooks/filters (do_action, apply_filters), theme and plugin loading
+- **CodeIgniter 4** (demo): Bootstrap, autoloading, routing, controllers
+- **Drupal** (demo): Bootstrap (index.php → Drupal.php), kernel, module system
+- **Laravel / Symfony** (planned)
 
 ## Comparison with C PHP - Why Rust Wins
 

@@ -100,6 +100,7 @@ pub struct ExecuteData {
     pub function_table: Option<std::sync::Arc<dyn std::any::Any + Send + Sync>>,
     pub temp_vars: Vec<Val>,
     pub call_args: Vec<Val>,
+    pub call_arg_names: Vec<Option<String>>,
     pub included_files: std::collections::HashSet<String>,
     pub class_table: std::collections::HashMap<String, crate::engine::types::ClassEntry>,
     /// Constants defined by define() (shared across includes)
@@ -114,6 +115,8 @@ pub struct ExecuteData {
     pub exception_handler: Option<String>,
     /// Shutdown function names (registered by register_shutdown_function())
     pub shutdown_functions: Vec<String>,
+    /// Late static binding: the class that was actually called (for static:: resolution)
+    pub called_class: Option<String>,
 }
 
 impl ExecuteData {
@@ -125,6 +128,7 @@ impl ExecuteData {
             function_table: None,
             temp_vars: Vec::new(),
             call_args: Vec::new(),
+            call_arg_names: Vec::new(),
             included_files: std::collections::HashSet::new(),
             class_table: std::collections::HashMap::new(),
             constants: std::collections::HashMap::new(),
@@ -133,6 +137,7 @@ impl ExecuteData {
             error_handler: None,
             exception_handler: None,
             shutdown_functions: Vec::new(),
+            called_class: None,
         }
     }
 

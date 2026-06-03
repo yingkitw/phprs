@@ -44,6 +44,7 @@ fn init_dispatch_table() {
         table[Opcode::DoFCall as usize] = execute_do_fcall;
         table[Opcode::FetchVar as usize] = execute_fetch_var;
         table[Opcode::SendVal as usize] = execute_send_val;
+        table[Opcode::SendValNamed as usize] = execute_send_val_named;
         table[Opcode::Include as usize] = execute_include;
         table[Opcode::InitArray as usize] = execute_init_array;
         table[Opcode::AddArrayElement as usize] = execute_add_array_element;
@@ -64,6 +65,9 @@ fn init_dispatch_table() {
         table[Opcode::IsSmallerOrEqual as usize] = execute_is_smaller_or_equal;
         table[Opcode::FeReset as usize] = execute_fe_reset;
         table[Opcode::FeFetch as usize] = execute_fe_fetch;
+        table[Opcode::FetchStaticProp as usize] = execute_fetch_static_prop;
+        table[Opcode::DoStaticCall as usize] = execute_do_static_call;
+        table[Opcode::CloneObj as usize] = execute_clone_obj;
 
         table
     });
@@ -212,15 +216,43 @@ pub fn execute_ex(execute_data: &mut ExecuteData, op_array: &OpArray) -> PhpResu
         if !execute_data.class_table.contains_key(name) {
             let mut new_ce = crate::engine::types::ClassEntry::new(name);
             new_ce.parent_name = ce.parent_name.clone();
+            new_ce.is_final = ce.is_final;
+            new_ce.is_abstract = ce.is_abstract;
+            new_ce.is_enum = ce.is_enum;
+            new_ce.enum_base_type = ce.enum_base_type;
             new_ce
                 .default_properties
                 .reserve(ce.default_properties.len());
+            new_ce
+                .static_properties
+                .reserve(ce.static_properties.len());
+            new_ce
+                .property_flags
+                .reserve(ce.property_flags.len());
+            new_ce
+                .constants
+                .reserve(ce.constants.len());
             new_ce.methods.reserve(ce.methods.len());
 
             for (prop_name, prop_val) in &ce.default_properties {
                 new_ce
                     .default_properties
                     .insert(prop_name.clone(), clone_val(prop_val));
+            }
+            for (prop_name, prop_val) in &ce.static_properties {
+                new_ce
+                    .static_properties
+                    .insert(prop_name.clone(), clone_val(prop_val));
+            }
+            for (prop_name, flags) in &ce.property_flags {
+                new_ce
+                    .property_flags
+                    .insert(prop_name.clone(), *flags);
+            }
+            for (const_name, const_val) in &ce.constants {
+                new_ce
+                    .constants
+                    .insert(const_name.clone(), clone_val(const_val));
             }
             for (method_name, method) in &ce.methods {
                 let method_file = method

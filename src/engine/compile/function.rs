@@ -16,6 +16,15 @@ fn is_punct(token: &Token, ch: &str) -> bool {
     token.token_type == TokenType::T_STRING && token.value.as_ref().map(|s| s.as_str()) == Some(ch)
 }
 
+fn is_union_sep(token: &Token) -> bool {
+    token.token_type == TokenType::T_OR_EQUAL && token.value.as_ref().map(|s| s.as_str()) == Some("|")
+}
+
+fn is_intersection_sep(token: &Token) -> bool {
+    token.token_type == TokenType::T_AMPERSAND_FOLLOWED_BY_VAR_OR_VARARG
+        && token.value.as_ref().map(|s| s.as_str()) == Some("&")
+}
+
 /// Check if a token is a type hint keyword
 fn is_type_hint(token: &Token) -> bool {
     if token.token_type == TokenType::T_STRING {
@@ -61,8 +70,18 @@ fn parse_params(
         }
 
         // Skip type hint: int, string, float, bool, array, etc.
-        if is_type_hint(&current_token) {
+        // Also handles union types (int|string) and intersection types (Countable&ArrayAccess)
+        if is_type_hint(&current_token) || current_token.token_type == TokenType::T_STRING {
             current_token = lexer.next_token()?;
+            while is_union_sep(&current_token) || is_intersection_sep(&current_token) {
+                current_token = lexer.next_token()?; // skip | or &
+                if is_punct(&current_token, "?") {
+                    current_token = lexer.next_token()?;
+                }
+                if is_type_hint(&current_token) || current_token.token_type == TokenType::T_STRING {
+                    current_token = lexer.next_token()?;
+                }
+            }
         }
 
         // Check for variadic: ...$param
@@ -125,14 +144,26 @@ fn parse_params(
 fn skip_return_type(lexer: &mut Lexer) -> Result<Token, String> {
     let token = lexer.next_token()?;
     if is_punct(&token, ":") {
-        // Skip the return type
-        let type_token = lexer.next_token()?;
+        let mut type_token = lexer.next_token()?;
         // Handle nullable return type: ?type
         if is_punct(&type_token, "?") {
-            let _actual_type = lexer.next_token()?;
+            type_token = lexer.next_token()?;
         }
-        // The type token itself is consumed, get next
-        lexer.next_token()
+        // Skip the first type token
+        if is_type_hint(&type_token) || type_token.token_type == TokenType::T_STRING {
+            type_token = lexer.next_token()?;
+        }
+        // Handle union/intersection return types
+        while is_union_sep(&type_token) || is_intersection_sep(&type_token) {
+            type_token = lexer.next_token()?; // skip | or &
+            if is_punct(&type_token, "?") {
+                type_token = lexer.next_token()?;
+            }
+            if is_type_hint(&type_token) || type_token.token_type == TokenType::T_STRING {
+                type_token = lexer.next_token()?;
+            }
+        }
+        Ok(type_token)
     } else {
         Ok(token)
     }

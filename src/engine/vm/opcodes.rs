@@ -73,6 +73,10 @@ pub enum Opcode {
     QmAssign = 64,        // Ternary assign: resolve op1, store in result temp slot
     FeReset = 65,         // Reset array iterator for foreach
     FeFetch = 66,         // Fetch next element from array iterator
+    FetchStaticProp = 67, // Fetch static property (op1=class name, op2=prop name, result=temp)
+    DoStaticCall = 68,    // Execute static method call (op1=method name, op2=class name, result=temp)
+    CloneObj = 69,        // Clone object (op1=obj, result=cloned obj)
+    SendValNamed = 70,    // Push named argument for function call (op1=value, op2=param name string)
 }
 
 /// Operation structure
@@ -170,6 +174,10 @@ pub fn get_opcode_name(opcode: Opcode) -> &'static str {
         Opcode::BoolOr => "BOOL_OR",
         Opcode::FeReset => "FE_RESET",
         Opcode::FeFetch => "FE_FETCH",
+        Opcode::FetchStaticProp => "FETCH_STATIC_PROP",
+        Opcode::DoStaticCall => "DO_STATIC_CALL",
+        Opcode::CloneObj => "CLONE_OBJ",
+        Opcode::SendValNamed => "SEND_VAL_NAMED",
         _ => "UNKNOWN",
     }
 }

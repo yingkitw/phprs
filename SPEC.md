@@ -34,8 +34,8 @@ phprs is a **PHP interpreter implemented in Rust**, built from the ground up to 
 ### In Scope (Implemented)
 
 - **Core engine**: Type system (Val, strings, arrays, objects), string handling (DJBX33A), hash tables, memory allocation (persistent/non-persistent), garbage collection (tri-color marking), operators and type conversion.
-- **Compiler**: Lexer (PHP tokens including `?`, `??`, `?->`, `::`), expression and statement parsing, control flow, functions, classes, traits, namespaces, closures, type declarations, PHP 8.0 features (match, attributes, generators).
-- **VM**: 63 opcodes, dispatch-table execution, 100+ built-in functions, exceptions (try/catch/finally/throw).
+- **Compiler**: Lexer (PHP tokens including `?`, `??`, `?->`, `::`), expression and statement parsing, control flow, functions, classes, traits, namespaces, closures, type declarations, PHP 8.0 features (match, attributes, generators), PHP 8.1 features (enums with `T_ENUM`, `T_READONLY`, union/intersection type parsing, variadic params, named arguments, anonymous classes).
+- **VM**: 67 opcodes, dispatch-table execution, 100+ built-in functions, exceptions (try/catch/finally/throw), static member access (`FetchStaticProp`, `DoStaticCall`), cloning (`CloneObj`), named argument passing (`SendValNamed`), late static binding (`called_class` resolution), magic method fallbacks (`__get`, `__set`, `__call`, `__callStatic`).
 - **Runtime**: INI config, variables, streams, SAPI (CLI), output buffering, filesystem, extension framework.
 - **Standard Library**: Math functions (20+), hash functions (md5, sha1, sha256, sha512, base64), datetime functions (time, date, strtotime, mktime, microtime).
 - **Stream Wrappers**: HTTP/HTTPS (reqwest), file streams, custom stream contexts.

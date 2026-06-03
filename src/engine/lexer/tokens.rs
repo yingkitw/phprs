@@ -78,6 +78,8 @@ pub enum TokenType {
     T_REQUIRE_ONCE = 381,
     T_MATCH = 382,
     T_ATTRIBUTE = 383,
+    T_ENUM = 384,
+    T_READONLY = 385,
 
     // Operators and punctuation
     T_PLUS = 43,                      // +

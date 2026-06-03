@@ -9,8 +9,8 @@ use crate::engine::types::{ClassEntry, ClassMethod, Visibility};
 
 use super::{parse_statement, skip_attribute_block};
 
-/// Parse a class/trait body: visibility, static, methods, properties, use TraitName
-fn parse_class_body(
+/// Parse a class/trait body: visibility, static, readonly, final, methods, properties, use TraitName
+pub(crate) fn parse_class_body(
     lexer: &mut Lexer,
     context: &mut CompileContext,
     ce: &mut ClassEntry,
@@ -42,6 +42,14 @@ fn parse_class_body(
             _ => Visibility::Public,
         };
 
+        // Check for readonly (PHP 8.1)
+        let is_readonly = if next.token_type == TokenType::T_READONLY {
+            next = lexer.next_token()?;
+            true
+        } else {
+            false
+        };
+
         // Check for static
         let is_static = if next.token_type == TokenType::T_STATIC {
             next = lexer.next_token()?;
@@ -50,10 +58,16 @@ fn parse_class_body(
             false
         };
 
+        // Check for const
+        if next.token_type == TokenType::T_CONST {
+            next = compile_class_const(lexer, context, ce, visibility)?;
+            continue;
+        }
+
         if next.token_type == TokenType::T_FUNCTION {
             next = compile_class_method(lexer, context, ce, visibility, is_static)?;
         } else if next.token_type == TokenType::T_VARIABLE {
-            next = compile_class_property(lexer, context, ce, &next)?;
+            next = compile_class_property(lexer, context, ce, &next, is_static, is_readonly, visibility)?;
         } else {
             next = lexer.next_token()?;
         }
@@ -198,6 +212,81 @@ pub(crate) fn compile_trait(
     Ok(lexer.next_token()?)
 }
 
+/// Compile an enum definition: enum Status { case Pending; case Active; }
+/// Also supports backed enums: enum Color: string { case Red = 'red'; }
+pub(crate) fn compile_enum(
+    lexer: &mut Lexer,
+    context: &mut CompileContext,
+) -> Result<Token, String> {
+    let name_token = lexer.next_token()?;
+    let enum_name = name_token.value.as_ref()
+        .ok_or("Expected enum name")?
+        .as_str()
+        .to_string();
+    let resolved_name = context.resolve_class_name(&enum_name);
+    let mut ce = ClassEntry::new(&resolved_name);
+    ce.is_enum = true;
+
+    // Optional: backed enum type (: string or : int)
+    let mut next = lexer.next_token()?;
+    if token_is_punct(&next, ":") {
+        let type_token = lexer.next_token()?;
+        if type_token.token_type == TokenType::T_STRING {
+            let type_str = type_token.value.as_ref().unwrap().as_str();
+            ce.enum_base_type = match type_str {
+                "string" => Some(crate::engine::types::PhpType::String),
+                "int" => Some(crate::engine::types::PhpType::Long),
+                _ => None,
+            };
+        }
+        next = lexer.next_token()?;
+    }
+
+    if !token_is_punct(&next, "{") {
+        return Err("Expected '{' after enum declaration".to_string());
+    }
+
+    // Parse enum body
+    let mut body_token = lexer.next_token()?;
+    while !token_is_punct(&body_token, "}") {
+        if body_token.token_type == TokenType::T_EOF {
+            return Err("Unexpected EOF in enum body".to_string());
+        }
+
+        if body_token.token_type == TokenType::T_CASE {
+            let case_name_token = lexer.next_token()?;
+            let case_name = case_name_token.value.as_ref()
+                .ok_or("Expected case name after 'case'")?
+                .as_str()
+                .to_string();
+
+            let peek = lexer.next_token()?;
+            if token_is_punct(&peek, "=") {
+                let (case_value, after) = parse_expression(lexer, context)?;
+                ce.constants.insert(case_name, case_value);
+                body_token = after;
+            } else {
+                // For pure enums, store the case name as its value
+                let name_val = crate::engine::facade::string_val(&case_name);
+                ce.constants.insert(case_name, name_val);
+                body_token = peek;
+            }
+
+            if token_is_punct(&body_token, ";") {
+                body_token = lexer.next_token()?;
+            }
+        } else if body_token.token_type == TokenType::T_FUNCTION {
+            // Enum methods (like __construct or custom methods)
+            body_token = compile_class_method(lexer, context, &mut ce, Visibility::Public, false)?;
+        } else {
+            body_token = lexer.next_token()?;
+        }
+    }
+
+    context.register_class(ce);
+    Ok(lexer.next_token()?)
+}
+
 /// Compile a class method definition
 fn compile_class_method(
     lexer: &mut Lexer,
@@ -274,6 +363,9 @@ fn compile_class_property(
     context: &mut CompileContext,
     ce: &mut ClassEntry,
     token: &Token,
+    is_static: bool,
+    is_readonly: bool,
+    visibility: Visibility,
 ) -> Result<Token, String> {
     let prop_name = token.value.as_ref().unwrap().as_str();
     let prop_name = if prop_name.starts_with('$') { &prop_name[1..] } else { prop_name };
@@ -282,14 +374,57 @@ fn compile_class_property(
     let peek = lexer.next_token()?;
     let mut next = if peek.token_type == TokenType::T_EQUAL {
         let (default_val, after) = parse_expression(lexer, context)?;
-        ce.default_properties.insert(prop_name, default_val);
+        if is_static {
+            ce.static_properties.insert(prop_name.clone(), default_val);
+        } else {
+            ce.default_properties.insert(prop_name.clone(), default_val);
+        }
         after
     } else {
-        ce.default_properties.insert(prop_name, null_val());
+        if is_static {
+            ce.static_properties.insert(prop_name.clone(), null_val());
+        } else {
+            ce.default_properties.insert(prop_name.clone(), null_val());
+        }
         peek
     };
 
+    ce.property_flags.insert(prop_name.clone(), crate::engine::types::PropertyFlags {
+        visibility,
+        is_static,
+        is_readonly,
+        is_final: false,
+    });
+
     // Skip semicolon
+    if token_is_punct(&next, ";") {
+        next = lexer.next_token()?;
+    }
+    Ok(next)
+}
+
+/// Compile a class constant: const NAME = value;
+fn compile_class_const(
+    lexer: &mut Lexer,
+    context: &mut CompileContext,
+    ce: &mut ClassEntry,
+    _visibility: Visibility,
+) -> Result<Token, String> {
+    let name_token = lexer.next_token()?;
+    let const_name = name_token.value.as_ref()
+        .ok_or("Expected constant name after 'const'")?
+        .as_str()
+        .to_string();
+
+    let eq_token = lexer.next_token()?;
+    if !token_is_punct(&eq_token, "=") {
+        return Err("Expected '=' after constant name".to_string());
+    }
+
+    let (value, after) = parse_expression(lexer, context)?;
+    ce.constants.insert(const_name, value);
+
+    let mut next = after;
     if token_is_punct(&next, ";") {
         next = lexer.next_token()?;
     }

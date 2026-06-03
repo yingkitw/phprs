@@ -448,6 +448,26 @@ pub struct AstRef {
     pub gc: RefcountedH,
 }
 
+/// Property modifier flags
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PropertyFlags {
+    pub visibility: Visibility,
+    pub is_static: bool,
+    pub is_readonly: bool,
+    pub is_final: bool,
+}
+
+impl Default for PropertyFlags {
+    fn default() -> Self {
+        Self {
+            visibility: Visibility::Public,
+            is_static: false,
+            is_readonly: false,
+            is_final: false,
+        }
+    }
+}
+
 /// Class entry — defines a PHP class
 #[derive(Debug)]
 pub struct ClassEntry {
@@ -455,7 +475,13 @@ pub struct ClassEntry {
     pub parent_name: Option<String>,
     pub methods: std::collections::HashMap<String, ClassMethod>,
     pub default_properties: std::collections::HashMap<String, Val>,
+    pub static_properties: std::collections::HashMap<String, Val>,
+    pub property_flags: std::collections::HashMap<String, PropertyFlags>,
     pub constants: std::collections::HashMap<String, Val>,
+    pub is_final: bool,
+    pub is_abstract: bool,
+    pub is_enum: bool,
+    pub enum_base_type: Option<PhpType>,
 }
 
 impl ClassEntry {
@@ -465,7 +491,13 @@ impl ClassEntry {
             parent_name: None,
             methods: std::collections::HashMap::new(),
             default_properties: std::collections::HashMap::new(),
+            static_properties: std::collections::HashMap::new(),
+            property_flags: std::collections::HashMap::new(),
             constants: std::collections::HashMap::new(),
+            is_final: false,
+            is_abstract: false,
+            is_enum: false,
+            enum_base_type: None,
         }
     }
 }

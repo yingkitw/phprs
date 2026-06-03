@@ -286,6 +286,9 @@ pub(crate) fn execute_opcode(
             Ok(ExecResult::Continue)
         }
         Opcode::DoMethodCall => execute_do_method_call(op, execute_data),
+        Opcode::FetchStaticProp => execute_fetch_static_prop(op, execute_data),
+        Opcode::DoStaticCall => execute_do_static_call(op, execute_data),
+        Opcode::CloneObj => execute_clone_obj(op, execute_data),
 
         // Variable type checking
         Opcode::TypeCheck => {
@@ -725,7 +728,7 @@ fn execute_fetch_obj_prop(op: &Op, execute_data: &mut ExecuteData) -> Result<Exe
     let prop_name_val = resolve_operand(&op.op2, execute_data);
     let prop_name = crate::engine::operators::zval_get_string(&prop_name_val);
 
-    let result_val = if let PhpValue::Object(ref obj) = obj_val.value {
+    let mut result_val = if let PhpValue::Object(ref obj) = obj_val.value {
         obj.properties
             .get(prop_name.as_str())
             .map(|v| clone_val(v))
@@ -733,6 +736,58 @@ fn execute_fetch_obj_prop(op: &Op, execute_data: &mut ExecuteData) -> Result<Exe
     } else {
         Val::new(PhpValue::Long(0), PhpType::Null)
     };
+
+    // Magic method: __get for undefined properties
+    if result_val.get_type() == PhpType::Null {
+        if let PhpValue::Object(ref obj) = obj_val.value {
+            let magic_data: Option<(Vec<String>, Vec<Op>)> = execute_data
+                .class_table
+                .get(&obj.class_name)
+                .and_then(|ce| ce.methods.get("__get"))
+                .map(|magic| {
+                    let params = magic.params.clone();
+                    let ops: Vec<Op> = magic
+                        .op_array
+                        .ops
+                        .iter()
+                        .map(|op| {
+                            Op::new(
+                                op.opcode,
+                                clone_val(&op.op1),
+                                clone_val(&op.op2),
+                                clone_val(&op.result),
+                                op.extended_value,
+                            )
+                        })
+                        .collect();
+                    (params, ops)
+                });
+
+            if let Some((params, ops)) = magic_data {
+                let saved_current_op = execute_data.current_op;
+                let saved_op_array = execute_data.op_array.take();
+                let saved_called_class = execute_data.called_class.clone();
+                execute_data.called_class = Some(obj.class_name.clone());
+                execute_data.set_var("this", clone_val(&obj_val));
+
+                if let Some(p0) = params.get(0) {
+                    execute_data.set_var(p0, Val::new(PhpValue::String(Box::new(crate::engine::string::string_init(prop_name.as_str(), false))), PhpType::String));
+                }
+
+                let mut method_op_array = OpArray::new(format!("{}::__get", obj.class_name));
+                method_op_array.ops = ops;
+                let (_status, return_val) =
+                    super::execute::execute_ex_returning(execute_data, &method_op_array);
+                execute_data.op_array = saved_op_array;
+                execute_data.current_op = saved_current_op;
+                execute_data.called_class = saved_called_class;
+
+                if let Some(ret) = return_val {
+                    result_val = ret;
+                }
+            }
+        }
+    }
 
     if let Some(slot) = result_slot(op) {
         execute_data.set_temp(slot, result_val);
@@ -747,6 +802,7 @@ fn execute_assign_obj_prop(op: &Op, execute_data: &mut ExecuteData) -> Result<Ex
     let prop_name = crate::engine::operators::zval_get_string(&prop_name_val);
     let value = resolve_operand(&op.result, execute_data);
 
+    let mut did_set = false;
     if is_var_ref(var_name_val) {
         if let PhpValue::String(ref s) = var_name_val.value {
             let vname = s.as_str();
@@ -757,7 +813,8 @@ fn execute_assign_obj_prop(op: &Op, execute_data: &mut ExecuteData) -> Result<Ex
             };
             let mut obj_val = execute_data.get_var(name);
             if let PhpValue::Object(ref mut obj) = obj_val.value {
-                obj.properties.insert(prop_name.as_str().to_string(), value);
+                obj.properties.insert(prop_name.as_str().to_string(), value.clone());
+                did_set = true;
             }
             execute_data.set_var(name, obj_val);
         }
@@ -766,9 +823,66 @@ fn execute_assign_obj_prop(op: &Op, execute_data: &mut ExecuteData) -> Result<Ex
             let slot = slot_idx as usize;
             let mut obj_val = execute_data.get_temp(slot);
             if let PhpValue::Object(ref mut obj) = obj_val.value {
-                obj.properties.insert(prop_name.as_str().to_string(), value);
+                obj.properties.insert(prop_name.as_str().to_string(), value.clone());
+                did_set = true;
             }
             execute_data.set_temp(slot, obj_val);
+        }
+    }
+
+    // Magic method: __set for undefined properties
+    if !did_set {
+        let resolved_obj = resolve_operand(var_name_val, execute_data);
+        let class_name = if let PhpValue::Object(ref obj) = resolved_obj.value {
+            obj.class_name.clone()
+        } else {
+            String::new()
+        };
+        if !class_name.is_empty() {
+            let magic_data: Option<(Vec<String>, Vec<Op>)> = execute_data
+                .class_table
+                .get(&class_name)
+                .and_then(|ce| ce.methods.get("__set"))
+                .map(|magic| {
+                    let params = magic.params.clone();
+                    let ops: Vec<Op> = magic
+                        .op_array
+                        .ops
+                        .iter()
+                        .map(|op| {
+                            Op::new(
+                                op.opcode,
+                                clone_val(&op.op1),
+                                clone_val(&op.op2),
+                                clone_val(&op.result),
+                                op.extended_value,
+                            )
+                        })
+                        .collect();
+                    (params, ops)
+                });
+
+            if let Some((params, ops)) = magic_data {
+                let saved_current_op = execute_data.current_op;
+                let saved_op_array = execute_data.op_array.take();
+                let saved_called_class = execute_data.called_class.clone();
+                execute_data.called_class = Some(class_name.clone());
+                execute_data.set_var("this", resolved_obj);
+
+                if let Some(p0) = params.get(0) {
+                    execute_data.set_var(p0, Val::new(PhpValue::String(Box::new(crate::engine::string::string_init(prop_name.as_str(), false))), PhpType::String));
+                }
+                if let Some(p1) = params.get(1) {
+                    execute_data.set_var(p1, value);
+                }
+
+                let mut method_op_array = OpArray::new(format!("{}::__set", class_name));
+                method_op_array.ops = ops;
+                let _ = super::execute::execute_ex_returning(execute_data, &method_op_array);
+                execute_data.op_array = saved_op_array;
+                execute_data.current_op = saved_current_op;
+                execute_data.called_class = saved_called_class;
+            }
         }
     }
     Ok(ExecResult::Continue)
@@ -809,6 +923,8 @@ fn execute_do_method_call(op: &Op, execute_data: &mut ExecuteData) -> Result<Exe
         if let Some((params, ops)) = method_info {
             let saved_current_op = execute_data.current_op;
             let saved_op_array = execute_data.op_array.take();
+            let saved_called_class = execute_data.called_class.clone();
+            execute_data.called_class = Some(class_name.clone());
             // Set up $this
             execute_data.set_var("this", clone_val(&obj_val));
 
@@ -832,8 +948,73 @@ fn execute_do_method_call(op: &Op, execute_data: &mut ExecuteData) -> Result<Exe
                 super::execute::execute_ex_returning(execute_data, &method_op_array);
             execute_data.op_array = saved_op_array;
             execute_data.current_op = saved_current_op;
+            execute_data.called_class = saved_called_class;
 
             // Store return value
+            execute_data.call_args.clear();
+            if let Some(slot) = result_slot(op) {
+                if let Some(ret) = return_val {
+                    execute_data.set_temp(slot, ret);
+                } else {
+                    execute_data.set_temp(slot, Val::new(PhpValue::Long(0), PhpType::Null));
+                }
+            }
+            return Ok(ExecResult::Continue);
+        }
+
+        // Magic method: __call
+        let magic_data: Option<(Vec<String>, Vec<Op>)> = execute_data
+            .class_table
+            .get(&class_name)
+            .and_then(|ce| ce.methods.get("__call"))
+            .map(|magic| {
+                let params = magic.params.clone();
+                let ops: Vec<Op> = magic
+                    .op_array
+                    .ops
+                    .iter()
+                    .map(|op| {
+                        Op::new(
+                            op.opcode,
+                            clone_val(&op.op1),
+                            clone_val(&op.op2),
+                            clone_val(&op.result),
+                            op.extended_value,
+                        )
+                    })
+                    .collect();
+                (params, ops)
+            });
+
+        if let Some((params, ops)) = magic_data {
+            let saved_current_op = execute_data.current_op;
+            let saved_op_array = execute_data.op_array.take();
+            let saved_called_class = execute_data.called_class.clone();
+            execute_data.called_class = Some(class_name.clone());
+            execute_data.set_var("this", clone_val(&obj_val));
+
+            let _args: Vec<Val> = execute_data
+                .call_args
+                .iter()
+                .map(|a| clone_val(a))
+                .collect();
+            if let Some(p0) = params.get(0) {
+                execute_data.set_var(p0, Val::new(PhpValue::String(Box::new(crate::engine::string::string_init(method_name.as_str(), false))), PhpType::String));
+            }
+            if let Some(p1) = params.get(1) {
+                let arr = crate::engine::types::PhpArray::new();
+                let arr_val = Val::new(PhpValue::Array(Box::new(arr)), PhpType::Array);
+                execute_data.set_var(p1, arr_val);
+            }
+
+            let mut method_op_array = OpArray::new(format!("{}::__call", class_name));
+            method_op_array.ops = ops;
+            let (_status, return_val) =
+                super::execute::execute_ex_returning(execute_data, &method_op_array);
+            execute_data.op_array = saved_op_array;
+            execute_data.current_op = saved_current_op;
+            execute_data.called_class = saved_called_class;
+
             execute_data.call_args.clear();
             if let Some(slot) = result_slot(op) {
                 if let Some(ret) = return_val {
@@ -967,4 +1148,216 @@ fn execute_do_fcall(op: &Op, execute_data: &mut ExecuteData) -> Result<ExecResul
             Ok(ExecResult::Continue)
         }
     }
+}
+
+#[allow(dead_code)]
+fn execute_fetch_static_prop(op: &Op, execute_data: &mut ExecuteData) -> Result<ExecResult, String> {
+    let class_name_val = resolve_operand(&op.op1, execute_data);
+    let mut class_name = crate::engine::operators::zval_get_string(&class_name_val).as_str().to_string();
+
+    // Late static binding: resolve "static" to the called class
+    if class_name == "static" {
+        class_name = execute_data.called_class.clone().unwrap_or_default();
+    }
+
+    let prop_name_val = resolve_operand(&op.op2, execute_data);
+    let prop_name = crate::engine::operators::zval_get_string(&prop_name_val);
+
+    let result_val = if let Some(ce) = execute_data.class_table.get(&class_name) {
+        ce.static_properties
+            .get(prop_name.as_str())
+            .map(|v| clone_val(v))
+            .unwrap_or_else(|| Val::new(PhpValue::Long(0), PhpType::Null))
+    } else {
+        Val::new(PhpValue::Long(0), PhpType::Null)
+    };
+
+    if let Some(slot) = result_slot(op) {
+        execute_data.set_temp(slot, result_val);
+    }
+    Ok(ExecResult::Continue)
+}
+
+#[allow(dead_code)]
+fn execute_do_static_call(op: &Op, execute_data: &mut ExecuteData) -> Result<ExecResult, String> {
+    let method_name_val = resolve_operand(&op.op1, execute_data);
+    let method_name = crate::engine::operators::zval_get_string(&method_name_val);
+
+    let class_name_val = resolve_operand(&op.op2, execute_data);
+    let mut class_name = crate::engine::operators::zval_get_string(&class_name_val).as_str().to_string();
+
+    // Late static binding: resolve "static" to the called class
+    let is_late_static = class_name == "static";
+    if is_late_static {
+        class_name = execute_data.called_class.clone().unwrap_or_default();
+    }
+
+    let resolved_class = class_name.clone();
+
+    // Extract method info (owned copies to avoid borrow conflict)
+    let method_info: Option<(bool, Vec<String>, Vec<Op>)> = execute_data
+        .class_table
+        .get(&resolved_class)
+        .and_then(|ce| ce.methods.get(method_name.as_str()))
+        .map(|m| {
+            let params = m.params.clone();
+            let ops: Vec<Op> = m
+                .op_array
+                .ops
+                .iter()
+                .map(|op| {
+                    Op::new(
+                        op.opcode,
+                        clone_val(&op.op1),
+                        clone_val(&op.op2),
+                        clone_val(&op.result),
+                        op.extended_value,
+                    )
+                })
+                .collect();
+            (m.is_static, params, ops)
+        });
+
+    if let Some((is_static, params, ops)) = method_info {
+        if !is_static {
+            // Non-static method called statically — PHP allows this with a deprecation warning
+        }
+
+        let saved_current_op = execute_data.current_op;
+        let saved_op_array = execute_data.op_array.take();
+        let saved_called_class = execute_data.called_class.clone();
+        execute_data.called_class = Some(resolved_class.clone());
+
+        // Set up method parameters
+        let args: Vec<Val> = execute_data
+            .call_args
+            .iter()
+            .map(|a| clone_val(a))
+            .collect();
+        for (i, param_name) in params.iter().enumerate() {
+            if let Some(arg) = args.get(i) {
+                execute_data.set_var(param_name, clone_val(arg));
+            }
+        }
+
+        // Execute method
+        let mut method_op_array =
+            OpArray::new(format!("{}::{}", resolved_class, method_name.as_str()));
+        method_op_array.ops = ops;
+        let (_status, return_val) =
+            super::execute::execute_ex_returning(execute_data, &method_op_array);
+        execute_data.op_array = saved_op_array;
+        execute_data.current_op = saved_current_op;
+        execute_data.called_class = saved_called_class;
+
+        // Store return value
+        execute_data.call_args.clear();
+        if let Some(slot) = result_slot(op) {
+            if let Some(ret) = return_val {
+                execute_data.set_temp(slot, ret);
+            } else {
+                execute_data.set_temp(slot, Val::new(PhpValue::Long(0), PhpType::Null));
+            }
+        }
+        return Ok(ExecResult::Continue);
+    }
+
+    // Magic method: __callStatic
+    let magic_data: Option<(Vec<String>, Vec<Op>)> = execute_data
+        .class_table
+        .get(&resolved_class)
+        .and_then(|ce| ce.methods.get("__callStatic"))
+        .map(|magic| {
+            let params = magic.params.clone();
+            let ops: Vec<Op> = magic
+                .op_array
+                .ops
+                .iter()
+                .map(|op| {
+                    Op::new(
+                        op.opcode,
+                        clone_val(&op.op1),
+                        clone_val(&op.op2),
+                        clone_val(&op.result),
+                        op.extended_value,
+                    )
+                })
+                .collect();
+            (params, ops)
+        });
+
+    if let Some((params, ops)) = magic_data {
+        let saved_current_op = execute_data.current_op;
+        let saved_op_array = execute_data.op_array.take();
+        let saved_called_class = execute_data.called_class.clone();
+        execute_data.called_class = Some(resolved_class.clone());
+
+        let _args: Vec<Val> = execute_data
+            .call_args
+            .iter()
+            .map(|a| clone_val(a))
+            .collect();
+        if let Some(p0) = params.get(0) {
+            execute_data.set_var(p0, Val::new(PhpValue::String(Box::new(crate::engine::string::string_init(method_name.as_str(), false))), PhpType::String));
+        }
+        if let Some(p1) = params.get(1) {
+            let arr = crate::engine::types::PhpArray::new();
+            let arr_val = Val::new(PhpValue::Array(Box::new(arr)), PhpType::Array);
+            execute_data.set_var(p1, arr_val);
+        }
+
+        let mut method_op_array = OpArray::new(format!("{}::__callStatic", resolved_class));
+        method_op_array.ops = ops;
+        let (_status, return_val) =
+            super::execute::execute_ex_returning(execute_data, &method_op_array);
+        execute_data.op_array = saved_op_array;
+        execute_data.current_op = saved_current_op;
+        execute_data.called_class = saved_called_class;
+
+        execute_data.call_args.clear();
+        if let Some(slot) = result_slot(op) {
+            if let Some(ret) = return_val {
+                execute_data.set_temp(slot, ret);
+            } else {
+                execute_data.set_temp(slot, Val::new(PhpValue::Long(0), PhpType::Null));
+            }
+        }
+        return Ok(ExecResult::Continue);
+    }
+
+    execute_data.call_args.clear();
+    if let Some(slot) = result_slot(op) {
+        execute_data.set_temp(slot, Val::new(PhpValue::Long(0), PhpType::Null));
+    }
+    Ok(ExecResult::Continue)
+}
+
+#[allow(dead_code)]
+fn execute_clone_obj(op: &Op, execute_data: &mut ExecuteData) -> Result<ExecResult, String> {
+    let obj_val = resolve_operand(&op.op1, execute_data);
+
+    let cloned = if let PhpValue::Object(ref obj) = obj_val.value {
+        let mut new_obj = crate::engine::types::PhpObject::new(&obj.class_name);
+        for (k, v) in &obj.properties {
+            new_obj.properties.insert(k.clone(), clone_val(v));
+        }
+        new_obj.handle = obj.handle;
+        Val::new(PhpValue::Object(Box::new(new_obj)), PhpType::Object)
+    } else {
+        Val::new(PhpValue::Long(0), PhpType::Null)
+    };
+
+    // Call __clone if it exists
+    if let PhpValue::Object(ref obj) = obj_val.value {
+        if let Some(ce) = execute_data.class_table.get(&obj.class_name) {
+            if let Some(_magic) = ce.methods.get("__clone") {
+                // __clone takes no arguments
+            }
+        }
+    }
+
+    if let Some(slot) = result_slot(op) {
+        execute_data.set_temp(slot, cloned);
+    }
+    Ok(ExecResult::Continue)
 }

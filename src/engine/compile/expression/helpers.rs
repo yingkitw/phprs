@@ -212,6 +212,10 @@ pub(crate) fn parse_access_chain(
             let (new_result, new_next) = parse_object_access(lexer, context, result)?;
             result = new_result;
             next = new_next;
+        } else if next.token_type == TokenType::T_PAAMAYIM_NEKUDOTAYIM {
+            let (new_result, new_next) = parse_static_access(lexer, context, result)?;
+            result = new_result;
+            next = new_next;
         } else if token_is_punct(&next, "(") {
             // Callable variable: $var(args...)
             let (call_result, call_next) = parse_callable_var(lexer, context, result)?;
@@ -293,6 +297,76 @@ fn parse_object_access(
     }
 }
 
+/// Parse static access after '::': ClassName::$prop, ClassName::method(), static::$prop, etc.
+/// The `result` Val contains the class name (as a string Val or var_ref)
+fn parse_static_access(
+    lexer: &mut Lexer,
+    context: &mut CompileContext,
+    class_val: Val,
+) -> Result<(Val, Token), String> {
+    let member_token = lexer.next_token()?;
+
+    // Handle static property access: ClassName::$prop or static::$prop
+    if member_token.token_type == TokenType::T_VARIABLE {
+        let prop_name = member_token.value.as_ref()
+            .ok_or("Expected property name after '::'")?
+            .as_str();
+        let prop_zval = facade::string_val(prop_name);
+        let slot = context.alloc_temp();
+        context.emit_opcode(
+            Opcode::FetchStaticProp,
+            class_val,
+            prop_zval,
+            temp_var_ref(slot),
+        );
+        return Ok((temp_var_ref(slot), lexer.next_token()?));
+    }
+
+    // Handle static method call or constant: ClassName::method() or ClassName::CONST
+    let member_name = member_token.value.as_ref()
+        .ok_or("Expected member name after '::'")?
+        .as_str();
+    let member_zval = facade::string_val(member_name);
+
+    let peek = lexer.next_token()?;
+    if token_is_punct(&peek, "(") {
+        // Static method call: ClassName::method(args...)
+        context.emit_opcode(
+            Opcode::InitFCall,
+            facade::null_val(),
+            facade::null_val(),
+            facade::null_val(),
+        );
+
+        let mut arg_token = lexer.next_token()?;
+        while !token_is_punct(&arg_token, ")") {
+            arg_token = parse_call_arg(lexer, context, arg_token)?;
+            if token_is_punct(&arg_token, ",") {
+                arg_token = lexer.next_token()?;
+            }
+        }
+
+        let call_slot = context.alloc_temp();
+        context.emit_opcode(
+            Opcode::DoStaticCall,
+            member_zval,
+            class_val,
+            temp_var_ref(call_slot),
+        );
+        Ok((temp_var_ref(call_slot), lexer.next_token()?))
+    } else {
+        // Static constant access: ClassName::CONST — for now, emit FetchStaticProp
+        let slot = context.alloc_temp();
+        context.emit_opcode(
+            Opcode::FetchStaticProp,
+            class_val,
+            member_zval,
+            temp_var_ref(slot),
+        );
+        Ok((temp_var_ref(slot), peek))
+    }
+}
+
 /// Parse method call arguments and emit InitMethodCall + SendVal + DoMethodCall
 pub(crate) fn parse_method_call(
     lexer: &mut Lexer,
@@ -310,18 +384,9 @@ pub(crate) fn parse_method_call(
     // Parse arguments
     let mut arg_token = lexer.next_token()?;
     while !token_is_punct(&arg_token, ")") {
-        let (arg_val, after_arg) =
-            super::operators::parse_additive_expr_with_initial(lexer, context, arg_token)?;
-        context.emit_opcode(
-            Opcode::SendVal,
-            arg_val,
-            facade::null_val(),
-            facade::null_val(),
-        );
-        if token_is_punct(&after_arg, ",") {
+        arg_token = parse_call_arg(lexer, context, arg_token)?;
+        if token_is_punct(&arg_token, ",") {
             arg_token = lexer.next_token()?;
-        } else {
-            arg_token = after_arg;
         }
     }
 
@@ -341,25 +406,7 @@ fn parse_callable_var(
     context: &mut CompileContext,
     callable: Val,
 ) -> Result<(Val, Token), String> {
-    let mut args = Vec::new();
     let mut current_token = lexer.next_token()?;
-
-    if !token_is_punct(&current_token, ")") {
-        let (arg_val, next_token) =
-            super::operators::parse_additive_expr_with_initial(lexer, context, current_token)?;
-        args.push(arg_val);
-        current_token = next_token;
-
-        while token_is_punct(&current_token, ",") {
-            let (arg_val, next_token) = super::parse_expression(lexer, context)?;
-            args.push(arg_val);
-            current_token = next_token;
-        }
-
-        if !token_is_punct(&current_token, ")") {
-            return Err("Expected ',' or ')' after callable argument".to_string());
-        }
-    }
 
     // Emit InitFCall
     context.emit_opcode(
@@ -369,9 +416,17 @@ fn parse_callable_var(
         facade::null_val(),
     );
 
-    // Emit SendVal for each argument
-    for arg in args {
-        context.emit_opcode(Opcode::SendVal, arg, facade::null_val(), facade::null_val());
+    if !token_is_punct(&current_token, ")") {
+        current_token = parse_call_arg(lexer, context, current_token)?;
+
+        while token_is_punct(&current_token, ",") {
+            let next = lexer.next_token()?;
+            current_token = parse_call_arg(lexer, context, next)?;
+        }
+
+        if !token_is_punct(&current_token, ")") {
+            return Err("Expected ',' or ')' after callable argument".to_string());
+        }
     }
 
     // Emit DoFCall with the callable variable as the function name
@@ -385,18 +440,58 @@ fn parse_callable_var(
     Ok((temp_var_ref(call_slot), lexer.next_token()?))
 }
 
-/// Compile `new ClassName()` — shared between parse_primary_expr and _with_initial
+/// Compile `new ClassName()` or `new class { ... }` — shared between parse_primary_expr and _with_initial
 pub(crate) fn compile_new_obj(
     lexer: &mut Lexer,
     context: &mut CompileContext,
 ) -> Result<(Val, Token), String> {
     let class_token = lexer.next_token()?;
-    let class_name = class_token
-        .value
-        .as_ref()
-        .ok_or("Expected class name after 'new'")?
-        .as_str();
-    let resolved_name = context.resolve_class_name(class_name);
+
+    // Anonymous class: new class { ... }
+    let (resolved_name, peek) = if class_token.token_type == TokenType::T_CLASS {
+        use std::sync::atomic::{AtomicU64, Ordering};
+        static ANON_CLASS_COUNTER: AtomicU64 = AtomicU64::new(0);
+        let anon_name = format!("__anon_class_{}", ANON_CLASS_COUNTER.fetch_add(1, Ordering::Relaxed));
+        let mut ce = crate::engine::types::ClassEntry::new(&anon_name);
+
+        // Optional: extends ParentClass
+        let mut next = lexer.next_token()?;
+        if next.token_type == TokenType::T_EXTENDS {
+            let parent_token = lexer.next_token()?;
+            let parent_name = parent_token.value.as_ref()
+                .ok_or("Expected parent class name after 'extends'")?
+                .as_str();
+            ce.parent_name = Some(context.resolve_class_name(parent_name));
+            next = lexer.next_token()?;
+        }
+
+        // Optional: implements Interface1, Interface2
+        if next.token_type == TokenType::T_IMPLEMENTS {
+            next = lexer.next_token()?;
+            while next.token_type == TokenType::T_STRING {
+                next = lexer.next_token()?;
+                if token_is_punct(&next, ",") {
+                    next = lexer.next_token()?;
+                }
+            }
+        }
+
+        if !token_is_punct(&next, "{") {
+            return Err("Expected '{' after anonymous class declaration".to_string());
+        }
+
+        crate::engine::compile::statement::oop::parse_class_body(lexer, context, &mut ce)?;
+        context.register_class(ce);
+        (anon_name, lexer.next_token()?)
+    } else {
+        let class_name = class_token
+            .value
+            .as_ref()
+            .ok_or("Expected class name after 'new'")?
+            .as_str();
+        (context.resolve_class_name(class_name), lexer.next_token()?)
+    };
+
     let class_zval = facade::string_val(&resolved_name);
     let slot = context.alloc_temp();
     context.emit_opcode(
@@ -407,7 +502,6 @@ pub(crate) fn compile_new_obj(
     );
 
     // Check for constructor args: (...)
-    let peek = lexer.next_token()?;
     if token_is_punct(&peek, "(") {
         let mut args = Vec::new();
         let mut arg_token = lexer.next_token()?;
@@ -607,6 +701,41 @@ pub(crate) fn parse_array_literal(
     Ok(temp_var_ref(arr_slot))
 }
 
+/// Parse a single call argument, detecting named arguments (name: value)
+/// Emits SendVal or SendValNamed directly
+pub(crate) fn parse_call_arg(
+    lexer: &mut Lexer,
+    context: &mut CompileContext,
+    first_token: Token,
+) -> Result<Token, String> {
+    // Check for named argument: name: value
+    if first_token.token_type == TokenType::T_STRING {
+        let name = first_token.value.as_ref().unwrap().as_str();
+        let peek = lexer.next_token()?;
+        if token_is_punct(&peek, ":") {
+            let (value, after) = super::parse_expression(lexer, context)?;
+            context.emit_opcode(
+                Opcode::SendValNamed,
+                value,
+                facade::string_val(name),
+                facade::null_val(),
+            );
+            return Ok(after);
+        }
+        // Not a named argument, backtrack by parsing with the first token
+        let (arg_val, after) =
+            super::operators::parse_additive_expr_with_initial(lexer, context, first_token)?;
+        context.emit_opcode(Opcode::SendVal, arg_val, facade::null_val(), facade::null_val());
+        return Ok(after);
+    }
+
+    // Positional argument
+    let (arg_val, after) =
+        super::operators::parse_additive_expr_with_initial(lexer, context, first_token)?;
+    context.emit_opcode(Opcode::SendVal, arg_val, facade::null_val(), facade::null_val());
+    Ok(after)
+}
+
 /// Parse function call: function_name(arg1, arg2, ...)
 /// The opening '(' has already been consumed
 pub(crate) fn parse_function_call(
@@ -614,26 +743,7 @@ pub(crate) fn parse_function_call(
     context: &mut CompileContext,
     function_name: &str,
 ) -> Result<(Val, Token), String> {
-    let mut args = Vec::new();
     let mut current_token = lexer.next_token()?;
-
-    if !token_is_punct(&current_token, ")") {
-        // First argument: already consumed its first token
-        let (arg_zval, next_token) =
-            super::operators::parse_additive_expr_with_initial(lexer, context, current_token)?;
-        args.push(arg_zval);
-        current_token = next_token;
-
-        while token_is_punct(&current_token, ",") {
-            let (arg_zval, next_token) = super::parse_expression(lexer, context)?;
-            args.push(arg_zval);
-            current_token = next_token;
-        }
-
-        if !token_is_punct(&current_token, ")") {
-            return Err("Expected ',' or ')' after function argument".to_string());
-        }
-    }
 
     // Emit InitFCall
     context.emit_opcode(
@@ -643,9 +753,17 @@ pub(crate) fn parse_function_call(
         facade::null_val(),
     );
 
-    // Emit SendVal for each argument
-    for arg in args {
-        context.emit_opcode(Opcode::SendVal, arg, facade::null_val(), facade::null_val());
+    if !token_is_punct(&current_token, ")") {
+        current_token = parse_call_arg(lexer, context, current_token)?;
+
+        while token_is_punct(&current_token, ",") {
+            let next = lexer.next_token()?;
+            current_token = parse_call_arg(lexer, context, next)?;
+        }
+
+        if !token_is_punct(&current_token, ")") {
+            return Err("Expected ',' or ')' after function argument".to_string());
+        }
     }
 
     // Emit DoFCall

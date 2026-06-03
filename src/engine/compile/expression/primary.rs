@@ -78,6 +78,11 @@ pub(crate) fn parse_primary_expr(
                 }
             }
         }
+        TokenType::T_STATIC => {
+            let static_val = facade::string_val("static");
+            let next = lexer.next_token()?;
+            parse_access_chain(lexer, context, static_val, next)
+        }
         _ => Err(format!("Unexpected token in expression: {:?}", token.token_type)),
     }
 }
