@@ -292,6 +292,12 @@ fn parse_multiplicative_expr_with_initial(
         return multiplicative_loop(lexer, context, result, next);
     }
 
+    // Handle T_CLONE
+    if initial_token.token_type == TokenType::T_CLONE {
+        let (result, next) = compile_clone_obj(lexer, context)?;
+        return multiplicative_loop(lexer, context, result, next);
+    }
+
     if initial_token.token_type == TokenType::T_MATCH {
         let (result, next) = parse_match_expression(lexer, context)?;
         return multiplicative_loop(lexer, context, result, next);

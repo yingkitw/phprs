@@ -252,8 +252,8 @@
   - [ ] Timezone support
 - [x] **Math functions** - `abs()`, `ceil()`, `floor()`, `round()`, `sqrt()`, `pow()`, `exp()`, `log()`, `log10()`, `sin()`, `cos()`, `tan()`, `asin()`, `acos()`, `atan()`, `atan2()`, `pi()`, `max()`, `min()`, `rand()`
 - [x] **Hash functions** - `md5()`, `sha1()`, `hash()`, `base64_encode()`, `base64_decode()`
-  - [ ] `hash_hmac()`, `password_hash()`, `password_verify()`
-- [ ] **URL functions** - `parse_url()`, `http_build_query()`, `urlencode()`, `urldecode()`
+  - [x] `hash_hmac()`, `password_hash()`, `password_verify()`
+- [x] **URL functions** - `parse_url()`, `http_build_query()`, `urlencode()`, `urldecode()`, `rawurlencode()`, `rawurldecode()`, `parse_str()`, `get_headers()`
 - [x] **Multibyte string** - `mb_strlen()`, `mb_substr()`, `mb_strtolower()`, `mb_strtoupper()`, `mb_convert_encoding()`
   - [x] mb_strlen() with Unicode grapheme cluster support
   - [x] mb_substr() with proper Unicode handling
@@ -263,11 +263,12 @@
   - [x] mb_substr_count()
   - [x] mb_strwidth() and mb_strimwidth()
 - [ ] **XML parsing** - SimpleXML, XMLReader, XMLWriter
-- [ ] **CSV handling** - `fgetcsv()`, `fputcsv()`, `str_getcsv()`
-- [ ] **Compression** - `gzcompress()`, `gzuncompress()`, `gzencode()`, `gzdecode()`
+- [x] **CSV handling** - `fgetcsv()`, `fputcsv()`, `str_getcsv()`
+- [x] **Compression** - `gzcompress()`, `gzuncompress()`, `gzencode()`, `gzdecode()`, `gzdeflate()`, `gzinflate()`
 - [ ] **Image processing** - GD library basics (create, resize, crop, filters)
 - [ ] **Mail functions** - `mail()` with SMTP support
-- [ ] **Crypt functions** - `openssl_encrypt()`, `openssl_decrypt()`, `random_bytes()`, `random_int()`
+- [ ] **Crypt functions** - `openssl_encrypt()`, `openssl_decrypt()`
+  - [x] `random_bytes()`, `random_int()`
 
 ### Advanced Features
 - [ ] **Reflection API** - Full reflection support for classes, methods, properties
@@ -277,14 +278,14 @@
   - [ ] Exceptions (SPL exception hierarchy)
   - [ ] File handling (SplFileObject, SplFileInfo)
 - [ ] **Autoloading** - `spl_autoload_register()`, PSR-4 autoloader
-- [ ] **Error handling improvements**
-  - [ ] Custom error handlers (`set_error_handler()`)
-  - [ ] Exception handlers (`set_exception_handler()`)
-  - [ ] Shutdown functions (`register_shutdown_function()`)
-- [ ] **Output buffering enhancements**
+- [x] **Error handling improvements**
+  - [x] Custom error handlers (`set_error_handler()`)
+  - [x] Exception handlers (`set_exception_handler()`)
+  - [x] Shutdown functions (`register_shutdown_function()`)
+- [x] **Output buffering enhancements**
   - [ ] `ob_start()` with callbacks
-  - [ ] `ob_get_clean()`, `ob_get_flush()`, `ob_get_level()`
-  - [ ] Multiple buffer levels
+  - [x] `ob_get_clean()`, `ob_get_flush()`, `ob_get_level()`
+  - [x] Multiple buffer levels
 
 ### Performance & Optimization
 - [ ] **LLVM-based JIT** - Replace custom JIT with LLVM for better optimization

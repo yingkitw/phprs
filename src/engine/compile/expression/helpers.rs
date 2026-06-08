@@ -545,6 +545,22 @@ pub(crate) fn compile_new_obj(
     }
 }
 
+/// Compile `clone $obj` — emits CloneObj opcode
+pub(crate) fn compile_clone_obj(
+    lexer: &mut Lexer,
+    context: &mut CompileContext,
+) -> Result<(Val, Token), String> {
+    let (expr_val, next) = super::parse_expression(lexer, context)?;
+    let slot = context.alloc_temp();
+    context.emit_opcode(
+        Opcode::CloneObj,
+        expr_val,
+        facade::null_val(),
+        temp_var_ref(slot),
+    );
+    Ok((temp_var_ref(slot), next))
+}
+
 /// Run the multiplicative operator loop (* / %) on an already-parsed left value
 pub(crate) fn multiplicative_loop(
     lexer: &mut Lexer,

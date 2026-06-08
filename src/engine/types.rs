@@ -351,6 +351,27 @@ impl PhpString {
     pub fn as_bytes(&self) -> &[u8] {
         &self.val[..self.len]
     }
+
+    /// Create a PhpString from raw bytes (for binary data)
+    pub fn from_bytes(bytes: &[u8], persistent: bool) -> Self {
+        let len = bytes.len();
+        let mut val = Vec::with_capacity(len + 1);
+        val.extend_from_slice(bytes);
+        val.push(0); // null terminator
+
+        let type_info = if persistent {
+            0x00000006 | (1 << 10)
+        } else {
+            0x00000006 // GC_STRING
+        };
+
+        Self {
+            gc: RefcountedH::new(type_info),
+            h: 0,
+            len,
+            val,
+        }
+    }
 }
 
 /// Hash table bucket

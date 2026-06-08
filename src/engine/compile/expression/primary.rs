@@ -38,6 +38,7 @@ pub(crate) fn parse_primary_expr(
             }
         }
         TokenType::T_NEW => compile_new_obj(lexer, context),
+        TokenType::T_CLONE => compile_clone_obj(lexer, context),
         TokenType::T_MATCH => parse_match_expression(lexer, context),
         TokenType::T_YIELD => {
             let (yield_val, next) = super::parse_expression(lexer, context)?;

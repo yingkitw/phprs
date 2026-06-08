@@ -12,6 +12,50 @@ use super::opcodes::{Op, OpArray, Opcode};
 use crate::engine::jit::{increment_execution_counter, try_inline_operation};
 use crate::engine::types::{PhpType, PhpValue, Val};
 
+/// Call __toString magic method on an object if it exists
+#[inline]
+fn call_magic_tostring(val: &Val, execute_data: &mut ExecuteData) -> Option<crate::engine::types::PhpString> {
+    if let PhpValue::Object(ref obj) = val.value {
+        if let Some(ce) = execute_data.class_table.get(&obj.class_name) {
+            if let Some(magic) = ce.methods.get("__toString") {
+                let ops: Vec<Op> = magic
+                    .op_array
+                    .ops
+                    .iter()
+                    .map(|op| {
+                        Op::new(
+                            op.opcode,
+                            clone_val(&op.op1),
+                            clone_val(&op.op2),
+                            clone_val(&op.result),
+                            op.extended_value,
+                        )
+                    })
+                    .collect();
+
+                let saved_current_op = execute_data.current_op;
+                let saved_op_array = execute_data.op_array.take();
+                let saved_called_class = execute_data.called_class.clone();
+                execute_data.called_class = Some(obj.class_name.clone());
+                execute_data.set_var("this", clone_val(val));
+
+                let mut method_op_array = OpArray::new(format!("{}::__toString", obj.class_name));
+                method_op_array.ops = ops;
+                let (_status, return_val) =
+                    super::execute::execute_ex_returning(execute_data, &method_op_array);
+                execute_data.op_array = saved_op_array;
+                execute_data.current_op = saved_current_op;
+                execute_data.called_class = saved_called_class;
+
+                if let Some(ret) = return_val {
+                    return Some(crate::engine::operators::zval_get_string(&ret));
+                }
+            }
+        }
+    }
+    None
+}
+
 /// Resolve a relative include/require path like PHP: try the path relative to the process
 /// current working directory first, then relative to the including script's directory.
 #[inline]
@@ -120,8 +164,16 @@ pub fn execute_concat(op: &Op, execute_data: &mut ExecuteData) -> Result<ExecRes
     }
 
     // Optimized string concatenation - pre-allocate exact capacity
-    let s1 = crate::engine::operators::zval_get_string(&op1);
-    let s2 = crate::engine::operators::zval_get_string(&op2);
+    let s1 = if let Some(tostr) = call_magic_tostring(&op1, execute_data) {
+        tostr
+    } else {
+        crate::engine::operators::zval_get_string(&op1)
+    };
+    let s2 = if let Some(tostr) = call_magic_tostring(&op2, execute_data) {
+        tostr
+    } else {
+        crate::engine::operators::zval_get_string(&op2)
+    };
     let s1_len = s1.val.len();
     let s2_len = s2.val.len();
     let mut combined = String::with_capacity(s1_len + s2_len);
@@ -292,7 +344,11 @@ pub fn execute_assign_dim(op: &Op, execute_data: &mut ExecuteData) -> Result<Exe
 #[inline]
 pub fn execute_echo(op: &Op, execute_data: &mut ExecuteData) -> Result<ExecResult, String> {
     let val = resolve_operand(&op.op1, execute_data);
-    let s = crate::engine::operators::zval_get_string(&val);
+    let s = if let Some(tostr) = call_magic_tostring(&val, execute_data) {
+        tostr
+    } else {
+        crate::engine::operators::zval_get_string(&val)
+    };
     let _ = crate::php::output::php_output_write(s.as_bytes());
     Ok(ExecResult::Continue)
 }
@@ -305,16 +361,72 @@ pub fn execute_return(op: &Op, execute_data: &mut ExecuteData) -> Result<ExecRes
 
 #[inline]
 pub fn execute_do_fcall(op: &Op, execute_data: &mut ExecuteData) -> Result<ExecResult, String> {
-    let func_name = if is_var_ref(&op.op1) || is_temp_ref(&op.op1) {
-        let resolved = resolve_operand(&op.op1, execute_data);
-        crate::engine::operators::zval_get_string(&resolved)
-            .as_str()
-            .to_string()
+    let resolved_op1 = if is_var_ref(&op.op1) || is_temp_ref(&op.op1) {
+        resolve_operand(&op.op1, execute_data)
     } else {
-        crate::engine::operators::zval_get_string(&op.op1)
-            .as_str()
-            .to_string()
+        clone_val(&op.op1)
     };
+
+    // Magic method: __invoke for callable objects
+    if let PhpValue::Object(ref obj) = resolved_op1.value {
+        if let Some(ce) = execute_data.class_table.get(&obj.class_name) {
+            if let Some(magic) = ce.methods.get("__invoke") {
+                let params = magic.params.clone();
+                let ops: Vec<Op> = magic
+                    .op_array
+                    .ops
+                    .iter()
+                    .map(|op| {
+                        Op::new(
+                            op.opcode,
+                            clone_val(&op.op1),
+                            clone_val(&op.op2),
+                            clone_val(&op.result),
+                            op.extended_value,
+                        )
+                    })
+                    .collect();
+
+                let saved_current_op = execute_data.current_op;
+                let saved_op_array = execute_data.op_array.take();
+                let saved_script_dir = execute_data.current_script_dir.clone();
+                let saved_called_class = execute_data.called_class.clone();
+                execute_data.called_class = Some(obj.class_name.clone());
+                execute_data.set_var("this", clone_val(&resolved_op1));
+
+                let args: Vec<Val> = execute_data.call_args.drain(..).collect();
+                for (i, param_name) in params.iter().enumerate() {
+                    if let Some(arg) = args.get(i) {
+                        execute_data.set_var(param_name, clone_val(arg));
+                    }
+                }
+
+                let mut method_op_array = OpArray::new(format!("{}::__invoke", obj.class_name));
+                method_op_array.ops = ops;
+                let (_status, return_val) =
+                    super::execute::execute_ex_returning(execute_data, &method_op_array);
+                execute_data.op_array = saved_op_array;
+                execute_data.current_op = saved_current_op;
+                execute_data.current_script_dir = saved_script_dir;
+                execute_data.called_class = saved_called_class;
+
+                execute_data.call_args.clear();
+                execute_data.call_arg_names.clear();
+                if let Some(slot) = result_slot(op) {
+                    if let Some(ret) = return_val {
+                        execute_data.set_temp(slot, ret);
+                    } else {
+                        execute_data.set_temp(slot, Val::new(PhpValue::Long(0), PhpType::Null));
+                    }
+                }
+                return Ok(ExecResult::Continue);
+            }
+        }
+    }
+
+    let func_name = crate::engine::operators::zval_get_string(&resolved_op1)
+        .as_str()
+        .to_string();
 
     // Check JIT compilation for hot functions
     increment_execution_counter(&func_name);

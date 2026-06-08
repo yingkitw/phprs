@@ -1350,8 +1350,35 @@ fn execute_clone_obj(op: &Op, execute_data: &mut ExecuteData) -> Result<ExecResu
     // Call __clone if it exists
     if let PhpValue::Object(ref obj) = obj_val.value {
         if let Some(ce) = execute_data.class_table.get(&obj.class_name) {
-            if let Some(_magic) = ce.methods.get("__clone") {
-                // __clone takes no arguments
+            if let Some(magic) = ce.methods.get("__clone") {
+                let _params = magic.params.clone();
+                let ops: Vec<Op> = magic
+                    .op_array
+                    .ops
+                    .iter()
+                    .map(|op| {
+                        Op::new(
+                            op.opcode,
+                            clone_val(&op.op1),
+                            clone_val(&op.op2),
+                            clone_val(&op.result),
+                            op.extended_value,
+                        )
+                    })
+                    .collect();
+
+                let saved_current_op = execute_data.current_op;
+                let saved_op_array = execute_data.op_array.take();
+                let saved_called_class = execute_data.called_class.clone();
+                execute_data.called_class = Some(obj.class_name.clone());
+                execute_data.set_var("this", clone_val(&cloned));
+
+                let mut method_op_array = OpArray::new(format!("{}::__clone", obj.class_name));
+                method_op_array.ops = ops;
+                let _ = super::execute::execute_ex_returning(execute_data, &method_op_array);
+                execute_data.op_array = saved_op_array;
+                execute_data.current_op = saved_current_op;
+                execute_data.called_class = saved_called_class;
             }
         }
     }

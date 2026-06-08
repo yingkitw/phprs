@@ -2,6 +2,8 @@
 //!
 //! Main PHP runtime implementation
 
+pub mod compression;
+pub mod csv;
 pub mod datetime;
 pub mod extension;
 pub mod filesystem;

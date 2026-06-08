@@ -784,6 +784,19 @@ pub(crate) fn execute_builtin_function(
         "parse_str" => crate::php::url::parse_str(args).map(Some),
         "get_headers" => crate::php::url::get_headers(args).map(Some),
 
+        // --- CSV functions ---
+        "str_getcsv" => crate::php::csv::str_getcsv(args).map(Some),
+        "fgetcsv" => crate::php::csv::fgetcsv(args).map(Some),
+        "fputcsv" => crate::php::csv::fputcsv(args).map(Some),
+
+        // --- Compression functions ---
+        "gzcompress" => crate::php::compression::gzcompress(args).map(Some),
+        "gzuncompress" => crate::php::compression::gzuncompress(args).map(Some),
+        "gzencode" => crate::php::compression::gzencode(args).map(Some),
+        "gzdecode" => crate::php::compression::gzdecode(args).map(Some),
+        "gzdeflate" => crate::php::compression::gzdeflate(args).map(Some),
+        "gzinflate" => crate::php::compression::gzinflate(args).map(Some),
+
         // --- Multibyte string functions ---
         "mb_strlen" => crate::php::mbstring::mb_strlen(args).map(Some),
         "mb_substr" => crate::php::mbstring::mb_substr(args).map(Some),
