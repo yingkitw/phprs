@@ -9,11 +9,20 @@ mod tests;
 
 pub struct OutputBuffer {
     buffer: Vec<u8>,
+    callback: Option<String>,
 }
 
 impl OutputBuffer {
     pub fn new() -> Self {
-        Self { buffer: Vec::new() }
+        Self { buffer: Vec::new(), callback: None }
+    }
+
+    pub fn with_callback(callback: String) -> Self {
+        Self { buffer: Vec::new(), callback: Some(callback) }
+    }
+
+    pub fn callback(&self) -> Option<&str> {
+        self.callback.as_deref()
     }
 
     pub fn write(&mut self, data: &[u8]) -> Result<usize, String> {
@@ -66,6 +75,21 @@ pub fn php_output_start() -> Result<(), String> {
     })
 }
 
+/// Start output buffering with a callback
+pub fn php_output_start_with_callback(callback: String) -> Result<(), String> {
+    OUTPUT_BUFFERS.with(|buffers| {
+        buffers.borrow_mut().push(OutputBuffer::with_callback(callback));
+        Ok(())
+    })
+}
+
+/// Get callback of the current (top) buffer
+pub fn php_output_current_callback() -> Option<String> {
+    OUTPUT_BUFFERS.with(|buffers| {
+        buffers.borrow().last().and_then(|b| b.callback().map(|s| s.to_string()))
+    })
+}
+
 /// End output buffering and get contents
 pub fn php_output_end() -> Result<String, String> {
     OUTPUT_BUFFERS.with(|buffers| {
@@ -75,6 +99,46 @@ pub fn php_output_end() -> Result<String, String> {
         } else {
             Err("No output buffer to end".to_string())
         }
+    })
+}
+
+/// End current buffer and return (contents, callback) without flushing
+pub fn php_output_take() -> Result<(String, Option<String>), String> {
+    OUTPUT_BUFFERS.with(|buffers| {
+        let mut bufs = buffers.borrow_mut();
+        if let Some(buffer) = bufs.pop() {
+            Ok((buffer.get_contents_string(), buffer.callback().map(|s| s.to_string())))
+        } else {
+            Err("No output buffer to end".to_string())
+        }
+    })
+}
+
+/// Clean current buffer and return (contents, callback) without flushing
+pub fn php_output_take_clean() -> Result<(String, Option<String>), String> {
+    OUTPUT_BUFFERS.with(|buffers| {
+        let mut bufs = buffers.borrow_mut();
+        if let Some(buffer) = bufs.last_mut() {
+            let contents = buffer.get_contents_string();
+            let callback = buffer.callback().map(|s| s.to_string());
+            buffer.clean();
+            Ok((contents, callback))
+        } else {
+            Ok((String::new(), None))
+        }
+    })
+}
+
+/// Write data to the current active buffer (or stdout if none)
+pub fn php_output_write_to_active(data: &[u8]) -> Result<(), String> {
+    OUTPUT_BUFFERS.with(|buffers| {
+        let mut bufs = buffers.borrow_mut();
+        if !bufs.is_empty() {
+            let _ = bufs.last_mut().unwrap().write(data);
+        } else {
+            let _ = std::io::Write::write_all(&mut std::io::stdout(), data);
+        }
+        Ok(())
     })
 }
 

@@ -240,6 +240,48 @@ fn array_key_exists_in_array_count_merge() {
     .unwrap();
 }
 
+// --- Array helpers ---
+
+#[test]
+fn array_keys_values_pop_shift_slice_reverse() {
+    let mut ed = ExecuteData::new();
+    let probe = || array_from_str_keys(&[("a", "1"), ("b", "2"), ("c", "3")]);
+
+    let keys = run("array_keys", &[probe()], &mut ed).unwrap().unwrap();
+    if let PhpValue::Array(ref k) = keys.value {
+        assert_eq!(k.ar_data.len(), 3);
+    } else {
+        panic!("array_keys");
+    }
+
+    let vals = run("array_values", &[probe()], &mut ed).unwrap().unwrap();
+    if let PhpValue::Array(ref v) = vals.value {
+        assert_eq!(v.ar_data.len(), 3);
+    } else {
+        panic!("array_values");
+    }
+
+    let pop = run("array_pop", &[probe()], &mut ed).unwrap().unwrap();
+    assert_eq!(zval_get_string(&pop).as_str(), "3");
+
+    let shift = run("array_shift", &[probe()], &mut ed).unwrap().unwrap();
+    assert_eq!(zval_get_string(&shift).as_str(), "1");
+
+    let slice = run("array_slice", &[probe(), long_val(1), long_val(1)], &mut ed).unwrap().unwrap();
+    if let PhpValue::Array(ref s) = slice.value {
+        assert_eq!(s.ar_data.len(), 1);
+    } else {
+        panic!("array_slice");
+    }
+
+    let rev = run("array_reverse", &[probe()], &mut ed).unwrap().unwrap();
+    if let PhpValue::Array(ref r) = rev.value {
+        assert_eq!(r.ar_data.len(), 3);
+    } else {
+        panic!("array_reverse");
+    }
+}
+
 // --- JSON ---
 
 #[test]

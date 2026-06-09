@@ -145,8 +145,8 @@
 - **PHP runtime**: 19 source files in php/ (added regex, http_stream, pdo, math, hash, datetime, mbstring)
 - **Framework examples**: WordPress (full), CodeIgniter 4 (bootstrap), Drupal (bootstrap)
 - **67 opcodes** (dispatch table, dispatch_handlers) — added FetchStaticProp, DoStaticCall, CloneObj, SendValNamed
-- **120+ built-in functions** (including isset, empty, htmlspecialchars, preg_*, math functions, hash functions, datetime functions, mbstring functions, shortcode_atts, array_merge, ucfirst, introspection functions, SPL autoloading, etc.)
-- **312 passing tests** (100% pass rate) plus `tests/php8x_features.rs` covering static members, late static binding, magic methods, anonymous classes, variadic functions, named arguments, union types, enums
+- **130+ built-in functions** (including isset, empty, htmlspecialchars, preg_*, math functions, hash functions, datetime functions, mbstring functions, shortcode_atts, array_merge, ucfirst, introspection functions, SPL autoloading, array_keys/values/pop/shift/slice/reverse, etc.)
+- **315 passing tests** (100% pass rate) plus `tests/php8x_features.rs` covering static members, late static binding, magic methods, anonymous classes, variadic functions, named arguments, union types, enums
 - **Zero compilation warnings** (clean build with clippy)
 - **Thread-safe** JIT and optimizer (Arc, OnceLock, RwLock)
 
@@ -285,7 +285,7 @@
   - [x] Exception handlers (`set_exception_handler()`)
   - [x] Shutdown functions (`register_shutdown_function()`)
 - [x] **Output buffering enhancements**
-  - [ ] `ob_start()` with callbacks
+  - [x] `ob_start()` with callbacks (builtin callback invocation on `ob_end_flush`/`ob_get_flush`)
   - [x] `ob_get_clean()`, `ob_get_flush()`, `ob_get_level()`
   - [x] Multiple buffer levels
 

@@ -30,6 +30,11 @@ fn require_string_arg(args: &[Val], func: &str) -> Result<String, String> {
         .to_string())
 }
 
+/// Helper to create a null Val
+fn null_val() -> Val {
+    Val::new(PhpValue::Long(0), PhpType::Null)
+}
+
 /// Helper to check a type predicate on first arg
 fn type_check(args: &[Val], predicate: impl FnOnce(PhpType) -> bool) -> Val {
     bool_val(!args.is_empty() && predicate(args[0].get_type()))
@@ -57,7 +62,8 @@ pub(crate) fn is_builtin_function(name: &str) -> bool {
         | "doubleval" | "strval" | "isset" | "empty" | "unset" | "is_string"
         | "is_int" | "is_float" | "is_bool" | "is_array" | "is_null" | "is_object"
         | "array_key_exists" | "in_array" | "count" | "sizeof" | "array_push"
-        | "array_merge" | "var_dump" | "print_r" | "echo" | "print" | "json_encode"
+        | "array_merge" | "array_keys" | "array_values" | "array_pop" | "array_shift"
+        | "array_slice" | "array_reverse" | "var_dump" | "print_r" | "echo" | "print" | "json_encode"
         | "json_decode" | "file_get_contents" | "file_exists" | "define" | "defined"
         | "constant" | "class_exists" | "interface_exists" | "trait_exists"
         | "method_exists" | "property_exists" | "function_exists" | "get_class"
@@ -66,7 +72,7 @@ pub(crate) fn is_builtin_function(name: &str) -> bool {
         | "phpinfo" | "ob_start" | "ob_end_clean" | "ob_end_flush" | "ob_get_clean"
         | "ob_get_flush" | "ob_get_contents" | "ob_get_level" | "ob_clean" | "ob_flush"
         | "ob_implicit_flush" | "set_error_handler" | "set_exception_handler"
-        | "register_shutdown_function" | "strlen" | "abs" | "ceil" | "floor" | "round"
+        | "register_shutdown_function" | "abs" | "ceil" | "floor" | "round"
         | "sqrt" | "pow" | "exp" | "log" | "log10" | "sin" | "cos" | "tan" | "asin"
         | "acos" | "atan" | "atan2" | "pi" | "max" | "min" | "rand" | "md5" | "sha1"
         | "hash" | "hash_hmac" | "base64_encode" | "base64_decode" | "crc32" | "bin2hex"
@@ -78,12 +84,12 @@ pub(crate) fn is_builtin_function(name: &str) -> bool {
         | "gzinflate" | "mb_strlen" | "mb_substr" | "mb_strtolower" | "mb_strtoupper"
         | "mb_strpos" | "mb_strrpos" | "mb_convert_encoding" | "mb_substr_count"
         | "mb_strwidth" | "mb_strimwidth" | "dirname" | "die" | "exit" | "do_action"
-        | "apply_filters" | "shortcode_atts" | "array_merge" | "ucfirst" | "htmlspecialchars"
+        | "apply_filters" | "shortcode_atts" | "htmlspecialchars"
         | "htmlspecialchars_decode" | "htmlentities" | "wordwrap" | "nl2br" | "str_repeat"
         | "str_pad" | "str_split" | "chunk_split" | "strip_tags" | "addslashes"
         | "stripslashes" | "quotemeta" | "ucwords" | "lcfirst" | "strrev" | "str_shuffle"
         | "str_contains" | "str_starts_with" | "str_ends_with" | "str_ireplace"
-        | "strtr" | "similar_text" | "levenshtein" | "metaphone" | "soundex" | "ucfirst"
+        | "strtr" | "similar_text" | "levenshtein" | "metaphone" | "soundex"
         | "number_format" | "money_format" | "decbin" | "bindec" | "decoct" | "octdec"
         | "dechex" | "hexdec" | "base_convert" | "deg2rad" | "rad2deg"
     )
@@ -332,11 +338,129 @@ pub(crate) fn execute_builtin_function(
                 Ok(Some(Val::new(PhpValue::Long(1), PhpType::Long)))
             }
         }
+        "array_keys" => {
+            if args.is_empty() {
+                return Ok(Some(Val::new(PhpValue::Array(Box::new(crate::engine::types::PhpArray::new())), PhpType::Array)));
+            }
+            let mut result = crate::engine::types::PhpArray::new();
+            if let PhpValue::Array(ref arr) = args[0].value {
+                let mut idx: u64 = 0;
+                for bucket in &arr.ar_data {
+                    let key_val = if let Some(ref k) = bucket.key {
+                        Val::new(PhpValue::String(Box::new(crate::engine::string::string_init(k.as_str(), false))), PhpType::String)
+                    } else {
+                        Val::new(PhpValue::Long(idx as i64), PhpType::Long)
+                    };
+                    let _ = crate::engine::hash::hash_add_or_update(&mut result, None, idx, key_val, 0);
+                    idx += 1;
+                }
+            }
+            Ok(Some(Val::new(PhpValue::Array(Box::new(result)), PhpType::Array)))
+        }
+        "array_values" => {
+            if args.is_empty() {
+                return Ok(Some(Val::new(PhpValue::Array(Box::new(crate::engine::types::PhpArray::new())), PhpType::Array)));
+            }
+            let mut result = crate::engine::types::PhpArray::new();
+            if let PhpValue::Array(ref arr) = args[0].value {
+                let mut idx: u64 = 0;
+                for bucket in &arr.ar_data {
+                    let val = clone_val(&bucket.val);
+                    let _ = crate::engine::hash::hash_add_or_update(&mut result, None, idx, val, 0);
+                    idx += 1;
+                }
+            }
+            Ok(Some(Val::new(PhpValue::Array(Box::new(result)), PhpType::Array)))
+        }
+        "array_pop" => {
+            if args.is_empty() {
+                return Ok(Some(null_val()));
+            }
+            if let PhpValue::Array(ref arr) = args[0].value {
+                if let Some(bucket) = arr.ar_data.last() {
+                    Ok(Some(clone_val(&bucket.val)))
+                } else {
+                    Ok(Some(null_val()))
+                }
+            } else {
+                Ok(Some(null_val()))
+            }
+        }
+        "array_shift" => {
+            if args.is_empty() {
+                return Ok(Some(null_val()));
+            }
+            if let PhpValue::Array(ref arr) = args[0].value {
+                if let Some(bucket) = arr.ar_data.first() {
+                    Ok(Some(clone_val(&bucket.val)))
+                } else {
+                    Ok(Some(null_val()))
+                }
+            } else {
+                Ok(Some(null_val()))
+            }
+        }
+        "array_slice" => {
+            if args.len() < 2 {
+                return Err("array_slice() expects at least 2 arguments".into());
+            }
+            let offset = crate::engine::operators::zval_get_long(&args[1]) as usize;
+            let length = if args.len() >= 3 {
+                crate::engine::operators::zval_get_long(&args[2]) as usize
+            } else {
+                usize::MAX
+            };
+            let mut result = crate::engine::types::PhpArray::new();
+            if let PhpValue::Array(ref arr) = args[0].value {
+                let mut idx: u64 = 0;
+                for bucket in arr.ar_data.iter().skip(offset).take(length) {
+                    let val = clone_val(&bucket.val);
+                    if let Some(ref k) = bucket.key {
+                        let key = crate::engine::string::string_init(k.as_str(), false);
+                        let _ = crate::engine::hash::hash_add_or_update(&mut result, Some(&key), 0, val, 0);
+                    } else {
+                        let _ = crate::engine::hash::hash_add_or_update(&mut result, None, idx, val, 0);
+                        idx += 1;
+                    }
+                }
+            }
+            Ok(Some(Val::new(PhpValue::Array(Box::new(result)), PhpType::Array)))
+        }
+        "array_reverse" => {
+            if args.is_empty() {
+                return Ok(Some(Val::new(PhpValue::Array(Box::new(crate::engine::types::PhpArray::new())), PhpType::Array)));
+            }
+            let mut result = crate::engine::types::PhpArray::new();
+            if let PhpValue::Array(ref arr) = args[0].value {
+                let preserve_keys = args.get(1).map(|a| crate::engine::operators::zval_get_bool(a)).unwrap_or(false);
+                let mut idx: u64 = 0;
+                for bucket in arr.ar_data.iter().rev() {
+                    let val = clone_val(&bucket.val);
+                    if preserve_keys {
+                        if let Some(ref k) = bucket.key {
+                            let key = crate::engine::string::string_init(k.as_str(), false);
+                            let _ = crate::engine::hash::hash_add_or_update(&mut result, Some(&key), 0, val, 0);
+                        } else {
+                            let _ = crate::engine::hash::hash_add_or_update(&mut result, None, bucket.h, val, 0);
+                        }
+                    } else {
+                        let _ = crate::engine::hash::hash_add_or_update(&mut result, None, idx, val, 0);
+                        idx += 1;
+                    }
+                }
+            }
+            Ok(Some(Val::new(PhpValue::Array(Box::new(result)), PhpType::Array)))
+        }
         "array_push" => {
             if args.len() < 2 {
                 return Err("array_push() expects at least 2 arguments".into());
             }
-            Ok(Some(Val::new(PhpValue::Long(0), PhpType::Long)))
+            let current_count = if let PhpValue::Array(ref arr) = args[0].value {
+                arr.ar_data.len()
+            } else {
+                0
+            };
+            Ok(Some(Val::new(PhpValue::Long((current_count + args.len() - 1) as i64), PhpType::Long)))
         }
         "array_merge" => {
             let mut merged = crate::engine::types::PhpArray::new();
@@ -849,24 +973,57 @@ pub(crate) fn execute_builtin_function(
 
         // --- Output buffering ---
         "ob_start" => {
-            crate::php::output::php_output_start()?;
+            if args.is_empty() {
+                crate::php::output::php_output_start()?;
+            } else {
+                let cb = crate::engine::operators::zval_get_string(&args[0]).as_str().to_string();
+                crate::php::output::php_output_start_with_callback(cb)?;
+            }
             Ok(Some(bool_val(true)))
         }
         "ob_end_clean" => match crate::php::output::php_output_end_clean() {
             Ok(()) => Ok(Some(bool_val(true))),
             Err(_) => Ok(Some(bool_val(false))),
         },
-        "ob_end_flush" => match crate::php::output::php_output_end_flush() {
-            Ok(_) => Ok(Some(bool_val(true))),
-            Err(_) => Ok(Some(bool_val(false))),
-        },
+        "ob_end_flush" => {
+            match crate::php::output::php_output_take() {
+                Ok((contents, callback)) => {
+                    let out = if let Some(cb_name) = callback {
+                        let cb_arg = string_val(&contents);
+                        match execute_builtin_function(&cb_name, &[cb_arg], _execute_data)? {
+                            Some(result) => crate::engine::operators::zval_get_string(&result).as_str().to_string(),
+                            None => contents,
+                        }
+                    } else {
+                        contents
+                    };
+                    let _ = crate::php::output::php_output_write_to_active(out.as_bytes());
+                    Ok(Some(bool_val(true)))
+                }
+                Err(_) => Ok(Some(bool_val(false))),
+            }
+        }
         "ob_get_clean" => {
             let contents = crate::php::output::php_output_get_clean().unwrap_or_default();
             Ok(Some(string_val(&contents)))
         }
         "ob_get_flush" => {
-            let contents = crate::php::output::php_output_get_flush().unwrap_or_default();
-            Ok(Some(string_val(&contents)))
+            match crate::php::output::php_output_take_clean() {
+                Ok((contents, callback)) => {
+                    let out = if let Some(cb_name) = callback {
+                        let cb_arg = string_val(&contents);
+                        match execute_builtin_function(&cb_name, &[cb_arg], _execute_data)? {
+                            Some(result) => crate::engine::operators::zval_get_string(&result).as_str().to_string(),
+                            None => contents,
+                        }
+                    } else {
+                        contents
+                    };
+                    let _ = crate::php::output::php_output_write_to_active(out.as_bytes());
+                    Ok(Some(string_val(&out)))
+                }
+                Err(_) => Ok(Some(string_val(""))),
+            }
         }
         "ob_get_contents" => {
             let contents = crate::php::output::php_output_get_contents().unwrap_or_default();
