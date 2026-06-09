@@ -26,6 +26,7 @@ pub mod execute;
 pub mod execute_data;
 mod format;
 mod handlers;
+pub mod reflection;
 pub mod opcodes;
 
 // Re-export public API

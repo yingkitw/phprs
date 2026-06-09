@@ -871,6 +871,91 @@ pub fn execute_fetch_obj_prop(
             clone_val(v)
         } else {
             let class_name = obj.class_name.clone();
+
+            // Magic method: __isset for undefined properties
+            let isset_allowed = execute_data
+                .class_table
+                .get(&class_name)
+                .and_then(|ce| ce.methods.get("__isset"))
+                .map(|m| {
+                    let params = m.params.clone();
+                    let ops: Vec<Op> = m
+                        .op_array
+                        .ops
+                        .iter()
+                        .map(|op| {
+                            Op::new(
+                                op.opcode,
+                                clone_val(&op.op1),
+                                clone_val(&op.op2),
+                                clone_val(&op.result),
+                                op.extended_value,
+                            )
+                        })
+                        .collect();
+                    let file_label = m
+                        .op_array
+                        .filename
+                        .clone()
+                        .filter(|f| !f.is_empty())
+                        .unwrap_or_else(|| format!("{}::__isset", class_name));
+                    (params, ops, file_label)
+                });
+
+            if let Some((params, ops, oparray_filename)) = isset_allowed {
+                let saved_current_op = execute_data.current_op;
+                let saved_op_array = execute_data.op_array.take();
+                let saved_script_dir = execute_data.current_script_dir.clone();
+                let saved_magic_dir = execute_data.constants.get("__DIR__").map(clone_val);
+                let saved_magic_file = execute_data.constants.get("__FILE__").map(clone_val);
+                let saved_called_class = execute_data.called_class.clone();
+                execute_data.called_class = Some(class_name.clone());
+                execute_data.set_var("this", clone_val(&obj_val));
+
+                let name_val = Val::new(
+                    PhpValue::String(Box::new(crate::engine::string::string_init(prop_name.as_str(), false))),
+                    PhpType::String,
+                );
+                bind_call_args(execute_data, &params, &[name_val], &[None], &None);
+
+                let mut method_op_array = OpArray::with_capacity(ops.len(), oparray_filename);
+                method_op_array.ops = ops;
+                let (_status, isset_result) =
+                    super::execute::execute_ex_returning(execute_data, &method_op_array);
+                execute_data.op_array = saved_op_array;
+                execute_data.current_op = saved_current_op;
+                execute_data.current_script_dir = saved_script_dir;
+                execute_data.called_class = saved_called_class;
+                match saved_magic_dir {
+                    Some(v) => { execute_data.constants.insert("__DIR__".to_string(), v); }
+                    None => { execute_data.constants.remove("__DIR__"); }
+                }
+                match saved_magic_file {
+                    Some(v) => { execute_data.constants.insert("__FILE__".to_string(), v); }
+                    None => { execute_data.constants.remove("__FILE__"); }
+                }
+
+                let is_true = isset_result.map(|v| {
+                    match v.get_type() {
+                        PhpType::True | PhpType::Object | PhpType::Array => true,
+                        PhpType::String => {
+                            let s = crate::engine::operators::zval_get_string(&v);
+                            !s.as_str().is_empty() && s.as_str() != "0"
+                        }
+                        PhpType::Long => crate::engine::operators::zval_get_long(&v) != 0,
+                        PhpType::Double => crate::engine::operators::zval_get_double(&v) != 0.0,
+                        _ => false,
+                    }
+                }).unwrap_or(false);
+
+                if !is_true {
+                    if let Some(slot) = result_slot(op) {
+                        execute_data.set_temp(slot, Val::new(PhpValue::Long(0), PhpType::Null));
+                    }
+                    return Ok(ExecResult::Continue);
+                }
+            }
+
             let magic_info = execute_data
                 .class_table
                 .get(&class_name)
@@ -1150,6 +1235,45 @@ pub fn execute_do_method_call(
 
     if let PhpValue::Object(ref obj) = obj_val.value {
         let class_name = obj.class_name.clone();
+
+        // Handle built-in reflection classes
+        if class_name == "ReflectionClass" || class_name == "ReflectionMethod" || class_name == "ReflectionProperty" {
+            let (base, _names_base) = execute_data.call_arg_stack.pop().unwrap_or((0, 0));
+            let args: Vec<Val> = execute_data.call_args.drain(base..).collect();
+            execute_data.called_class = Some(class_name.clone());
+            execute_data.set_var("this", clone_val(&obj_val));
+
+            let ret = match class_name.as_str() {
+                "ReflectionClass" => crate::engine::vm::reflection::execute_reflection_class_method(method_name.as_str(), &args, execute_data),
+                "ReflectionMethod" => crate::engine::vm::reflection::execute_reflection_method(method_name.as_str(), &args, execute_data),
+                "ReflectionProperty" => crate::engine::vm::reflection::execute_reflection_property(method_name.as_str(), &args, execute_data),
+                _ => None,
+            };
+
+            // Copy modified $this back
+            let this_val = execute_data.get_var("this");
+            if is_temp_ref(&op.op2) {
+                if let PhpValue::Long(slot_idx) = op.op2.value {
+                    execute_data.set_temp(slot_idx as usize, this_val);
+                }
+            } else if is_var_ref(&op.op2) {
+                if let PhpValue::String(ref s) = op.op2.value {
+                    let vname = s.as_str();
+                    let name = if vname.starts_with('$') { &vname[1..] } else { vname };
+                    execute_data.set_var(name, this_val);
+                }
+            }
+
+            if let Some(slot) = result_slot(op) {
+                if let Some(val) = ret {
+                    execute_data.set_temp(slot, val);
+                } else {
+                    execute_data.set_temp(slot, Val::new(PhpValue::Long(0), PhpType::Null));
+                }
+            }
+            return Ok(ExecResult::Continue);
+        }
+
         // Extract method info (owned copies to avoid borrow conflict)
         let method_info: Option<(Vec<String>, Vec<Op>, String)> = execute_data
             .class_table

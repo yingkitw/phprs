@@ -6,7 +6,7 @@ use super::execute_data::ExecuteData;
 use crate::engine::hash::{hash_add_or_update, hash_init};
 use crate::engine::operators::{zval_get_bool, zval_get_double, zval_get_long, zval_get_string};
 use crate::engine::string::string_init;
-use crate::engine::types::{PhpArray, PhpType, PhpValue, Val};
+use crate::engine::types::{PhpArray, PhpObject, PhpType, PhpValue, Val};
 
 fn str_val(s: &str) -> Val {
     Val::new(
@@ -842,4 +842,49 @@ fn file_exists_and_file_get_contents_resolved() {
         .unwrap();
     assert_eq!(zval_get_string(&contents).as_str(), "payload");
     drain_output_buffers();
+}
+
+// --- Reflection API ---
+
+#[test]
+fn reflection_class_methods() {
+    let mut ed = ExecuteData::new();
+    // Register a test class
+    let mut ce = crate::engine::types::ClassEntry::new("TestReflectClass");
+    ce.default_properties.insert("foo".to_string(), str_val("bar"));
+    ed.class_table.insert("TestReflectClass".to_string(), ce);
+
+    // Create ReflectionClass object as $this
+    let mut rc_obj = crate::engine::types::PhpObject::new("ReflectionClass");
+    rc_obj.properties.insert("name".to_string(), str_val("TestReflectClass"));
+    let rc_val = Val::new(PhpValue::Object(Box::new(rc_obj)), PhpType::Object);
+    ed.set_var("this", rc_val);
+
+    // getName
+    let name = crate::engine::vm::reflection::execute_reflection_class_method("getName", &[], &mut ed);
+    assert!(name.is_some());
+    assert_eq!(zval_get_string(&name.unwrap()).as_str(), "TestReflectClass");
+
+    // getMethods
+    let methods = crate::engine::vm::reflection::execute_reflection_class_method("getMethods", &[], &mut ed);
+    assert!(methods.is_some());
+
+    // getProperties
+    let props = crate::engine::vm::reflection::execute_reflection_class_method("getProperties", &[], &mut ed);
+    assert!(props.is_some());
+    if let PhpValue::Array(ref arr) = props.unwrap().value {
+        assert_eq!(arr.ar_data.len(), 1);
+    } else {
+        panic!("getProperties should return array");
+    }
+
+    // hasProperty
+    let has = crate::engine::vm::reflection::execute_reflection_class_method("hasProperty", &[str_val("foo")], &mut ed);
+    assert!(has.is_some());
+    assert!(zval_get_bool(&has.unwrap()));
+
+    // hasMethod
+    let has_m = crate::engine::vm::reflection::execute_reflection_class_method("hasMethod", &[str_val("nonexistent")], &mut ed);
+    assert!(has_m.is_some());
+    assert!(!zval_get_bool(&has_m.unwrap()));
 }

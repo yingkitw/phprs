@@ -98,6 +98,30 @@ echo $obj->doSomething(1, 2, 3);
 }
 
 #[test]
+fn test_magic_methods_isset() {
+    let code = r#"<?php
+class IssetBox {
+    public function __isset($name) {
+        $result = $name == "allowed";
+        return $result;
+    }
+    public function __get($name) {
+        return "got_" . $name;
+    }
+}
+$box = new IssetBox();
+echo isset($box->allowed) ? "yes" : "no";
+echo "|";
+echo isset($box->blocked) ? "yes" : "no";
+echo "|";
+echo $box->allowed;
+"#;
+    let (r, out) = run_php(code).expect("run");
+    assert!(matches!(r, PhpResult::Success), "vm result: {r:?}, output: {out:?}");
+    assert!(out.contains("yes|no|got_allowed"), "__isset magic: {out:?}");
+}
+
+#[test]
 fn test_anonymous_class() {
     let code = r#"<?php
 $obj = new class {

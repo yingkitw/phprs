@@ -34,6 +34,21 @@ pub(crate) fn var_dump_value(val: &Val) -> String {
                 "array(0) {}\n".to_string()
             }
         }
+        PhpType::Object => {
+            if let PhpValue::Object(ref obj) = val.value {
+                let count = obj.properties.len();
+                let mut out = format!("object({})#1 ({}) {{
+", obj.class_name, count);
+                for (key, prop_val) in &obj.properties {
+                    out.push_str(&format!("  [\"{}\"]=>\n  ", key));
+                    out.push_str(&var_dump_value(prop_val));
+                }
+                out.push_str("}\n");
+                out
+            } else {
+                "object(unknown)\n".to_string()
+            }
+        }
         _ => format!("unknown type({})\n", val.type_info),
     }
 }

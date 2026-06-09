@@ -146,7 +146,8 @@
 - **Framework examples**: WordPress (full), CodeIgniter 4 (bootstrap), Drupal (bootstrap)
 - **67 opcodes** (dispatch table, dispatch_handlers) — added FetchStaticProp, DoStaticCall, CloneObj, SendValNamed
 - **130+ built-in functions** (including isset, empty, htmlspecialchars, preg_*, math functions, hash functions, datetime functions, mbstring functions, shortcode_atts, array_merge, ucfirst, introspection functions, SPL autoloading, array_keys/values/pop/shift/slice/reverse, etc.)
-- **315 passing tests** (100% pass rate) plus `tests/php8x_features.rs` covering static members, late static binding, magic methods, anonymous classes, variadic functions, named arguments, union types, enums
+- **316 passing tests** (100% pass rate) plus `tests/php8x_features.rs` (13 tests) covering static members, late static binding, magic methods (__get, __set, __call, __isset), anonymous classes, variadic functions, named arguments, union types, enums
+- **Known compiler bug**: returning comparison expressions directly (`return $a == $b`) evaluates to true; workaround is to assign to a variable first (`$result = $a == $b; return $result;`)
 - **Zero compilation warnings** (clean build with clippy)
 - **Thread-safe** JIT and optimizer (Arc, OnceLock, RwLock)
 
@@ -232,7 +233,9 @@
 - [x] **Late static binding** (`static::` keyword, runtime resolution via `called_class`)
 - [x] **Magic methods** - `__get`, `__set`, `__call`, `__callStatic`
 - [x] **Magic methods** (remaining) - `__toString`, `__invoke`, `__clone`
-- [ ] **Magic methods** (pending) - `__isset`, `__unset`, `__debugInfo`, `__serialize`, `__unserialize`
+- [x] **Magic methods** - `__isset` (called from FetchObjProp before __get)
+- [x] **Magic methods** (partial) - `__debugInfo` (object dumping in var_dump; method invocation requires ExecuteData in builtins)
+- [ ] **Magic methods** (pending) - `__unset` (requires compiler support for `unset($obj->prop)`), `__serialize`, `__unserialize`
 - [x] **Anonymous classes** - `new class { ... }` with optional extends/implements
 - [x] **Variadic functions** - `...$args` parameter unpacking in VM
 - [x] **Named arguments** (PHP 8.0) - `func(param: value)` via `SendValNamed` opcode
@@ -273,7 +276,8 @@
   - [x] `random_bytes()`, `random_int()`
 
 ### Advanced Features
-- [ ] **Reflection API** - Full reflection support for classes, methods, properties
+- [x] **Reflection API** (basic) - `ReflectionClass`, `ReflectionMethod`, `ReflectionProperty` with `getName()`, `getMethods()`, `getProperties()`, `hasMethod()`, `hasProperty()`, `getParentClass()`, `getDeclaringClass()`
+- [ ] **Reflection API** (full) - `ReflectionParameter`, `ReflectionFunction`, `ReflectionExtension`, etc.
 - [ ] **SPL (Standard PHP Library)**
   - [ ] Iterators (ArrayIterator, DirectoryIterator, RecursiveDirectoryIterator)
   - [ ] Data structures (SplStack, SplQueue, SplHeap, SplPriorityQueue)

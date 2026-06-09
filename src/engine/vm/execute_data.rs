@@ -125,7 +125,7 @@ pub struct ExecuteData {
 
 impl ExecuteData {
     pub fn new() -> Self {
-        Self {
+        let mut ed = Self {
             op_array: None,
             current_op: 0,
             symbol_table: Some(crate::engine::types::PhpArray::new()),
@@ -144,7 +144,14 @@ impl ExecuteData {
             called_class: None,
             call_arg_stack: Vec::new(),
             autoload_functions: Vec::new(),
-        }
+        };
+        ed.register_reflection_classes();
+        ed
+    }
+
+    /// Register built-in reflection classes
+    pub fn register_reflection_classes(&mut self) {
+        crate::engine::vm::reflection::register_reflection_classes(self);
     }
 
     /// Ensure temp_vars has at least `n` slots
