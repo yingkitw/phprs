@@ -64,7 +64,7 @@ impl KeywordCache {
     }
 }
 
-/// Optimized string handling using Cow<str>
+/// Optimized string handling using `Cow<str>`
 ///
 /// This avoids unnecessary allocations when the string is already owned
 /// or when we can borrow the data
