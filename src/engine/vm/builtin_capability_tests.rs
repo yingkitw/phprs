@@ -737,6 +737,47 @@ fn mbstring_builtins_smoke() {
     assert!(!zval_get_string(&trimw).as_str().is_empty());
 }
 
+// --- Introspection ---
+
+#[test]
+fn class_exists_builtin() {
+    let mut ed = ExecuteData::new();
+    assert!(!zval_get_bool(&run("class_exists", &[str_val("NonExistent")], &mut ed).unwrap().unwrap()));
+}
+
+#[test]
+fn method_exists_builtin() {
+    let mut ed = ExecuteData::new();
+    assert!(!zval_get_bool(&run("method_exists", &[str_val("NonExistent"), str_val("foo")], &mut ed).unwrap().unwrap()));
+}
+
+#[test]
+fn function_exists_builtin() {
+    let mut ed = ExecuteData::new();
+    assert!(zval_get_bool(&run("function_exists", &[str_val("strlen")], &mut ed).unwrap().unwrap()));
+    assert!(!zval_get_bool(&run("function_exists", &[str_val("nonexistent_fn_xyz")], &mut ed).unwrap().unwrap()));
+}
+
+#[test]
+fn gettype_builtin() {
+    let mut ed = ExecuteData::new();
+    assert_eq!(zval_get_string(&run("gettype", &[long_val(42)], &mut ed).unwrap().unwrap()).as_str(), "integer");
+    assert_eq!(zval_get_string(&run("gettype", &[str_val("hello")], &mut ed).unwrap().unwrap()).as_str(), "string");
+    assert_eq!(zval_get_string(&run("gettype", &[null_val()], &mut ed).unwrap().unwrap()).as_str(), "NULL");
+}
+
+// --- SPL autoloading ---
+
+#[test]
+fn spl_autoload_register_and_unregister() {
+    let mut ed = ExecuteData::new();
+    assert!(zval_get_bool(&run("spl_autoload_register", &[str_val("my_autoloader")], &mut ed).unwrap().unwrap()));
+    let funcs = run("spl_autoload_functions", &[], &mut ed).unwrap().unwrap();
+    assert_eq!(funcs.get_type(), PhpType::Array);
+    assert!(zval_get_bool(&run("spl_autoload_unregister", &[str_val("my_autoloader")], &mut ed).unwrap().unwrap()));
+    assert!(!zval_get_bool(&run("spl_autoload_unregister", &[str_val("my_autoloader")], &mut ed).unwrap().unwrap()));
+}
+
 // --- Filesystem (local) ---
 
 #[test]

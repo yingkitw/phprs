@@ -145,8 +145,8 @@
 - **PHP runtime**: 19 source files in php/ (added regex, http_stream, pdo, math, hash, datetime, mbstring)
 - **Framework examples**: WordPress (full), CodeIgniter 4 (bootstrap), Drupal (bootstrap)
 - **67 opcodes** (dispatch table, dispatch_handlers) — added FetchStaticProp, DoStaticCall, CloneObj, SendValNamed
-- **110+ built-in functions** (including isset, empty, htmlspecialchars, preg_*, math functions, hash functions, datetime functions, mbstring functions, shortcode_atts, array_merge, ucfirst, etc.)
-- **271 passing tests** (100% pass rate) plus `tests/php8x_features.rs` covering static members, late static binding, magic methods, anonymous classes, variadic functions, named arguments, union types, enums
+- **120+ built-in functions** (including isset, empty, htmlspecialchars, preg_*, math functions, hash functions, datetime functions, mbstring functions, shortcode_atts, array_merge, ucfirst, introspection functions, SPL autoloading, etc.)
+- **312 passing tests** (100% pass rate) plus `tests/php8x_features.rs` covering static members, late static binding, magic methods, anonymous classes, variadic functions, named arguments, union types, enums
 - **Zero compilation warnings** (clean build with clippy)
 - **Thread-safe** JIT and optimizer (Arc, OnceLock, RwLock)
 
@@ -231,7 +231,8 @@
 - [x] **Static properties and methods** - Full static member support with `ClassName::$prop`, `ClassName::method()`, `static::`
 - [x] **Late static binding** (`static::` keyword, runtime resolution via `called_class`)
 - [x] **Magic methods** - `__get`, `__set`, `__call`, `__callStatic`
-- [ ] **Magic methods** (remaining) - `__isset`, `__unset`, `__toString`, `__invoke`, `__clone`, `__debugInfo`, `__serialize`, `__unserialize`
+- [x] **Magic methods** (remaining) - `__toString`, `__invoke`, `__clone`
+- [ ] **Magic methods** (pending) - `__isset`, `__unset`, `__debugInfo`, `__serialize`, `__unserialize`
 - [x] **Anonymous classes** - `new class { ... }` with optional extends/implements
 - [x] **Variadic functions** - `...$args` parameter unpacking in VM
 - [x] **Named arguments** (PHP 8.0) - `func(param: value)` via `SendValNamed` opcode
@@ -262,6 +263,7 @@
   - [x] mb_convert_encoding() (basic UTF-8 support)
   - [x] mb_substr_count()
   - [x] mb_strwidth() and mb_strimwidth()
+- [x] **Introspection functions** - `class_exists()`, `interface_exists()`, `trait_exists()`, `method_exists()`, `property_exists()`, `function_exists()`, `get_class()`, `get_parent_class()`, `gettype()`
 - [ ] **XML parsing** - SimpleXML, XMLReader, XMLWriter
 - [x] **CSV handling** - `fgetcsv()`, `fputcsv()`, `str_getcsv()`
 - [x] **Compression** - `gzcompress()`, `gzuncompress()`, `gzencode()`, `gzdecode()`, `gzdeflate()`, `gzinflate()`
@@ -277,7 +279,7 @@
   - [ ] Data structures (SplStack, SplQueue, SplHeap, SplPriorityQueue)
   - [ ] Exceptions (SPL exception hierarchy)
   - [ ] File handling (SplFileObject, SplFileInfo)
-- [ ] **Autoloading** - `spl_autoload_register()`, PSR-4 autoloader
+- [x] **Autoloading** - `spl_autoload_register()`, `spl_autoload_unregister()`, `spl_autoload_functions()` (runtime registration); PSR-4 autoloader generation (package manager)
 - [x] **Error handling improvements**
   - [x] Custom error handlers (`set_error_handler()`)
   - [x] Exception handlers (`set_exception_handler()`)

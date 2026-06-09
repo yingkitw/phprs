@@ -119,6 +119,8 @@ pub struct ExecuteData {
     pub called_class: Option<String>,
     /// Stack for nested function call argument tracking (InitFCall pushes, DoFCall pops)
     pub call_arg_stack: Vec<(usize, usize)>,
+    /// SPL autoload function names (registered by spl_autoload_register())
+    pub autoload_functions: Vec<String>,
 }
 
 impl ExecuteData {
@@ -141,6 +143,7 @@ impl ExecuteData {
             shutdown_functions: Vec::new(),
             called_class: None,
             call_arg_stack: Vec::new(),
+            autoload_functions: Vec::new(),
         }
     }
 

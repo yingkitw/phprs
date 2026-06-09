@@ -48,6 +48,47 @@ fn resolve_path_for_runtime(path: &str, execute_data: &ExecuteData) -> String {
     }
 }
 
+/// Check if a function name corresponds to a built-in
+pub(crate) fn is_builtin_function(name: &str) -> bool {
+    matches!(
+        name,
+        "strlen" | "strpos" | "substr" | "str_replace" | "strtolower" | "strtoupper"
+        | "trim" | "explode" | "implode" | "join" | "sprintf" | "intval" | "floatval"
+        | "doubleval" | "strval" | "isset" | "empty" | "unset" | "is_string"
+        | "is_int" | "is_float" | "is_bool" | "is_array" | "is_null" | "is_object"
+        | "array_key_exists" | "in_array" | "count" | "sizeof" | "array_push"
+        | "array_merge" | "var_dump" | "print_r" | "echo" | "print" | "json_encode"
+        | "json_decode" | "file_get_contents" | "file_exists" | "define" | "defined"
+        | "constant" | "class_exists" | "interface_exists" | "trait_exists"
+        | "method_exists" | "property_exists" | "function_exists" | "get_class"
+        | "get_parent_class" | "gettype" | "spl_autoload_register"
+        | "spl_autoload_unregister" | "spl_autoload_functions" | "phpversion"
+        | "phpinfo" | "ob_start" | "ob_end_clean" | "ob_end_flush" | "ob_get_clean"
+        | "ob_get_flush" | "ob_get_contents" | "ob_get_level" | "ob_clean" | "ob_flush"
+        | "ob_implicit_flush" | "set_error_handler" | "set_exception_handler"
+        | "register_shutdown_function" | "strlen" | "abs" | "ceil" | "floor" | "round"
+        | "sqrt" | "pow" | "exp" | "log" | "log10" | "sin" | "cos" | "tan" | "asin"
+        | "acos" | "atan" | "atan2" | "pi" | "max" | "min" | "rand" | "md5" | "sha1"
+        | "hash" | "hash_hmac" | "base64_encode" | "base64_decode" | "crc32" | "bin2hex"
+        | "hex2bin" | "random_bytes" | "random_int" | "password_hash" | "password_verify"
+        | "time" | "microtime" | "date" | "mktime" | "strtotime" | "parse_url"
+        | "http_build_query" | "urlencode" | "urldecode" | "rawurlencode" | "rawurldecode"
+        | "parse_str" | "get_headers" | "str_getcsv" | "fgetcsv" | "fputcsv"
+        | "gzcompress" | "gzuncompress" | "gzencode" | "gzdecode" | "gzdeflate"
+        | "gzinflate" | "mb_strlen" | "mb_substr" | "mb_strtolower" | "mb_strtoupper"
+        | "mb_strpos" | "mb_strrpos" | "mb_convert_encoding" | "mb_substr_count"
+        | "mb_strwidth" | "mb_strimwidth" | "dirname" | "die" | "exit" | "do_action"
+        | "apply_filters" | "shortcode_atts" | "array_merge" | "ucfirst" | "htmlspecialchars"
+        | "htmlspecialchars_decode" | "htmlentities" | "wordwrap" | "nl2br" | "str_repeat"
+        | "str_pad" | "str_split" | "chunk_split" | "strip_tags" | "addslashes"
+        | "stripslashes" | "quotemeta" | "ucwords" | "lcfirst" | "strrev" | "str_shuffle"
+        | "str_contains" | "str_starts_with" | "str_ends_with" | "str_ireplace"
+        | "strtr" | "similar_text" | "levenshtein" | "metaphone" | "soundex" | "ucfirst"
+        | "number_format" | "money_format" | "decbin" | "bindec" | "decoct" | "octdec"
+        | "dechex" | "hexdec" | "base_convert" | "deg2rad" | "rad2deg"
+    )
+}
+
 /// Execute a built-in function call
 pub(crate) fn execute_builtin_function(
     name: &str,
@@ -636,6 +677,174 @@ pub(crate) fn execute_builtin_function(
         "phpinfo" => {
             let _ = crate::php::output::php_output_write(b"PHP-RS 0.1.0 (Rust implementation)\n");
             Ok(None)
+        }
+
+        // --- Class / object introspection ---
+        "class_exists" => {
+            if args.is_empty() {
+                return Ok(Some(bool_val(false)));
+            }
+            let name = crate::engine::operators::zval_get_string(&args[0]).as_str().to_string();
+            let exists = _execute_data.class_table.contains_key(&name);
+            Ok(Some(bool_val(exists)))
+        }
+        "interface_exists" => {
+            if args.is_empty() {
+                return Ok(Some(bool_val(false)));
+            }
+            let name = crate::engine::operators::zval_get_string(&args[0]).as_str().to_string();
+            let exists = _execute_data.class_table.get(&name).map(|ce| ce.methods.is_empty() && ce.default_properties.is_empty() && ce.static_properties.is_empty()).unwrap_or(false);
+            Ok(Some(bool_val(exists)))
+        }
+        "trait_exists" => {
+            if args.is_empty() {
+                return Ok(Some(bool_val(false)));
+            }
+            let name = crate::engine::operators::zval_get_string(&args[0]).as_str().to_string();
+            let trait_key = format!("__trait_{}", name);
+            let exists = _execute_data.class_table.contains_key(&trait_key);
+            Ok(Some(bool_val(exists)))
+        }
+        "method_exists" => {
+            if args.len() < 2 {
+                return Ok(Some(bool_val(false)));
+            }
+            let method_name = crate::engine::operators::zval_get_string(&args[1]).as_str().to_string();
+            let class_name = match &args[0].value {
+                PhpValue::Object(obj) => Some(obj.class_name.clone()),
+                _ => {
+                    let s = crate::engine::operators::zval_get_string(&args[0]).as_str().to_string();
+                    Some(s)
+                }
+            };
+            let exists = class_name.and_then(|cn| {
+                _execute_data.class_table.get(&cn).map(|ce| ce.methods.contains_key(&method_name))
+            }).unwrap_or(false);
+            Ok(Some(bool_val(exists)))
+        }
+        "property_exists" => {
+            if args.len() < 2 {
+                return Ok(Some(bool_val(false)));
+            }
+            let prop_name = crate::engine::operators::zval_get_string(&args[1]).as_str().to_string();
+            let class_name = match &args[0].value {
+                PhpValue::Object(obj) => Some(obj.class_name.clone()),
+                _ => {
+                    let s = crate::engine::operators::zval_get_string(&args[0]).as_str().to_string();
+                    Some(s)
+                }
+            };
+            let exists = class_name.and_then(|cn| {
+                _execute_data.class_table.get(&cn).map(|ce| {
+                    ce.default_properties.contains_key(&prop_name)
+                        || ce.static_properties.contains_key(&prop_name)
+                })
+            }).unwrap_or(false);
+            Ok(Some(bool_val(exists)))
+        }
+        "function_exists" => {
+            if args.is_empty() {
+                return Ok(Some(bool_val(false)));
+            }
+            let name = crate::engine::operators::zval_get_string(&args[0]).as_str().to_string();
+            let user_exists = _execute_data.function_table.as_ref().and_then(|ft| {
+                ft.downcast_ref::<crate::engine::compile::function_table::FunctionTable>()
+            }).map(|ft| ft.has_function(&name)).unwrap_or(false);
+            Ok(Some(bool_val(user_exists || is_builtin_function(&name))))
+        }
+        "get_class" => {
+            let class_name = if args.is_empty() {
+                match &_execute_data.get_var("this").value {
+                    PhpValue::Object(obj) => Some(obj.class_name.clone()),
+                    _ => None,
+                }
+            } else {
+                match &args[0].value {
+                    PhpValue::Object(obj) => Some(obj.class_name.clone()),
+                    _ => None,
+                }
+            };
+            match class_name {
+                Some(cn) => Ok(Some(string_val(&cn))),
+                None => Ok(Some(bool_val(false))),
+            }
+        }
+        "get_parent_class" => {
+            let class_name = if args.is_empty() {
+                match &_execute_data.get_var("this").value {
+                    PhpValue::Object(obj) => Some(obj.class_name.clone()),
+                    _ => None,
+                }
+            } else {
+                match &args[0].value {
+                    PhpValue::Object(obj) => Some(obj.class_name.clone()),
+                    _ => {
+                        let s = crate::engine::operators::zval_get_string(&args[0]).as_str().to_string();
+                        Some(s)
+                    }
+                }
+            };
+            let parent = class_name.and_then(|cn| {
+                _execute_data.class_table.get(&cn).and_then(|ce| ce.parent_name.clone())
+            });
+            match parent {
+                Some(ref p) => Ok(Some(string_val(p))),
+                None => Ok(Some(bool_val(false))),
+            }
+        }
+        "gettype" => {
+            if args.is_empty() {
+                return Ok(Some(string_val("NULL")));
+            }
+            let t = match args[0].get_type() {
+                PhpType::Null => "NULL",
+                PhpType::False | PhpType::True | PhpType::Bool => "boolean",
+                PhpType::Long | PhpType::Double => "integer",
+                PhpType::String => "string",
+                PhpType::Array => "array",
+                PhpType::Object => "object",
+                PhpType::Resource => "resource",
+                PhpType::Callable => "callable",
+                PhpType::ConstantAst => "string",
+                _ => "unknown type",
+            };
+            Ok(Some(string_val(t)))
+        }
+
+        // --- SPL autoloading ---
+        "spl_autoload_register" => {
+            if args.is_empty() {
+                return Ok(Some(bool_val(false)));
+            }
+            let cb = crate::engine::operators::zval_get_string(&args[0]).as_str().to_string();
+            if !_execute_data.autoload_functions.contains(&cb) {
+                _execute_data.autoload_functions.push(cb);
+            }
+            Ok(Some(bool_val(true)))
+        }
+        "spl_autoload_unregister" => {
+            if args.is_empty() {
+                return Ok(Some(bool_val(false)));
+            }
+            let cb = crate::engine::operators::zval_get_string(&args[0]).as_str().to_string();
+            let before = _execute_data.autoload_functions.len();
+            _execute_data.autoload_functions.retain(|f| f != &cb);
+            Ok(Some(bool_val(_execute_data.autoload_functions.len() < before)))
+        }
+        "spl_autoload_functions" => {
+            let mut arr = crate::engine::types::PhpArray::new();
+            for (i, f) in _execute_data.autoload_functions.iter().enumerate() {
+                let bucket = crate::engine::types::Bucket {
+                    val: string_val(f),
+                    h: i as u64,
+                    key: None,
+                };
+                arr.ar_data.push(bucket);
+                arr.n_num_used += 1;
+                arr.n_num_of_elements += 1;
+            }
+            arr.n_next_free_element = _execute_data.autoload_functions.len() as i64;
+            Ok(Some(Val::new(PhpValue::Array(Box::new(arr)), PhpType::Array)))
         }
 
         // --- Output buffering ---
