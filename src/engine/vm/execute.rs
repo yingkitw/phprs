@@ -52,6 +52,7 @@ fn init_dispatch_table() {
         table[Opcode::NewObj as usize] = execute_new_obj;
         table[Opcode::FetchObjProp as usize] = execute_fetch_obj_prop;
         table[Opcode::AssignObjProp as usize] = execute_assign_obj_prop;
+        table[Opcode::AssignStaticProp as usize] = execute_assign_static_prop;
         table[Opcode::InitMethodCall as usize] = execute_init_method_call;
         table[Opcode::DoMethodCall as usize] = execute_do_method_call;
         table[Opcode::Coalesce as usize] = execute_coalesce;

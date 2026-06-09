@@ -117,6 +117,8 @@ pub struct ExecuteData {
     pub shutdown_functions: Vec<String>,
     /// Late static binding: the class that was actually called (for static:: resolution)
     pub called_class: Option<String>,
+    /// Stack for nested function call argument tracking (InitFCall pushes, DoFCall pops)
+    pub call_arg_stack: Vec<(usize, usize)>,
 }
 
 impl ExecuteData {
@@ -138,6 +140,7 @@ impl ExecuteData {
             exception_handler: None,
             shutdown_functions: Vec::new(),
             called_class: None,
+            call_arg_stack: Vec::new(),
         }
     }
 

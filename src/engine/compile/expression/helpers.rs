@@ -68,6 +68,7 @@ pub(crate) fn token_to_primary(tok: &Token, context: &mut CompileContext) -> Res
                 _ => Ok(compile_constant_lookup(context, val)),
             }
         }
+        TokenType::T_STATIC => Ok(crate::engine::facade::string_val("static")),
         _ => Err(format!(
             "Unexpected token in expression: {:?}",
             tok.token_type
@@ -448,14 +449,32 @@ pub(crate) fn compile_new_obj(
     let class_token = lexer.next_token()?;
 
     // Anonymous class: new class { ... }
-    let (resolved_name, peek) = if class_token.token_type == TokenType::T_CLASS {
+    let (resolved_name, peek, ctor_args) = if class_token.token_type == TokenType::T_CLASS {
         use std::sync::atomic::{AtomicU64, Ordering};
         static ANON_CLASS_COUNTER: AtomicU64 = AtomicU64::new(0);
         let anon_name = format!("__anon_class_{}", ANON_CLASS_COUNTER.fetch_add(1, Ordering::Relaxed));
         let mut ce = crate::engine::types::ClassEntry::new(&anon_name);
 
-        // Optional: extends ParentClass
         let mut next = lexer.next_token()?;
+        let mut ctor_args = Vec::new();
+
+        // Check for constructor args before class body: class(args...)
+        if token_is_punct(&next, "(") {
+            let mut arg_token = lexer.next_token()?;
+            while !token_is_punct(&arg_token, ")") {
+                let (arg_val, after_arg) =
+                    super::operators::parse_additive_expr_with_initial(lexer, context, arg_token)?;
+                ctor_args.push(arg_val);
+                if token_is_punct(&after_arg, ",") {
+                    arg_token = lexer.next_token()?;
+                } else {
+                    arg_token = after_arg;
+                }
+            }
+            next = lexer.next_token()?; // token after )
+        }
+
+        // Optional: extends ParentClass
         if next.token_type == TokenType::T_EXTENDS {
             let parent_token = lexer.next_token()?;
             let parent_name = parent_token.value.as_ref()
@@ -482,14 +501,14 @@ pub(crate) fn compile_new_obj(
 
         crate::engine::compile::statement::oop::parse_class_body(lexer, context, &mut ce)?;
         context.register_class(ce);
-        (anon_name, lexer.next_token()?)
+        (anon_name, lexer.next_token()?, ctor_args)
     } else {
         let class_name = class_token
             .value
             .as_ref()
             .ok_or("Expected class name after 'new'")?
             .as_str();
-        (context.resolve_class_name(class_name), lexer.next_token()?)
+        (context.resolve_class_name(class_name), lexer.next_token()?, Vec::new())
     };
 
     let class_zval = facade::string_val(&resolved_name);
@@ -502,7 +521,9 @@ pub(crate) fn compile_new_obj(
     );
 
     // Check for constructor args: (...)
-    if token_is_punct(&peek, "(") {
+    let args = if !ctor_args.is_empty() {
+        ctor_args
+    } else if token_is_punct(&peek, "(") {
         let mut args = Vec::new();
         let mut arg_token = lexer.next_token()?;
         while !token_is_punct(&arg_token, ")") {
@@ -515,7 +536,12 @@ pub(crate) fn compile_new_obj(
                 arg_token = after_arg;
             }
         }
+        args
+    } else {
+        Vec::new()
+    };
 
+    if !args.is_empty() {
         // Emit InitMethodCall for __construct
         let obj_temp = temp_var_ref(slot);
         context.emit_opcode(
@@ -727,8 +753,9 @@ pub(crate) fn parse_call_arg(
     // Check for named argument: name: value
     if first_token.token_type == TokenType::T_STRING {
         let name = first_token.value.as_ref().unwrap().as_str();
-        let peek = lexer.next_token()?;
+        let peek = lexer.peek_token()?;
         if token_is_punct(&peek, ":") {
+            lexer.next_token()?; // consume ':'
             let (value, after) = super::parse_expression(lexer, context)?;
             context.emit_opcode(
                 Opcode::SendValNamed,
@@ -738,14 +765,9 @@ pub(crate) fn parse_call_arg(
             );
             return Ok(after);
         }
-        // Not a named argument, backtrack by parsing with the first token
-        let (arg_val, after) =
-            super::operators::parse_additive_expr_with_initial(lexer, context, first_token)?;
-        context.emit_opcode(Opcode::SendVal, arg_val, facade::null_val(), facade::null_val());
-        return Ok(after);
     }
 
-    // Positional argument
+    // Positional argument (or non-named T_STRING)
     let (arg_val, after) =
         super::operators::parse_additive_expr_with_initial(lexer, context, first_token)?;
     context.emit_opcode(Opcode::SendVal, arg_val, facade::null_val(), facade::null_val());

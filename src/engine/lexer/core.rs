@@ -10,6 +10,7 @@ pub struct Lexer {
     input: Vec<u8>,
     position: usize,
     lineno: u32,
+    pushback: Option<Token>,
 }
 
 impl Lexer {
@@ -18,6 +19,7 @@ impl Lexer {
             input: input.as_bytes().to_vec(),
             position: 0,
             lineno: 1,
+            pushback: None,
         }
     }
 
@@ -26,7 +28,20 @@ impl Lexer {
             input,
             position: 0,
             lineno: 1,
+            pushback: None,
         }
+    }
+
+    /// Push a token back to be returned on the next next_token() call
+    pub fn pushback_token(&mut self, token: Token) {
+        self.pushback = Some(token);
+    }
+
+    /// Peek at the next token without consuming it
+    pub fn peek_token(&mut self) -> Result<Token, String> {
+        let token = self.next_token()?;
+        self.pushback_token(token.clone());
+        Ok(token)
     }
 
     /// Get current character
@@ -61,6 +76,9 @@ impl Lexer {
 
     /// Get next token
     pub fn next_token(&mut self) -> Result<Token, String> {
+        if let Some(token) = self.pushback.take() {
+            return Ok(token);
+        }
         loop {
             skip_whitespace_with_lineno(&self.input, &mut self.position, &mut self.lineno);
 
@@ -292,7 +310,15 @@ impl Lexer {
             }
             b'.' => {
                 self.advance();
-                if self.current_char() == Some(b'=') {
+                if self.current_char() == Some(b'.') {
+                    self.advance();
+                    if self.current_char() == Some(b'.') {
+                        self.advance();
+                        Ok((TokenType::T_ELLIPSIS, "...".to_string()))
+                    } else {
+                        Ok((TokenType::T_STRING, "..".to_string()))
+                    }
+                } else if self.current_char() == Some(b'=') {
                     self.advance();
                     Ok((TokenType::T_CONCAT_EQUAL, ".=".to_string()))
                 } else {

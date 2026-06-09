@@ -72,6 +72,9 @@ pub(crate) fn parse_primary_expr(
                 let next_token = lexer.next_token()?;
                 if token_is_punct(&next_token, "(") {
                     parse_function_call(lexer, context, val)
+                } else if next_token.token_type == TokenType::T_PAAMAYIM_NEKUDOTAYIM {
+                    let class_val = facade::string_val(val);
+                    parse_access_chain(lexer, context, class_val, next_token)
                 } else {
                     // Bare identifier: treat as constant lookup (WordPress/PHP compatibility)
                     let result = super::helpers::compile_constant_lookup(context, val);

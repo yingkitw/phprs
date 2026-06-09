@@ -261,7 +261,7 @@ pub(crate) fn compile_enum(
                 .to_string();
 
             let peek = lexer.next_token()?;
-            if token_is_punct(&peek, "=") {
+            if peek.token_type == TokenType::T_EQUAL {
                 let (case_value, after) = parse_expression(lexer, context)?;
                 ce.constants.insert(case_name, case_value);
                 body_token = after;
@@ -417,7 +417,7 @@ fn compile_class_const(
         .to_string();
 
     let eq_token = lexer.next_token()?;
-    if !token_is_punct(&eq_token, "=") {
+    if eq_token.token_type != TokenType::T_EQUAL {
         return Err("Expected '=' after constant name".to_string());
     }
 

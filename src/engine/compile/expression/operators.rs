@@ -314,6 +314,14 @@ fn parse_multiplicative_expr_with_initial(
         return multiplicative_loop(lexer, context, result, next);
     }
 
+    // Handle T_STATIC
+    if initial_token.token_type == TokenType::T_STATIC {
+        let static_val = crate::engine::facade::string_val("static");
+        let next = lexer.next_token()?;
+        let (result, next_token) = parse_access_chain(lexer, context, static_val, next)?;
+        return multiplicative_loop(lexer, context, result, next_token);
+    }
+
     // Convert token to primary Val
     let initial_zval = token_to_primary(&initial_token, context)?;
 
@@ -339,6 +347,10 @@ fn parse_multiplicative_expr_with_initial(
             if token_is_punct(&next, "(") {
                 let fname = initial_token.value.as_ref().unwrap().as_str();
                 parse_function_call(lexer, context, fname)?
+            } else if next.token_type == TokenType::T_PAAMAYIM_NEKUDOTAYIM {
+                let class_val = crate::engine::facade::string_val(val);
+                let (result, next_token) = parse_access_chain(lexer, context, class_val, next)?;
+                return multiplicative_loop(lexer, context, result, next_token);
             } else {
                 (initial_zval, next)
             }

@@ -14,7 +14,7 @@ use super::expression::helpers::token_is_punct;
 use super::function::compile_function;
 use crate::engine::facade::{null_val, result_val, string_val, string_val_copy, zero_val, clone_val, StdValFactory, ValFactory};
 use crate::engine::lexer::{Token, Lexer, TokenType};
-use crate::engine::vm::Opcode;
+use crate::engine::vm::{Opcode, temp_var_ref};
 
 /// Helper: consume semicolon if present, return next token
 fn skip_semicolon(lexer: &mut Lexer, token: Token) -> Result<Token, String> {
@@ -277,6 +277,62 @@ fn compile_string_stmt(
     if token_is_punct(&next, "(") {
         let (_, after_token) = super::expression::parse_function_call_public(lexer, context, val)?;
         skip_semicolon(lexer, after_token)
+    } else if next.token_type == TokenType::T_PAAMAYIM_NEKUDOTAYIM {
+        // Static access statement: ClassName::method() or ClassName::$prop = expr
+        let class_val = string_val(val);
+        let member_token = lexer.next_token()?;
+        if member_token.token_type == TokenType::T_VARIABLE {
+            let prop_name = member_token.value.as_ref().unwrap().as_str();
+            let prop_zval = string_val(prop_name);
+            let after = lexer.next_token()?;
+            if after.token_type == TokenType::T_EQUAL {
+                // Static property assignment: ClassName::$prop = expr
+                let (value, after_value) = parse_expression(lexer, context)?;
+                context.emit_opcode(Opcode::AssignStaticProp, class_val, prop_zval, value);
+                skip_semicolon(lexer, after_value)
+            } else {
+                // Static property read as statement (result ignored)
+                let slot = context.alloc_temp();
+                context.emit_opcode(Opcode::FetchStaticProp, class_val, prop_zval, temp_var_ref(slot));
+                skip_semicolon(lexer, after)
+            }
+        } else {
+            let member_name = member_token.value.as_ref()
+                .ok_or("Expected member name after '::'")?
+                .as_str();
+            let member_zval = string_val(member_name);
+            let peek = lexer.next_token()?;
+            if token_is_punct(&peek, "(") {
+                // Static method call
+                context.emit_opcode(
+                    Opcode::InitFCall,
+                    null_val(),
+                    null_val(),
+                    null_val(),
+                );
+                let mut arg_token = lexer.next_token()?;
+                while !token_is_punct(&arg_token, ")") {
+                    arg_token = super::expression::helpers::parse_call_arg(lexer, context, arg_token)?;
+                    if token_is_punct(&arg_token, ",") {
+                        arg_token = lexer.next_token()?;
+                    }
+                }
+                let _call_slot = context.alloc_temp();
+                context.emit_opcode(
+                    Opcode::DoStaticCall,
+                    member_zval,
+                    class_val,
+                    null_val(),
+                );
+                let after_close = lexer.next_token()?;
+                skip_semicolon(lexer, after_close)
+            } else {
+                // Static constant access (result ignored)
+                let slot = context.alloc_temp();
+                context.emit_opcode(Opcode::FetchStaticProp, class_val, member_zval, temp_var_ref(slot));
+                skip_semicolon(lexer, peek)
+            }
+        }
     } else {
         Ok(next)
     }

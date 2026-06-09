@@ -394,7 +394,8 @@ pub fn execute_do_fcall(op: &Op, execute_data: &mut ExecuteData) -> Result<ExecR
                 execute_data.called_class = Some(obj.class_name.clone());
                 execute_data.set_var("this", clone_val(&resolved_op1));
 
-                let args: Vec<Val> = execute_data.call_args.drain(..).collect();
+                let (base, _names_base) = execute_data.call_arg_stack.pop().unwrap_or((0, 0));
+                let args: Vec<Val> = execute_data.call_args.drain(base..).collect();
                 for (i, param_name) in params.iter().enumerate() {
                     if let Some(arg) = args.get(i) {
                         execute_data.set_var(param_name, clone_val(arg));
@@ -410,8 +411,6 @@ pub fn execute_do_fcall(op: &Op, execute_data: &mut ExecuteData) -> Result<ExecR
                 execute_data.current_script_dir = saved_script_dir;
                 execute_data.called_class = saved_called_class;
 
-                execute_data.call_args.clear();
-                execute_data.call_arg_names.clear();
                 if let Some(slot) = result_slot(op) {
                     if let Some(ret) = return_val {
                         execute_data.set_temp(slot, ret);
@@ -431,12 +430,12 @@ pub fn execute_do_fcall(op: &Op, execute_data: &mut ExecuteData) -> Result<ExecR
     // Check JIT compilation for hot functions
     increment_execution_counter(&func_name);
 
-    let args: Vec<Val> = execute_data.call_args.drain(..).collect();
-    let arg_names: Vec<Option<String>> = execute_data.call_arg_names.drain(..).collect();
+    let (base, names_base) = execute_data.call_arg_stack.pop().unwrap_or((0, 0));
+    let args: Vec<Val> = execute_data.call_args.drain(base..).collect();
+    let arg_names: Vec<Option<String>> = execute_data.call_arg_names.drain(names_base..).collect();
 
     match execute_builtin_function(&func_name, &args, execute_data)? {
         Some(result) => {
-            execute_data.call_arg_names.clear();
             if let Some(slot) = result_slot(op) {
                 execute_data.set_temp(slot, result);
             }
@@ -449,7 +448,6 @@ pub fn execute_do_fcall(op: &Op, execute_data: &mut ExecuteData) -> Result<ExecR
             let jit_result = jit.get_compiled_function(&func_name);
             if let Some(jit_result) = jit_result {
                 execute_data.call_args.extend(args);
-                execute_data.call_arg_names.clear();
                 let _result = {
                     let func = jit_result.clone();
                     func(execute_data)?
@@ -594,8 +592,10 @@ pub fn execute_jmpnz(op: &Op, execute_data: &mut ExecuteData) -> Result<ExecResu
 
 #[inline]
 pub fn execute_init_fcall(_op: &Op, execute_data: &mut ExecuteData) -> Result<ExecResult, String> {
-    execute_data.call_args.clear();
-    execute_data.call_arg_names.clear();
+    execute_data.call_arg_stack.push((
+        execute_data.call_args.len(),
+        execute_data.call_arg_names.len(),
+    ));
     Ok(ExecResult::Continue)
 }
 
@@ -867,10 +867,76 @@ pub fn execute_fetch_obj_prop(
     let prop_name = crate::engine::operators::zval_get_string(&prop_name_val);
 
     let result_val = if let PhpValue::Object(ref obj) = obj_val.value {
-        obj.properties
-            .get(prop_name.as_str())
-            .map(|v| clone_val(v))
-            .unwrap_or_else(|| Val::new(PhpValue::Long(0), PhpType::Null))
+        if let Some(v) = obj.properties.get(prop_name.as_str()) {
+            clone_val(v)
+        } else {
+            let class_name = obj.class_name.clone();
+            let magic_info = execute_data
+                .class_table
+                .get(&class_name)
+                .and_then(|ce| ce.methods.get("__get"))
+                .map(|m| {
+                    let params = m.params.clone();
+                    let ops: Vec<Op> = m
+                        .op_array
+                        .ops
+                        .iter()
+                        .map(|op| {
+                            Op::new(
+                                op.opcode,
+                                clone_val(&op.op1),
+                                clone_val(&op.op2),
+                                clone_val(&op.result),
+                                op.extended_value,
+                            )
+                        })
+                        .collect();
+                    let file_label = m
+                        .op_array
+                        .filename
+                        .clone()
+                        .filter(|f| !f.is_empty())
+                        .unwrap_or_else(|| format!("{}::__get", class_name));
+                    (params, ops, file_label)
+                });
+            if let Some((params, ops, oparray_filename)) = magic_info {
+                let saved_current_op = execute_data.current_op;
+                let saved_op_array = execute_data.op_array.take();
+                let saved_script_dir = execute_data.current_script_dir.clone();
+                let saved_magic_dir = execute_data.constants.get("__DIR__").map(clone_val);
+                let saved_magic_file = execute_data.constants.get("__FILE__").map(clone_val);
+                let saved_called_class = execute_data.called_class.clone();
+                execute_data.called_class = Some(class_name.clone());
+                execute_data.set_var("this", clone_val(&obj_val));
+
+                let name_val = Val::new(
+                    PhpValue::String(Box::new(crate::engine::string::string_init(prop_name.as_str(), false))),
+                    PhpType::String,
+                );
+                bind_call_args(execute_data, &params, &[name_val], &[None], &None);
+
+                let mut method_op_array = OpArray::with_capacity(ops.len(), oparray_filename);
+                method_op_array.ops = ops;
+                let (_status, return_val) =
+                    super::execute::execute_ex_returning(execute_data, &method_op_array);
+                execute_data.op_array = saved_op_array;
+                execute_data.current_op = saved_current_op;
+                execute_data.current_script_dir = saved_script_dir;
+                execute_data.called_class = saved_called_class;
+                match saved_magic_dir {
+                    Some(v) => { execute_data.constants.insert("__DIR__".to_string(), v); }
+                    None => { execute_data.constants.remove("__DIR__"); }
+                }
+                match saved_magic_file {
+                    Some(v) => { execute_data.constants.insert("__FILE__".to_string(), v); }
+                    None => { execute_data.constants.remove("__FILE__"); }
+                }
+
+                return_val.unwrap_or_else(|| Val::new(PhpValue::Long(0), PhpType::Null))
+            } else {
+                Val::new(PhpValue::Long(0), PhpType::Null)
+            }
+        }
     } else {
         Val::new(PhpValue::Long(0), PhpType::Null)
     };
@@ -891,6 +957,127 @@ pub fn execute_assign_obj_prop(
     let prop_name = crate::engine::operators::zval_get_string(&prop_name_val);
     let value = resolve_operand(&op.result, execute_data);
 
+    // Determine if __set should be invoked
+    let (class_name_opt, has_prop) = {
+        let obj_val = if is_var_ref(var_name_val) {
+            if let PhpValue::String(ref s) = var_name_val.value {
+                let vname = s.as_str();
+                let name = if vname.starts_with('$') { &vname[1..] } else { vname };
+                execute_data.get_var(name)
+            } else {
+                Val::new(PhpValue::Long(0), PhpType::Null)
+            }
+        } else if is_temp_ref(var_name_val) {
+            if let PhpValue::Long(slot_idx) = var_name_val.value {
+                let slot = slot_idx as usize;
+                execute_data.get_temp(slot)
+            } else {
+                Val::new(PhpValue::Long(0), PhpType::Null)
+            }
+        } else {
+            Val::new(PhpValue::Long(0), PhpType::Null)
+        };
+        if let PhpValue::Object(ref obj) = obj_val.value {
+            (Some(obj.class_name.clone()), obj.properties.contains_key(prop_name.as_str()))
+        } else {
+            (None, false)
+        }
+    };
+
+    let use_magic = if let Some(ref class_name) = class_name_opt {
+        execute_data.class_table.get(class_name)
+            .map(|ce| ce.methods.contains_key("__set"))
+            .unwrap_or(false) && !has_prop
+    } else {
+        false
+    };
+
+    if use_magic {
+        if let Some(ref class_name) = class_name_opt {
+            let magic_info = execute_data
+                .class_table
+                .get(class_name)
+                .and_then(|ce| ce.methods.get("__set"))
+                .map(|m| {
+                    let params = m.params.clone();
+                    let ops: Vec<Op> = m
+                        .op_array
+                        .ops
+                        .iter()
+                        .map(|op| {
+                            Op::new(
+                                op.opcode,
+                                clone_val(&op.op1),
+                                clone_val(&op.op2),
+                                clone_val(&op.result),
+                                op.extended_value,
+                            )
+                        })
+                        .collect();
+                    let file_label = m
+                        .op_array
+                        .filename
+                        .clone()
+                        .filter(|f| !f.is_empty())
+                        .unwrap_or_else(|| format!("{}::__set", class_name));
+                    (params, ops, file_label)
+                });
+            if let Some((params, ops, oparray_filename)) = magic_info {
+                let obj_val = if is_var_ref(var_name_val) {
+                    if let PhpValue::String(ref s) = var_name_val.value {
+                        let vname = s.as_str();
+                        let name = if vname.starts_with('$') { &vname[1..] } else { vname };
+                        execute_data.get_var(name)
+                    } else {
+                        Val::new(PhpValue::Long(0), PhpType::Null)
+                    }
+                } else if is_temp_ref(var_name_val) {
+                    if let PhpValue::Long(slot_idx) = var_name_val.value {
+                        let slot = slot_idx as usize;
+                        execute_data.get_temp(slot)
+                    } else {
+                        Val::new(PhpValue::Long(0), PhpType::Null)
+                    }
+                } else {
+                    Val::new(PhpValue::Long(0), PhpType::Null)
+                };
+                let saved_current_op = execute_data.current_op;
+                let saved_op_array = execute_data.op_array.take();
+                let saved_script_dir = execute_data.current_script_dir.clone();
+                let saved_magic_dir = execute_data.constants.get("__DIR__").map(clone_val);
+                let saved_magic_file = execute_data.constants.get("__FILE__").map(clone_val);
+                let saved_called_class = execute_data.called_class.clone();
+                execute_data.called_class = Some(class_name.clone());
+                execute_data.set_var("this", clone_val(&obj_val));
+
+                let name_val = Val::new(
+                    PhpValue::String(Box::new(crate::engine::string::string_init(prop_name.as_str(), false))),
+                    PhpType::String,
+                );
+                bind_call_args(execute_data, &params, &[name_val, clone_val(&value)], &[None, None], &None);
+
+                let mut method_op_array = OpArray::with_capacity(ops.len(), oparray_filename);
+                method_op_array.ops = ops;
+                let (_status, _return_val) =
+                    super::execute::execute_ex_returning(execute_data, &method_op_array);
+                execute_data.op_array = saved_op_array;
+                execute_data.current_op = saved_current_op;
+                execute_data.current_script_dir = saved_script_dir;
+                execute_data.called_class = saved_called_class;
+                match saved_magic_dir {
+                    Some(v) => { execute_data.constants.insert("__DIR__".to_string(), v); }
+                    None => { execute_data.constants.remove("__DIR__"); }
+                }
+                match saved_magic_file {
+                    Some(v) => { execute_data.constants.insert("__FILE__".to_string(), v); }
+                    None => { execute_data.constants.remove("__FILE__"); }
+                }
+                return Ok(ExecResult::Continue);
+            }
+        }
+    }
+
+    // Normal property assignment
     if is_var_ref(var_name_val) {
         if let PhpValue::String(ref s) = var_name_val.value {
             let vname = s.as_str();
@@ -919,11 +1106,36 @@ pub fn execute_assign_obj_prop(
 }
 
 #[inline]
+pub fn execute_assign_static_prop(
+    op: &Op,
+    execute_data: &mut ExecuteData,
+) -> Result<ExecResult, String> {
+    let class_name_val = resolve_operand(&op.op1, execute_data);
+    let mut class_name = crate::engine::operators::zval_get_string(&class_name_val).as_str().to_string();
+    if class_name == "static" || class_name == "self" {
+        class_name = execute_data.called_class.clone().unwrap_or_default();
+    }
+    let prop_name_val = resolve_operand(&op.op2, execute_data);
+    let prop_name_raw = crate::engine::operators::zval_get_string(&prop_name_val);
+    let prop_name_str = prop_name_raw.as_str();
+    let prop_name = if prop_name_str.starts_with('$') { &prop_name_str[1..] } else { prop_name_str };
+    let value = resolve_operand(&op.result, execute_data);
+
+    if let Some(ce) = execute_data.class_table.get_mut(&class_name) {
+        ce.static_properties.insert(prop_name.to_string(), value);
+    }
+    Ok(ExecResult::Continue)
+}
+
+#[inline]
 pub fn execute_init_method_call(
     _op: &Op,
     execute_data: &mut ExecuteData,
 ) -> Result<ExecResult, String> {
-    execute_data.call_args.clear();
+    execute_data.call_arg_stack.push((
+        execute_data.call_args.len(),
+        execute_data.call_arg_names.len(),
+    ));
     Ok(ExecResult::Continue)
 }
 
@@ -980,8 +1192,9 @@ pub fn execute_do_method_call(
             execute_data.set_var("this", clone_val(&obj_val));
 
             // Set up method parameters (supports named args and variadic)
-            let args: Vec<Val> = execute_data.call_args.drain(..).collect();
-            let arg_names: Vec<Option<String>> = execute_data.call_arg_names.drain(..).collect();
+            let (base, names_base) = execute_data.call_arg_stack.pop().unwrap_or((0, 0));
+            let args: Vec<Val> = execute_data.call_args.drain(base..).collect();
+            let arg_names: Vec<Option<String>> = execute_data.call_arg_names.drain(names_base..).collect();
             let variadic = execute_data
                 .class_table
                 .get(&class_name)
@@ -1015,9 +1228,113 @@ pub fn execute_do_method_call(
                 }
             }
 
+            // Copy modified $this back to the original object location (objects are reference-like in PHP)
+            let this_val = execute_data.get_var("this");
+            if let PhpValue::Object(_) = this_val.value {
+                if is_temp_ref(&op.op2) {
+                    if let PhpValue::Long(slot_idx) = op.op2.value {
+                        execute_data.set_temp(slot_idx as usize, this_val);
+                    }
+                } else if is_var_ref(&op.op2) {
+                    if let PhpValue::String(ref s) = op.op2.value {
+                        let vname = s.as_str();
+                        let name = if vname.starts_with('$') { &vname[1..] } else { vname };
+                        execute_data.set_var(name, this_val);
+                    }
+                }
+            }
+
             // Store return value
-            execute_data.call_args.clear();
-            execute_data.call_arg_names.clear();
+            if let Some(slot) = result_slot(op) {
+                if let Some(ret) = return_val {
+                    execute_data.set_temp(slot, ret);
+                } else {
+                    execute_data.set_temp(slot, Val::new(PhpValue::Long(0), PhpType::Null));
+                }
+            }
+            return Ok(ExecResult::Continue);
+        }
+
+        // Method not found — try __call magic method
+        let (base, names_base) = execute_data.call_arg_stack.pop().unwrap_or((0, 0));
+        let args: Vec<Val> = execute_data.call_args.drain(base..).collect();
+        let _arg_names: Vec<Option<String>> = execute_data.call_arg_names.drain(names_base..).collect();
+
+        let magic_info = execute_data
+            .class_table
+            .get(&class_name)
+            .and_then(|ce| ce.methods.get("__call"))
+            .map(|m| {
+                let params = m.params.clone();
+                let ops: Vec<Op> = m
+                    .op_array
+                    .ops
+                    .iter()
+                    .map(|op| {
+                        Op::new(
+                            op.opcode,
+                            clone_val(&op.op1),
+                            clone_val(&op.op2),
+                            clone_val(&op.result),
+                            op.extended_value,
+                        )
+                    })
+                    .collect();
+                let file_label = m
+                    .op_array
+                    .filename
+                    .clone()
+                    .filter(|f| !f.is_empty())
+                    .unwrap_or_else(|| format!("{}::__call", class_name));
+                (params, ops, file_label)
+            });
+
+        if let Some((params, ops, oparray_filename)) = magic_info {
+            let saved_current_op = execute_data.current_op;
+            let saved_op_array = execute_data.op_array.take();
+            let saved_script_dir = execute_data.current_script_dir.clone();
+            let saved_magic_dir = execute_data.constants.get("__DIR__").map(clone_val);
+            let saved_magic_file = execute_data.constants.get("__FILE__").map(clone_val);
+            let saved_called_class = execute_data.called_class.clone();
+            execute_data.called_class = Some(class_name.clone());
+            execute_data.set_var("this", clone_val(&obj_val));
+
+            let name_val = Val::new(
+                PhpValue::String(Box::new(crate::engine::string::string_init(method_name.as_str(), false))),
+                PhpType::String,
+            );
+            let mut arr = crate::engine::types::PhpArray::new();
+            for (i, arg) in args.iter().enumerate() {
+                let bucket = crate::engine::types::Bucket {
+                    val: clone_val(arg),
+                    h: i as u64,
+                    key: None,
+                };
+                arr.ar_data.push(bucket);
+                arr.n_num_used += 1;
+                arr.n_num_of_elements += 1;
+            }
+            arr.n_next_free_element = args.len() as i64;
+            let args_val = Val::new(PhpValue::Array(Box::new(arr)), PhpType::Array);
+            bind_call_args(execute_data, &params, &[name_val, args_val], &[None, None], &None);
+
+            let mut method_op_array = OpArray::with_capacity(ops.len(), oparray_filename);
+            method_op_array.ops = ops;
+            let (_status, return_val) =
+                super::execute::execute_ex_returning(execute_data, &method_op_array);
+            execute_data.op_array = saved_op_array;
+            execute_data.current_op = saved_current_op;
+            execute_data.current_script_dir = saved_script_dir;
+            execute_data.called_class = saved_called_class;
+            match saved_magic_dir {
+                Some(v) => { execute_data.constants.insert("__DIR__".to_string(), v); }
+                None => { execute_data.constants.remove("__DIR__"); }
+            }
+            match saved_magic_file {
+                Some(v) => { execute_data.constants.insert("__FILE__".to_string(), v); }
+                None => { execute_data.constants.remove("__FILE__"); }
+            }
+
             if let Some(slot) = result_slot(op) {
                 if let Some(ret) = return_val {
                     execute_data.set_temp(slot, ret);
@@ -1029,8 +1346,7 @@ pub fn execute_do_method_call(
         }
     }
 
-    execute_data.call_args.clear();
-    execute_data.call_arg_names.clear();
+    let _ = execute_data.call_arg_stack.pop();
     if let Some(slot) = result_slot(op) {
         execute_data.set_temp(slot, Val::new(PhpValue::Long(0), PhpType::Null));
     }
@@ -1045,18 +1361,25 @@ pub fn execute_fetch_static_prop(
     let class_name_val = resolve_operand(&op.op1, execute_data);
     let mut class_name = crate::engine::operators::zval_get_string(&class_name_val).as_str().to_string();
 
-    if class_name == "static" {
+    if class_name == "static" || class_name == "self" {
         class_name = execute_data.called_class.clone().unwrap_or_default();
     }
 
     let prop_name_val = resolve_operand(&op.op2, execute_data);
-    let prop_name = crate::engine::operators::zval_get_string(&prop_name_val);
+    let prop_name_raw = crate::engine::operators::zval_get_string(&prop_name_val);
+    let prop_name_str = prop_name_raw.as_str();
+    let prop_name = if prop_name_str.starts_with('$') { &prop_name_str[1..] } else { prop_name_str };
 
     let result_val = if let Some(ce) = execute_data.class_table.get(&class_name) {
-        ce.static_properties
-            .get(prop_name.as_str())
-            .map(|v| clone_val(v))
-            .unwrap_or_else(|| Val::new(PhpValue::Long(0), PhpType::Null))
+        if prop_name == "class" {
+            Val::new(PhpValue::String(Box::new(crate::engine::string::string_init(&class_name, false))), PhpType::String)
+        } else {
+            ce.static_properties
+                .get(prop_name)
+                .map(|v| clone_val(v))
+                .or_else(|| ce.constants.get(prop_name).map(|v| clone_val(v)))
+                .unwrap_or_else(|| Val::new(PhpValue::Long(0), PhpType::Null))
+        }
     } else {
         Val::new(PhpValue::Long(0), PhpType::Null)
     };
@@ -1122,8 +1445,9 @@ pub fn execute_do_static_call(
         let saved_called_class = execute_data.called_class.clone();
         execute_data.called_class = Some(resolved_class.clone());
 
-        let args: Vec<Val> = execute_data.call_args.drain(..).collect();
-        let arg_names: Vec<Option<String>> = execute_data.call_arg_names.drain(..).collect();
+        let (base, names_base) = execute_data.call_arg_stack.pop().unwrap_or((0, 0));
+        let args: Vec<Val> = execute_data.call_args.drain(base..).collect();
+        let arg_names: Vec<Option<String>> = execute_data.call_arg_names.drain(names_base..).collect();
         let variadic = execute_data
             .class_table
             .get(&resolved_class)
@@ -1156,8 +1480,6 @@ pub fn execute_do_static_call(
             }
         }
 
-        execute_data.call_args.clear();
-        execute_data.call_arg_names.clear();
         if let Some(slot) = result_slot(op) {
             if let Some(ret) = return_val {
                 execute_data.set_temp(slot, ret);
@@ -1201,8 +1523,9 @@ pub fn execute_do_static_call(
                 .filter(|f| !f.is_empty())
                 .unwrap_or_else(|| format!("{}::__callStatic", resolved_class));
 
-            execute_data.call_args.clear();
-            execute_data.call_arg_names.clear();
+            let (base, names_base) = execute_data.call_arg_stack.pop().unwrap_or((0, 0));
+            let _ = execute_data.call_args.drain(base..);
+            let _ = execute_data.call_arg_names.drain(names_base..);
             if let Some(p0) = params.get(0) {
                 execute_data.set_var(p0, Val::new(PhpValue::String(Box::new(crate::engine::string::string_init(method_name.as_str(), false))), PhpType::String));
             }
@@ -1240,8 +1563,7 @@ pub fn execute_do_static_call(
         }
     }
 
-    execute_data.call_args.clear();
-    execute_data.call_arg_names.clear();
+    let _ = execute_data.call_arg_stack.pop();
     if let Some(slot) = result_slot(op) {
         execute_data.set_temp(slot, Val::new(PhpValue::Long(0), PhpType::Null));
     }
