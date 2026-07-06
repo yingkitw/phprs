@@ -12,9 +12,9 @@ cargo run -p phprs-cli -- run examples/wordpress/index.php
 
 ## Status
 
-- **Include resolution**: Relative paths are resolved like PHP — first relative to the process **current working directory**, then relative to the **including script’s directory** (see `resolve_include_path` in `src/engine/vm/dispatch_handlers.rs`).
-- **Known blocker**: `wp-includes/wp-db.php` uses legacy `array()` syntax; the phprs compiler currently expects short array `[]` in many contexts. The bootstrap may fail at `require` of `wp-db.php` until that syntax is supported or the stub is rewritten.
-- **Not in the root example matrix**: Only `examples/*.php` at the repository root are auto-tested; nested `wordpress/` entrypoints are run manually.
+- **`array()` constructor** compiles (enables `wp-includes/wp-db.php`).
+- **Full bootstrap** still fails on later includes (e.g. `plugin.php` uses assignment patterns the compiler does not support yet).
+- **Not in the root example matrix** — run manually while the nested tree is being brought up.
 
 ## Layout
 

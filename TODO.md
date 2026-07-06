@@ -127,7 +127,7 @@
 - [x] Bootstrap (index.php → wp-blog-header.php → wp-load.php → wp-config.php → wp-settings.php)
 - [x] wp-config-style constants (ABSPATH, WP_DEBUG; define/defined/constant, __DIR__, __FILE__)
 - [x] Relative include resolution; include restores caller state
-- [x] Minimal example in examples/wordpress (bootstrap loads wp-db after `array()` support)
+- [x] Minimal example in examples/wordpress (`wp-db.php` compiles after `array()` support; full bootstrap still blocked on nested includes like `plugin.php`)
 - [x] do_action / apply_filters (full implementation with priority support)
 - [x] wp-config.php parsing (DB_*, table prefix)
 - [x] Database layer for wpdb (in-memory stub with query/get_results/insert/update/delete)
@@ -214,9 +214,10 @@ Rust is used for the **interpreter implementation** because of memory safety in 
 - [x] **Intersection types** (PHP 8.1) - `Countable&ArrayAccess` parsing
 - [x] **Readonly properties** (PHP 8.1) - `T_READONLY` keyword + class body parsing
 - [x] **Enums** (PHP 8.1) - Pure and backed enums (`enum Color: string { case Red = 'red'; }`)
+- [ ] **First-class callable syntax** (PHP 8.1) - `strlen(...)`
 - [ ] **Foreach with key** — `foreach ($a as $k => $v)` (value-only foreach works today)
-- [ ] **Array append** — `$arr[] = $x` and nested-dimension assignment chains
-- [ ] **User-defined functions in CLI scripts** — top-level `function foo()` callable from same file (engine tests cover more paths)
+- [ ] **Array append / chained dim assign** — `$arr[] = $x`, `$this->prop['k'] = $v`
+- [ ] **User-defined functions in CLI scripts** — top-level `function foo()` callable from same file
 - [ ] **Fibers** (PHP 8.1) - Lightweight concurrency
 - [x] **Never type** (PHP 8.1) - recognized in type hints
 - [ ] **Final class constants** (PHP 8.1)

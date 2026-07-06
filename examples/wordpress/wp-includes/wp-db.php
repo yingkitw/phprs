@@ -9,10 +9,10 @@ class wpdb {
     public $dbhost;
     public $charset;
     public $collate;
-    
+
     // In-memory storage for options (stub)
-    private $options = array();
-    
+    private $options;
+
     public function __construct($dbuser, $dbpassword, $dbname, $dbhost) {
         $this->dbuser = $dbuser;
         $this->dbname = $dbname;
@@ -20,90 +20,88 @@ class wpdb {
         $this->prefix = isset($GLOBALS['table_prefix']) ? $GLOBALS['table_prefix'] : 'wp_';
         $this->charset = defined('DB_CHARSET') ? DB_CHARSET : 'utf8mb4';
         $this->collate = defined('DB_COLLATE') ? DB_COLLATE : '';
-        
-        // Initialize with some default options
-        $this->options['siteurl'] = 'http://localhost';
-        $this->options['home'] = 'http://localhost';
-        $this->options['blogname'] = 'WordPress on phprs';
-        $this->options['blogdescription'] = 'Just another WordPress site';
+
+        $this->options = array(
+            'siteurl' => 'http://localhost',
+            'home' => 'http://localhost',
+            'blogname' => 'WordPress on phprs',
+            'blogdescription' => 'Just another WordPress site'
+        );
     }
-    
-    // Execute a query (stub - returns true)
+
     public function query($query) {
         return true;
     }
-    
-    // Get results from a query (stub - returns empty array)
+
     public function get_results($query) {
-        // Parse simple SELECT queries for options table
         if (strpos($query, 'wp_options') !== false && strpos($query, 'SELECT') !== false) {
             return array();
         }
         return array();
     }
-    
-    // Get a single row (stub)
+
     public function get_row($query) {
         return null;
     }
-    
-    // Get a single variable (stub)
+
     public function get_var($query) {
-        // Handle option queries
         if (strpos($query, 'wp_options') !== false && strpos($query, 'option_value') !== false) {
-            // Extract option name from query (very basic parsing)
             if (preg_match("/option_name = '([^']+)'/", $query, $matches)) {
                 $option_name = $matches[1];
-                if (isset($this->options[$option_name])) {
-                    return $this->options[$option_name];
-                }
+                return $this->get_option($option_name, null);
             }
         }
         return null;
     }
-    
-    // Insert a row (stub)
+
     public function insert($table, $data, $format = null) {
         if ($table === $this->prefix . 'options' && isset($data['option_name'])) {
-            $this->options[$data['option_name']] = $data['option_value'];
+            $name = $data['option_name'];
+            $value = $data['option_value'];
+            $this->set_option($name, $value);
             return true;
         }
         return true;
     }
-    
-    // Update rows (stub)
+
     public function update($table, $data, $where, $format = null, $where_format = null) {
         if ($table === $this->prefix . 'options' && isset($where['option_name'])) {
-            $this->options[$where['option_name']] = $data['option_value'];
+            $name = $where['option_name'];
+            $value = $data['option_value'];
+            $this->set_option($name, $value);
             return 1;
         }
         return 1;
     }
-    
-    // Delete rows (stub)
+
     public function delete($table, $where, $where_format = null) {
         if ($table === $this->prefix . 'options' && isset($where['option_name'])) {
-            unset($this->options[$where['option_name']]);
+            $name = $where['option_name'];
+            $this->set_option($name, null);
             return 1;
         }
         return 1;
     }
-    
-    // Prepare a query (stub - returns query as-is)
+
     public function prepare($query) {
         return $query;
     }
-    
-    // Get option from in-memory store
+
     public function get_option($option_name, $default = false) {
-        if (isset($this->options[$option_name])) {
-            return $this->options[$option_name];
+        $opts = $this->options;
+        if (isset($opts[$option_name])) {
+            $val = $opts[$option_name];
+            if ($val === null) {
+                return $default;
+            }
+            return $val;
         }
         return $default;
     }
-    
-    // Set option in in-memory store
+
     public function set_option($option_name, $option_value) {
-        $this->options[$option_name] = $option_value;
+        $opts = $this->options;
+        $opts[$option_name] = $option_value;
+        $this->options = $opts;
     }
 }

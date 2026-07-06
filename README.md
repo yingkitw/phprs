@@ -325,7 +325,7 @@ cargo run -p phprs-cli -- run examples/wordpress/index.php
 ### ✅ Core PHP Engine
 - **Types**: PHP type system (int, float, string, array, object, null, bool) — growing toward full parity
 - **Operators**: Core arithmetic, logical, comparison, and string operators (see `examples/operators.php`)
-- **Control Flow**: if/else, switch, `match`, **for** (init/cond/inc), **foreach** (value-only), **while**; post-increment/decrement on simple variables (`$i++`)
+- **Control Flow**: if/else, switch, `match`, **for**, **foreach** (value-only), **while**; legacy **`array()`** and short **`[]`** literals
 - **Functions**: User-defined functions, closures, arrow functions, variadic params (`...$args`), named arguments (`func(param: value)`)
 - **Classes**: OOP with inheritance, traits, interfaces, namespaces, static properties/methods (`ClassName::$prop`, `ClassName::method()`)
 - **Late Static Binding**: `static::` keyword resolved at runtime via `called_class`

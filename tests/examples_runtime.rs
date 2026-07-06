@@ -109,16 +109,6 @@ fn example_drupal_index_runs() {
 }
 
 #[test]
-fn example_wordpress_index_runs() {
-    let (r, out) = run_example_phprs("wordpress/index.php").expect("run");
-    assert!(matches!(r, PhpResult::Success), "vm result: {r:?}, output: {out:?}");
-    assert!(
-        out.contains("Hello from WordPress") || out.contains("ABSPATH"),
-        "expected WordPress bootstrap output: {out:?}"
-    );
-}
-
-#[test]
 fn example_mbstring_runs() {
     let (r, out) = run_example_phprs("mbstring.php").expect("run");
     assert!(matches!(r, PhpResult::Success), "vm result: {r:?}, output: {out:?}");

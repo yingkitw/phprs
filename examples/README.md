@@ -68,7 +68,7 @@ cargo run --example performance_demo
 
 | Entry | Test |
 |-------|------|
-| `wordpress/index.php` | Manual only — `wp-includes/wp-db.php` uses `array()` syntax not yet supported by the compiler |
+| `wordpress/index.php` | Manual — nested stubs still need compiler-compatible rewrites (`plugin.php`, etc.) |
 | `wordpress/test-theme-plugin.php` | Manual — same constraints |
 | `codeigniter/public/index.php` | `example_codeigniter_public_index_runs` |
 | `drupal/index.php` | `example_drupal_index_runs` |

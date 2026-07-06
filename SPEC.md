@@ -30,7 +30,7 @@ phprs is a **PHP interpreter implemented in Rust**. It aims to execute PHP code 
 ### In Scope (Implemented to varying degrees)
 
 - **Core engine**: Types, strings, hash tables, allocation, GC, operators, arrays.
-- **Compiler**: Lexer, expressions, statements, control flow, functions, classes, traits, namespaces, closures, PHP 8.0+ features (match, attributes, generators, enums, readonly, union/intersection parsing, named args, variadics).
+- **Compiler**: … legacy `array()` constructor (`array()`, `array('k' => v)`, indexed elements) plus short `[]` literals
 - **VM**: Opcode dispatch table, built-in functions (see `src/engine/vm/builtins.rs` and `builtin_capability_tests.rs`), exceptions, includes, static members, magic-method fallbacks.
 - **Runtime**: INI, variables, streams, SAPI (CLI), output buffering, filesystem helpers, extension framework.
 - **Standard library (partial)**: Math, hash, datetime, mbstring subset, URL helpers, regex (`preg_*` via Rust `regex`), HTTP `file_get_contents`, PDO **stub**, JSON, introspection helpers.
