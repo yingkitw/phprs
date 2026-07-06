@@ -322,6 +322,12 @@ fn parse_multiplicative_expr_with_initial(
         return multiplicative_loop(lexer, context, result, next_token);
     }
 
+    if initial_token.token_type == TokenType::T_ARRAY {
+        let result = parse_long_array_literal(lexer, context)?;
+        let next = lexer.next_token()?;
+        return multiplicative_loop(lexer, context, result, next);
+    }
+
     // Convert token to primary Val
     let initial_zval = token_to_primary(&initial_token, context)?;
 

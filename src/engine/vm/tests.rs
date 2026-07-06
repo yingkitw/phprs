@@ -344,6 +344,30 @@ fn test_compile_and_execute_assoc_array_access() {
 }
 
 #[test]
+fn test_compile_and_execute_long_array_empty() {
+    let code = "<?php\n$a = array();\necho count($a);\n";
+    let (result, output) = run_php_code(code);
+    assert!(matches!(result, PhpResult::Success));
+    assert_eq!(output, "0");
+}
+
+#[test]
+fn test_compile_and_execute_long_array_indexed() {
+    let code = "<?php\n$a = array(10, 20);\necho $a[0] + $a[1];\n";
+    let (result, output) = run_php_code(code);
+    assert!(matches!(result, PhpResult::Success));
+    assert_eq!(output, "30");
+}
+
+#[test]
+fn test_compile_and_execute_long_array_assoc() {
+    let code = "<?php\n$m = array(\"a\" => \"x\", \"b\" => \"y\");\necho $m[\"a\"] . $m[\"b\"];\n";
+    let (result, output) = run_php_code(code);
+    assert!(matches!(result, PhpResult::Success));
+    assert_eq!(output, "xy");
+}
+
+#[test]
 fn test_compile_and_execute_ternary() {
     let code = "<?php\n$x = 10;\n$y = $x > 5 ? 'big' : 'small';\necho $y;\n";
     let (result, output) = run_php_code(code);

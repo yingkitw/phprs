@@ -36,6 +36,7 @@
 - [x] Class compilation (properties, methods, constructors)
 - [x] VM execution (63 opcodes, dispatch table)
 - [x] Built-in functions (40+ functions)
+- [x] Legacy `array()` constructor syntax (`array()`, `array('k' => v)`, indexed elements)
 
 ### Tools
 - [x] Unified CLI (`bin/phprs`) with `run`, `serve`, `pkg` subcommands
@@ -126,7 +127,7 @@
 - [x] Bootstrap (index.php → wp-blog-header.php → wp-load.php → wp-config.php → wp-settings.php)
 - [x] wp-config-style constants (ABSPATH, WP_DEBUG; define/defined/constant, __DIR__, __FILE__)
 - [x] Relative include resolution; include restores caller state
-- [x] Minimal example in examples/wordpress (partial — `wp-db.php` `array()` syntax blocks full bootstrap until compiler support)
+- [x] Minimal example in examples/wordpress (bootstrap loads wp-db after `array()` support)
 - [x] do_action / apply_filters (full implementation with priority support)
 - [x] wp-config.php parsing (DB_*, table prefix)
 - [x] Database layer for wpdb (in-memory stub with query/get_results/insert/update/delete)
@@ -150,9 +151,9 @@
 - **Framework examples**: WordPress-shaped (partial), CodeIgniter 4 demo (CI-tested), Drupal demo (CI-tested)
 - **67 opcodes** (dispatch table)
 - **130+ built-in functions** — see `builtin_capability_tests.rs` for exercised surface
-- **376+ workspace tests** (`cargo test --workspace`)
+- **376+ workspace tests** (`cargo test --workspace`; 319 library unit tests including `array()` constructor)
 - **21 root PHP examples** — all run via `examples_root_php_scripts_all_run`
-- **Known gaps**: UDF calls incomplete in some CLI paths; `array()` syntax; `foreach ($k => $v)`; look-ahead regex
+- **Known gaps**: UDF calls incomplete in some CLI paths; `foreach ($k => $v)`; look-ahead regex; `$arr[]` append; chained `$a['b']['c'] =` assignment
 
 ### Standard library (honest)
 - Regex via Rust `regex` (`preg_*`) — no look-ahead/look-behind
@@ -213,7 +214,9 @@ Rust is used for the **interpreter implementation** because of memory safety in 
 - [x] **Intersection types** (PHP 8.1) - `Countable&ArrayAccess` parsing
 - [x] **Readonly properties** (PHP 8.1) - `T_READONLY` keyword + class body parsing
 - [x] **Enums** (PHP 8.1) - Pure and backed enums (`enum Color: string { case Red = 'red'; }`)
-- [ ] **First-class callable syntax** (PHP 8.1) - `strlen(...)`
+- [ ] **Foreach with key** — `foreach ($a as $k => $v)` (value-only foreach works today)
+- [ ] **Array append** — `$arr[] = $x` and nested-dimension assignment chains
+- [ ] **User-defined functions in CLI scripts** — top-level `function foo()` callable from same file (engine tests cover more paths)
 - [ ] **Fibers** (PHP 8.1) - Lightweight concurrency
 - [x] **Never type** (PHP 8.1) - recognized in type hints
 - [ ] **Final class constants** (PHP 8.1)

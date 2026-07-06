@@ -684,11 +684,12 @@ pub(crate) fn compile_interpolated_string(
     Ok(result)
 }
 
-/// Parse array literal: [elem1, elem2, ...] or ['key' => val, ...]
-/// The opening '[' has already been consumed
-pub(crate) fn parse_array_literal(
+/// Shared body for `[...]` and `array(...)` literals. Opening delimiter already consumed.
+fn parse_array_elements(
     lexer: &mut Lexer,
     context: &mut CompileContext,
+    close: &str,
+    close_list_err: &str,
 ) -> Result<Val, String> {
     let arr_slot = context.alloc_temp();
     context.emit_opcode(
@@ -699,13 +700,12 @@ pub(crate) fn parse_array_literal(
     );
 
     let mut next = lexer.next_token()?;
-    if !token_is_punct(&next, "]") {
+    if !token_is_punct(&next, close) {
         loop {
             let (val_zval, after_val) =
                 super::operators::parse_additive_expr_with_initial(lexer, context, next)?;
 
             if after_val.token_type == TokenType::T_DOUBLE_ARROW {
-                // key => value
                 let key_zval = val_zval;
                 let (value_zval, after_value) = super::parse_expression(lexer, context)?;
                 context.emit_opcode(
@@ -727,20 +727,51 @@ pub(crate) fn parse_array_literal(
                 next = after_val;
             }
 
-            if token_is_punct(&next, "]") {
+            if token_is_punct(&next, close) {
                 break;
             }
             if token_is_punct(&next, ",") {
                 next = lexer.next_token()?;
-                if token_is_punct(&next, "]") {
+                if token_is_punct(&next, close) {
                     break;
                 }
                 continue;
             }
-            return Err("Expected ',' or ']' in array literal".to_string());
+            return Err(close_list_err.to_string());
         }
     }
     Ok(temp_var_ref(arr_slot))
+}
+
+/// Parse array literal: [elem1, elem2, ...] or ['key' => val, ...]
+/// The opening '[' has already been consumed
+pub(crate) fn parse_array_literal(
+    lexer: &mut Lexer,
+    context: &mut CompileContext,
+) -> Result<Val, String> {
+    parse_array_elements(
+        lexer,
+        context,
+        "]",
+        "Expected ',' or ']' in array literal",
+    )
+}
+
+/// Parse legacy array constructor: array(...) — `array` keyword already consumed
+pub(crate) fn parse_long_array_literal(
+    lexer: &mut Lexer,
+    context: &mut CompileContext,
+) -> Result<Val, String> {
+    let open = lexer.next_token()?;
+    if !token_is_punct(&open, "(") {
+        return Err("Expected '(' after array".to_string());
+    }
+    parse_array_elements(
+        lexer,
+        context,
+        ")",
+        "Expected ',' or ')' in array()",
+    )
 }
 
 /// Parse a single call argument, detecting named arguments (name: value)

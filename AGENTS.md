@@ -12,9 +12,11 @@ For every new capability:
 - Write integration tests in `tests/` and unit tests next to components that exercise the feature end-to-end where possible
 - Add unit tests for core logic where appropriate
 - Provide a minimal usage example if the feature is client-facing
+- **Root `examples/*.php` entrypoints** must pass `examples_root_php_scripts_all_run` in `tests/examples_runtime.rs` (auto-discovered)
+- **Rust demos** under `examples/rust/` must compile via `tests/build_rust_examples.rs`
 
 ### 3. Ensure `cargo test` Passes
-Run the full test suite. Fix any failures before proceeding. Warnings are acceptable but should be noted.
+Run the full test suite (`cargo test --workspace`). Fix any failures before proceeding. Warnings are acceptable but should be noted.
 
 ### 4. Loop Back to Step 1
 Return to `TODO.md` and pick the next item. Repeat until the backlog is clear.
@@ -26,16 +28,18 @@ After each batch of features, perform a quality pass:
 - **Wiring**: Ensure all new features are properly integrated into `main.rs`, `Cargo.toml` scripts, and docs
 - **Small footprint**: Avoid unnecessary crates; prefer the standard library or lightweight dependencies
 - **Consistency**: Match existing code style and patterns
+- **Docs honesty**: No invented benchmark tables or “100% complete” claims without tests
 
 ### 6. Competitive Intelligence
-Research similar open-source TeX to PDF converters (Tectonic, Pandoc, Typst, texlive). Identify capabilities they have that this project lacks. Add the most valuable ones to the `TODO.md` brainstorming section. Prioritize features that provide clear competitive advantage.
+Research similar open-source PHP runtimes and interpreters (Zend PHP, HHVM, PeachPie, Bref, RoadRunner, etc.). Identify capabilities they have that this project lacks. Add the most valuable ones to the `TODO.md` brainstorming section. Prioritize features that provide clear competitive advantage.
 
 ### 7. Update Documentation
 Keep all project docs aligned with the current implementation:
 - **`README.md`**: Quick start, feature list, architecture summary
 - **`TODO.md`**: Mark completed items, move them to Done, keep brainstorming current
-- **`SPEC.md`**: Scope and requirements for the site, technical stack, quality bar
+- **`SPEC.md`**: Scope and requirements, technical stack, quality bar
 - **`ARCHITECTURE.md`**: Module relationships, data flow, deployment topology
+- **`PERFORMANCE.md`**: Evidence policy and measurement notes (not marketing speedups)
 - **`AGENTS.md`**: This file — update if the loop itself evolves
 
 ## Principles
