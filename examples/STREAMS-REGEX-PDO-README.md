@@ -4,9 +4,9 @@ This document describes the implementation of PHP's standard library features in
 
 ## Features Implemented
 
-### 1. Regular Expressions (PCRE)
+### 1. Regular Expressions (`preg_*`)
 
-Full regular expression support using Rust's `regex` crate with PHP-compatible syntax.
+Regular expression support using Rust's `regex` crate with PHP-like `preg_*` wrappers. **Not full PCRE** — look-ahead, look-behind, and some advanced PCRE features are unsupported.
 
 #### Supported Functions
 
@@ -77,46 +77,25 @@ $content = file_get_contents("local_file.txt");
 - Error handling for network failures
 - Supports GET requests
 
-### 3. Session Handling
+### 3. Session handling (not the PHP session extension)
 
-Complete session management with in-memory storage and optional file persistence.
+The Zend **session extension** (`session_start`, `session_id`, file-backed session storage, etc.) is **not implemented** in the phprs engine today.
 
-#### Supported Functions
+What works:
 
-- **`session_start()`** - Start new or resume existing session
-- **`session_destroy()`** - Destroy all data registered to a session
-- **`session_id($id = null)`** - Get and/or set the current session id
-- **`session_name($name = null)`** - Get and/or set the current session name
-- **`session_regenerate_id($delete_old = false)`** - Update the current session id
-- **`session_write_close()`** - Write session data and end session
+- Treat **`$_SESSION` as an ordinary variable** (assign `$_SESSION = []` and use array keys) — see `examples/session-examples.php`
+- WordPress-shaped **wp_session_*** stubs in `examples/wordpress/wp-includes/session.php` for the demo tree only
 
-#### Session Storage
+What does **not** work:
 
-- **In-memory**: Fast, volatile storage (default)
-- **File-based**: Persistent storage in temp directory
-- **$_SESSION superglobal**: Standard PHP session array
-
-#### Examples
+- Calling `session_start()` / `session_destroy()` as engine builtins (they are undefined unless you add stubs)
+- Persistent sessions across HTTP requests in `phprs serve` without custom code
 
 ```php
-// Start session
-session_start();
-
-// Set session variables
+// Runnable pattern in phprs today
+$_SESSION = [];
 $_SESSION['user_id'] = 123;
-$_SESSION['username'] = 'john';
-
-// Read session variables
-$user_id = $_SESSION['user_id'];
-
-// Get session ID
-$sid = session_id();
-
-// Regenerate session ID (security)
-session_regenerate_id(true);
-
-// Destroy session
-session_destroy();
+echo $_SESSION['user_id'];
 ```
 
 ### 4. PDO (PHP Data Objects)
@@ -201,13 +180,20 @@ if (!$stmt) {
 
 ## Testing
 
-Run the comprehensive test suite:
+CI and local verification:
 
 ```bash
+# All root examples/*.php (includes regex, session, pdo, integration scripts)
+cargo test --test examples_runtime examples_root_php_scripts_all_run
+
+# Checklist script
 cargo run -p phprs-cli -- run examples/test-streams-regex-pdo.php
+
+# Builtin surface (authoritative for what is implemented)
+cargo test --lib builtin_capability
 ```
 
-The test suite validates:
+The checklist script and examples validate:
 
 1. ✓ Regular expression pattern matching
 2. ✓ Case-insensitive regex
@@ -215,8 +201,8 @@ The test suite validates:
 4. ✓ Pattern splitting
 5. ✓ Multiple match finding
 6. ✓ HTTP stream wrapper
-7. ✓ Session start/destroy
-8. ✓ Session variables
+7. ✓ Simulated `$_SESSION` array usage (not `session_start()`)
+8. ✓ Session-style variable storage in demos
 9. ✓ PDO connection
 10. ✓ Query execution
 11. ✓ Prepared statements
@@ -245,11 +231,9 @@ The test suite validates:
 
 ### Sessions
 
-- **Storage**: HashMap-based in-memory storage
-- **Session ID**: Generated using `uniqid()` with timestamp
-- **Persistence**: Optional file-based storage in temp directory
-- **Security**: Session ID regeneration support
-- **Cleanup**: Automatic cleanup on session_destroy()
+- **Engine**: No PHP session extension module in `src/` yet
+- **Demos**: `examples/session-examples.php` uses a plain `$_SESSION` array
+- **WordPress demo**: wp_session_* / session_* stubs only under `examples/wordpress/`
 
 ### PDO
 
@@ -299,10 +283,11 @@ src/engine/vm/
 
 ### Current Implementation
 
-1. **Regex**: Some advanced PCRE features not supported (lookahead, lookbehind, etc.)
-2. **HTTP**: Only GET requests supported via file_get_contents()
-3. **Sessions**: No distributed session support
+1. **Regex**: No look-ahead/look-behind; not full PCRE
+2. **HTTP**: Primarily GET via `file_get_contents()` for remote URLs
+3. **Sessions**: No `session_*` builtins; no production session storage
 4. **PDO**: Stub implementation, no real database connections
+5. **Compiler**: Some PHP syntax still missing (`array()`, `foreach ($k => $v)`, `$a[] =`, etc.) — see example scripts for supported patterns
 
 ### Future Enhancements
 

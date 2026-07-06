@@ -5,7 +5,7 @@
 [![Rust](https://img.shields.io/badge/rust-2024-orange.svg)](https://www.rust-lang.org/)
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
 [![Build Status](https://img.shields.io/badge/build-passing-brightgreen.svg)]()
-[![Tests](https://img.shields.io/badge/tests-346%2B%20passing-brightgreen.svg)]()
+[![Tests](https://img.shields.io/badge/tests-376%2B%20passing-brightgreen.svg)]()
 
 ## Why phprs? The Rust Advantage
 
@@ -14,7 +14,7 @@ PHP powers much of the web; many production runtimes are implemented in C and C+
 - **Safer by construction (Rust)**: Memory errors that plague C/C++ code are largely ruled out in safe Rust; the interpreter still has correctness and parity work ahead.
 - **A performance-minded design**: Opcode dispatch, JIT hooks, and LLVM for the host binary — without promising a given speedup over Zend until we publish reproducible benchmarks.
 - **Concurrency-friendly host code**: Rust’s type system helps avoid data races in the engine itself; PHP’s shared mutable runtime model is still evolving in phprs.
-- **Test-backed**: 346+ workspace tests (library + CLI + integration), plus end-to-end example runs in CI.
+- **Test-backed**: 376+ workspace tests; every root `examples/*.php` runs in `tests/examples_runtime.rs`; Rust demos compile via `build_rust_examples`.
 
 **phprs** brings PHP into the future by:
 
@@ -53,10 +53,10 @@ If you want the engineering direction (dispatch, JIT ideas, etc.), see [PERFORMA
 **PHP scripts** under phprs still run through a single runtime model; don’t assume “multi-threaded PHP” parity with extensions or Zend here.
 
 ### 🌐 **Framework Support**
-Progressive compatibility with popular PHP frameworks and CMSs (stubs and demos ship in `examples/`):
-- **WordPress** ✅ - Hooks, wpdb, plugin/theme loading (see `examples/wordpress/`)
-- **CodeIgniter 4** ✅ - Minimal bootstrap + routed controller demo (`examples/codeigniter/`, covered by `tests/examples_runtime.rs`)
-- **Drupal** ✅ - Minimal kernel/bootstrap stub (`examples/drupal/`, covered by `tests/examples_runtime.rs`)
+Progressive compatibility with popular PHP frameworks and CMSs (stubs and demos in `examples/`):
+- **WordPress** 🚧 - Hooks, wpdb stubs, plugin/theme loading (`examples/wordpress/`) — bootstrap blocked on `array()` syntax in nested stubs; not production-ready
+- **CodeIgniter 4** ✅ - Minimal bootstrap + routed controller demo (`examples/codeigniter/`, `tests/examples_runtime.rs`)
+- **Drupal** ✅ - Minimal kernel/bootstrap stub (`examples/drupal/`, `tests/examples_runtime.rs`)
 - **Laravel** 📋 - Routing, Eloquent, Blade (planned)
 - **Symfony** 📋 - HTTP kernel, DI (planned)
 
@@ -65,7 +65,8 @@ Progressive compatibility with popular PHP frameworks and CMSs (stubs and demos 
 - **HTTP**: `reqwest` for HTTP/HTTPS from the host
 - **Regex**: the `regex` crate (different tradeoffs vs PCRE — not a drop-in performance claim)
 - **Crypto / hashing**: common Rust crates for checksums and tooling
-- **PDO / sessions / JSON**: implemented or stubbed to varying degrees — see source and tests for what’s real today
+- **PDO / JSON / regex / HTTP**: implemented or stubbed to varying degrees — see `builtin_capability_tests.rs` and tests for what is real today
+- **Sessions**: PHP session extension (`session_start`, etc.) **not** in the engine; `examples/session-examples.php` uses `$_SESSION` as a plain array
 - **Package manager**: Composer-oriented workflows with `semver` for version parsing
 - **Dev server**: `phprs serve` for local tries
 
@@ -173,16 +174,13 @@ print_r($squared);
 ### Regular Expressions
 ```php
 <?php
-// Email validation with PCRE
+// Email validation (Rust regex engine — not full PCRE)
 $email = "user@example.com";
 if (preg_match('/^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/', $email)) {
     echo "Valid email!\n";
 }
-
-// Pattern replacement
 $text = "Hello World";
-$result = preg_replace('/World/', 'phprs', $text);
-echo $result; // "Hello phprs"
+echo preg_replace('/World/', 'phprs', $text);
 ```
 
 ### HTTP Streams
@@ -210,78 +208,37 @@ $stmt->execute();
 $user = $stmt->fetch();
 ```
 
-### Session Management
+### Session-style state (simulated)
 ```php
 <?php
-// Secure session handling
-session_start();
-
-// Store user data
+// session_start() is not a builtin yet — use $_SESSION as a variable
+$_SESSION = [];
 $_SESSION['user_id'] = 123;
 $_SESSION['username'] = 'john_doe';
-
-// Access anywhere in your app
 if (isset($_SESSION['user_id'])) {
     echo "Welcome back, " . $_SESSION['username'];
 }
 ```
 
-### WordPress Plugin
+### WordPress-shaped plugin (demo stubs)
 ```php
 <?php
-/**
- * Plugin Name: My Plugin
- * Description: Runs on phprs
- */
-
-// WordPress hooks work perfectly
+// Runs only in the examples/wordpress tree with phprs stubs — not stock WordPress core
 add_action('init', function() {
-    register_post_type('custom_type', [
-        'public' => true,
-        'label' => 'Custom Type'
-    ]);
-});
-
-add_filter('the_content', function($content) {
-    return $content . "\n<!-- Powered by phprs -->";
+    echo "init hook\n";
 });
 ```
 
-### Complete Web Application
-```php
-<?php
-// Modern PHP web app with all features
-session_start();
+### Integration smoke script
+See `examples/integration-test.php` for a short runnable script that exercises PDO stubs, regex, password helpers, and JSON under phprs.
 
-// Database connection
-$pdo = new PDO('mysql:host=localhost;dbname=webapp', 'root', '');
-
-// Handle form submission
-if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    $email = $_POST['email'];
-    
-    // Validate with regex
-    if (preg_match('/^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/', $email)) {
-        // Store in database
-        $stmt = $pdo->prepare('INSERT INTO users (email) VALUES (:email)');
-        $stmt->bindParam(':email', $email);
-        $stmt->execute();
-        
-        // Set session
-        $_SESSION['user_email'] = $email;
-        
-        echo "Registration successful!";
-    }
-}
-```
-
-**More Examples**:
+**More Examples** (all root `examples/*.php` covered by `cargo test --test examples_runtime`):
 - `examples/control_flow.php` - if/switch, **for**, **while**, **foreach** (see `tests/examples_runtime.rs`)
 - `examples/mbstring.php` - Multibyte string helpers (`mb_*` subset)
 - `examples/match_expression.php` - `match` expressions
 - `examples/regex-examples.php` - Regex patterns
 - `examples/http-stream-examples.php` - HTTP streams
-- `examples/session-examples.php` - Sessions
+- `examples/session-examples.php` - Simulated `$_SESSION` patterns (no `session_*` builtins)
 - `examples/pdo-examples.php` - PDO usage
 - `examples/integration-test.php` - Combined feature script
 - `examples/wordpress/` - WordPress integration
@@ -300,7 +257,7 @@ phprs/
 │   │   ├── jit.rs       # JIT compiler
 │   │   └── operators.rs # PHP operators implementation
 │   └── php/             # PHP runtime & standard library
-│       ├── regex.rs     # PCRE-compatible regex
+│       ├── regex.rs     # preg_* via Rust regex
 │       ├── http_stream.rs # HTTP/HTTPS streams
 │       ├── pdo.rs       # Database abstraction
 │       ├── streams.rs   # Stream wrappers
@@ -385,7 +342,7 @@ cargo run -p phprs-cli -- run examples/wordpress/index.php
 
 **Array Functions**: `array_map`, `array_filter`, `array_merge`, `count`, `in_array`, `array_key_exists`
 
-**Regular Expressions**: `preg_match`, `preg_match_all`, `preg_replace`, `preg_split`
+**Regular Expressions**: `preg_match`, `preg_match_all`, `preg_replace`, `preg_split` (Rust `regex` — no look-ahead/look-behind)
 
 **File System**: `file_get_contents`, `file_put_contents`, `file_exists`, `dirname`, `basename`
 
@@ -393,7 +350,7 @@ cargo run -p phprs-cli -- run examples/wordpress/index.php
 
 **Database (PDO)**: `new PDO()`, `query()`, `prepare()`, `execute()`, `fetch()`, `fetchAll()`
 
-**Sessions**: `session_start()`, `session_destroy()`, `$_SESSION`, `session_id()`, `session_regenerate_id()`
+**Sessions**: Not implemented as PHP extension; demo patterns in `session-examples.php` use `$_SESSION` as a variable
 
 **JSON**: `json_encode`, `json_decode`
 
@@ -490,8 +447,14 @@ cargo test --lib
 # PHP example compile checks
 cargo test --test php_examples
 
-# End-to-end: compile + VM + output for curated `examples/*.php`
+# End-to-end: all root examples/*.php + curated framework demos
 cargo test --test examples_runtime
+
+# Rust examples compile
+cargo test --test build_rust_examples
+
+# Builtin capability coverage (library)
+cargo test --lib builtin_capability
 
 # Smoke a script manually
 cargo run -p phprs-cli -- run examples/control_flow.php
@@ -507,7 +470,7 @@ The workspace runs **clean** (no warnings) on `cargo test --workspace` and `carg
 - **[SPEC.md](SPEC.md)** - Project specification and scope
 - **[ARCHITECTURE.md](ARCHITECTURE.md)** - Module structure and execution flow
 - **[TODO.md](TODO.md)** - Migration roadmap and statistics (70+ built-in functions, 15 PHP runtime modules)
-- **[PERFORMANCE.md](PERFORMANCE.md)** - Optimization ideas and VM notes (not a benchmark certificate)
+- **[PERFORMANCE.md](PERFORMANCE.md)** - Evidence policy and VM optimization notes (not benchmark marketing)
 
 ### Feature Documentation
 - **[examples/STREAMS-REGEX-PDO-README.md](examples/STREAMS-REGEX-PDO-README.md)** - Stream wrappers, regex, sessions, PDO
@@ -525,11 +488,11 @@ The workspace runs **clean** (no warnings) on `cargo test --workspace` and `carg
 ### ✅ Completed (v0.1.x)
 - Core PHP engine with 67 opcodes (added FetchStaticProp, DoStaticCall, CloneObj, SendValNamed)
 - 70+ built-in functions
-- Regular expressions (PCRE-compatible)
+- Regular expressions (`preg_*` via Rust `regex`)
 - HTTP/HTTPS stream wrappers
 - PDO database abstraction
-- Session handling
-- WordPress support (hooks, plugins, themes)
+- Session handling (PHP extension)
+- WordPress demo stubs (hooks, plugins, themes — not full core)
 - Package manager (Composer-compatible)
 - JIT / optimizer scaffolding (see sources; not a complete production JIT story)
 - Compiled op arrays (per-run bytecode; caching story is incremental)

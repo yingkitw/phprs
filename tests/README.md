@@ -1,108 +1,63 @@
 # Test Suite Documentation
 
-This directory contains comprehensive test suites for phprs at different levels.
+This directory contains integration and workspace-level tests for phprs. Unit tests live next to engine and `php/` modules under `src/`.
 
-## Test Structure
+## Layout
 
-### Unit Tests
-Unit tests are located alongside the source code in `src/` directories:
-- `src/engine/string/tests.rs` - String operations
-- `src/engine/hash/tests.rs` - Hash table operations
-- `src/engine/operators/tests.rs` - Operator functions (inline)
-- `src/engine/alloc/tests.rs` - Memory allocation
-- `src/engine/gc/tests.rs` - Garbage collection
-- `src/php/filesystem/tests.rs` - Filesystem functions
-- `src/php/ini/tests.rs` - INI configuration
-- `src/php/variables/tests.rs` - Variable handling
+| File / directory | Role |
+|------------------|------|
+| `examples_runtime.rs` | End-to-end: compile + VM + stdout for **every root** `examples/*.php` (`examples_root_php_scripts_all_run`) plus curated framework entrypoints (CodeIgniter, Drupal) |
+| `build_rust_examples.rs` | `cargo build --examples` for all `examples/rust/*.rs` |
+| `php_examples.rs` | Compile checks and existence tests for tutorial PHP files |
+| `example_verification.rs` | Rust `examples/rust/` smoke tests |
+| `comprehensive_tests.rs` | Lexer, stream, and factory integration tests |
+| `edge_cases.rs` | Boundary and stress cases |
+| `error_handling.rs` | Error handlers and reporting |
+| `integration_tests.rs` | Cross-module integration |
 
-### Integration Tests
-Located in `tests/integration_tests.rs`:
-- Tests interactions between multiple modules
-- Verifies end-to-end functionality
-- Tests module composition
+## Engine unit tests (highlights)
 
-### Edge Case Tests
-Located in `tests/edge_cases.rs`:
-- Boundary conditions
-- Error cases
-- Unusual inputs
-- Stress tests
+- `src/engine/vm/builtin_capability_tests.rs` — broad `execute_builtin_function` coverage (regex, hash, math, PDO-shaped stubs, output, etc.)
+- `src/engine/vm/tests.rs` — compile/execute paths for language features
+- `src/php/*/tests.rs` — runtime module tests (regex, PDO, streams, filesystem, …)
 
-### Error Handling Tests
-Located in `tests/error_handling.rs`:
-- Error reporting
-- Error handlers
-- Different error types
+## Running tests
 
-## Running Tests
-
-### Run all tests
 ```bash
-cargo test
-```
+# Full workspace (recommended)
+cargo test --workspace
 
-### Run only unit tests
-```bash
+# Library unit tests only
 cargo test --lib
+
+# All root PHP examples (matrix)
+cargo test --test examples_runtime examples_root_php_scripts_all_run
+
+# Curated example assertions
+cargo test --test examples_runtime
+
+# Rust example binaries compile
+cargo test --test build_rust_examples
+
+# PHP compile-only suite
+cargo test --test php_examples
 ```
 
-### Run only integration tests
+Show stdout from tests:
+
 ```bash
-cargo test --test integration_tests
+cargo test --test examples_runtime -- --nocapture
 ```
 
-### Run only edge case tests
-```bash
-cargo test --test edge_cases
-```
+## Adding coverage
 
-### Run only error handling tests
-```bash
-cargo test --test error_handling
-```
+1. **New root `examples/foo.php`** — no extra test file needed; `examples_root_php_scripts_all_run` picks it up automatically. Script must finish with `PhpResult::Success` and non-empty output.
+2. **New builtin** — add cases to `builtin_capability_tests.rs` and/or module unit tests.
+3. **New nested framework file** — covered indirectly via its entrypoint test, or add a dedicated `#[test]` in `examples_runtime.rs` if it is a public demo.
+4. **New Rust example** — add `[[example]]` in `Cargo.toml` and ensure `build_rust_examples` still passes.
 
-### Run specific test
-```bash
-cargo test test_name
-```
+## Naming
 
-### Run tests with output
-```bash
-cargo test -- --nocapture
-```
-
-## Test Coverage Goals
-
-- **Unit Tests**: Cover all public functions with:
-  - Normal cases
-  - Edge cases
-  - Error cases
-  
-- **Integration Tests**: Cover:
-  - Module interactions
-  - Data flow between modules
-  - Complex scenarios
-  
-- **Edge Case Tests**: Cover:
-  - Empty inputs
-  - Very large inputs
-  - Boundary values
-  - Special characters
-  - Unicode handling
-
-## Adding New Tests
-
-When adding new functionality:
-
-1. **Add unit tests** in the module's test file or `#[cfg(test)]` block
-2. **Add integration tests** if the feature interacts with other modules
-3. **Add edge case tests** for boundary conditions
-4. **Add error handling tests** if the feature can fail
-
-## Test Naming Convention
-
-- Unit tests: `test_<function_name>_<scenario>`
-- Integration tests: `test_<feature>_<scenario>`
-- Edge case tests: `test_<feature>_edge_<case>`
-- Error tests: `test_<feature>_error_<type>`
-
+- Unit: `test_<function>_<scenario>`
+- Integration: `test_<feature>_<scenario>`
+- Example runtime: `example_<name>_runs` or the auto matrix `examples_root_php_scripts_all_run`

@@ -60,8 +60,15 @@
 ### WordPress example support
 - [x] define(), defined(), constant(); bare-identifier constant lookup
 - [x] __DIR__ and __FILE__ magic constants (per-script)
-- [x] require/include relative to current script dir; caller state restored after include
+- [x] require/include: cwd-first then script-dir resolution; caller state restored after include
 - [x] dirname(), exit(), die(); do_action(), apply_filters() stubs
+
+### Testing & examples
+- [x] `tests/examples_runtime.rs` — auto matrix for all root `examples/*.php`
+- [x] `tests/build_rust_examples.rs` — `examples/rust/*.rs` compile
+- [x] `src/engine/vm/builtin_capability_tests.rs` — broad builtin coverage
+- [x] [PERFORMANCE.md](PERFORMANCE.md) evidence policy (phprs-only benchmarks; no fake PHP baselines)
+- [x] Example scripts adjusted for phprs compiler limits (regex lookahead, session simulation, foreach value-only)
 
 ### Package Manager
 - [x] CLI framework
@@ -86,12 +93,9 @@
   - [x] preg_split() for pattern-based splitting
   - [x] PCRE flag support (i, m, s, x)
   - [x] Regex compilation and caching
-- [x] Session handling
-  - [x] session_start(), session_destroy()
-  - [x] session_id(), session_name(), session_regenerate_id()
-  - [x] $_SESSION superglobal support
-  - [x] In-memory session storage
-  - [x] Session persistence (file-based available)
+- [x] Session **demo patterns** (`examples/session-examples.php` — plain `$_SESSION` array; not Zend session extension)
+  - [ ] `session_start()`, `session_destroy()`, `session_id()` as engine builtins
+  - [ ] File-backed / request-scoped session storage in `phprs serve`
 - [x] PDO/database layer
   - [x] PDO class with connection management
   - [x] Query execution (query(), exec())
@@ -122,7 +126,7 @@
 - [x] Bootstrap (index.php → wp-blog-header.php → wp-load.php → wp-config.php → wp-settings.php)
 - [x] wp-config-style constants (ABSPATH, WP_DEBUG; define/defined/constant, __DIR__, __FILE__)
 - [x] Relative include resolution; include restores caller state
-- [x] Minimal example in examples/wordpress (runnable)
+- [x] Minimal example in examples/wordpress (partial — `wp-db.php` `array()` syntax blocks full bootstrap until compiler support)
 - [x] do_action / apply_filters (full implementation with priority support)
 - [x] wp-config.php parsing (DB_*, table prefix)
 - [x] Database layer for wpdb (in-memory stub with query/get_results/insert/update/delete)
@@ -133,72 +137,38 @@
   - [x] Plugin loading (wp_load_plugins, register_activation_hook, register_deactivation_hook)
   - [x] Theme API (add_theme_support, register_nav_menus, register_sidebar, get_template_part)
   - [x] Theme loading (wp_load_theme, after_setup_theme hook)
-  - [x] Session handling (wp_session_start, wp_session_get, wp_session_set, session stubs)
+  - [x] WordPress demo session stubs (`wp_session_*` in `examples/wordpress/` only)
   - [x] Example plugin with activation hooks and filters
   - [x] Example theme with functions.php and theme setup
   - [x] Comprehensive test script (test-theme-plugin.php)
 
 ## Statistics
 
-### Implementation Stats
-- **Engine**: types, string, hash, alloc, gc, operators, array_ops, lexer, compile, vm, jit, function_optimizer, opcode_cache, benchmark, perf, perf_alloc, facade, errors, exception
-- **PHP runtime**: 19 source files in php/ (added regex, http_stream, pdo, math, hash, datetime, mbstring)
-- **Framework examples**: WordPress (full), CodeIgniter 4 (bootstrap), Drupal (bootstrap)
-- **67 opcodes** (dispatch table, dispatch_handlers) — added FetchStaticProp, DoStaticCall, CloneObj, SendValNamed
-- **130+ built-in functions** (including isset, empty, htmlspecialchars, preg_*, math functions, hash functions, datetime functions, mbstring functions, shortcode_atts, array_merge, ucfirst, introspection functions, SPL autoloading, array_keys/values/pop/shift/slice/reverse, etc.)
-- **316 passing tests** (100% pass rate) plus `tests/php8x_features.rs` (13 tests) covering static members, late static binding, magic methods (__get, __set, __call, __isset), anonymous classes, variadic functions, named arguments, union types, enums
-- **Known compiler bug**: returning comparison expressions directly (`return $a == $b`) evaluates to true; workaround is to assign to a variable first (`$result = $a == $b; return $result;`)
-- **Zero compilation warnings** (clean build with clippy)
-- **Thread-safe** JIT and optimizer (Arc, OnceLock, RwLock)
+### Implementation stats (current)
+- **Engine**: types, string, hash, alloc, gc, operators, compile, vm, jit, benchmark, …
+- **PHP runtime**: modules under `src/php/` (regex, http_stream, pdo stub, math, hash, datetime, mbstring, …)
+- **Framework examples**: WordPress-shaped (partial), CodeIgniter 4 demo (CI-tested), Drupal demo (CI-tested)
+- **67 opcodes** (dispatch table)
+- **130+ built-in functions** — see `builtin_capability_tests.rs` for exercised surface
+- **376+ workspace tests** (`cargo test --workspace`)
+- **21 root PHP examples** — all run via `examples_root_php_scripts_all_run`
+- **Known gaps**: UDF calls incomplete in some CLI paths; `array()` syntax; `foreach ($k => $v)`; look-ahead regex
 
-### Standard Library
-- Full regex support with `regex` crate (preg_match, preg_match_all, preg_replace, preg_split)
-- HTTP/HTTPS stream wrappers with `reqwest`
-- Session handling with in-memory and file persistence
-- PDO database abstraction layer
+### Standard library (honest)
+- Regex via Rust `regex` (`preg_*`) — no look-ahead/look-behind
+- HTTP GET via `file_get_contents` + `reqwest`
+- PDO **stub** (in-memory)
+- Session **not** implemented as PHP extension (demo uses `$_SESSION` variable)
 - Math functions (20+): abs, ceil, floor, round, sqrt, pow, trig functions, max, min, rand
 - Hash functions: md5, sha1, sha256, sha512, base64_encode, base64_decode
 - DateTime functions: time, date, strtotime, mktime, microtime
 - FTP stream wrapper (stub)
 
-### WordPress Support
-- wpdb class with in-memory storage
-- Complete hooks system (actions and filters with priority support)
-- Plugin and theme loading
-- Shortcode API
-- 40+ WordPress-specific functions
+- WordPress-shaped demo: hooks/filters stubs, wpdb in-memory — **not** full core
 
-## 🦀 Rust Implementation Advantages
+## Rust host advantages (engineering, not product guarantees)
 
-### Security (70% Fewer Vulnerabilities)
-- ✅ **Zero memory leaks**: Ownership system guarantees
-- ✅ **Zero buffer overflows**: Compile-time bounds checking
-- ✅ **Zero use-after-free**: Borrow checker prevents
-- ✅ **Zero null pointer dereferences**: Option<T> type system
-- ✅ **Zero data races**: Type system enforces thread safety
-- ✅ **No segfaults**: Safe by default
-
-### Performance (2-3x Faster)
-- ✅ **LLVM optimization**: Superior to GCC/Clang
-- ✅ **Zero-cost abstractions**: High-level code, C-like performance
-- ✅ **No GC pauses**: Deterministic memory management
-- ✅ **Better inlining**: Cross-crate LTO
-- ✅ **SIMD auto-vectorization**: Modern CPU features
-- ✅ **Lock-free concurrency**: Atomic operations
-
-### Development Quality
-- ✅ **Fearless refactoring**: Type system catches errors
-- ✅ **Rich ecosystem**: 100,000+ crates on crates.io
-- ✅ **Modern tooling**: cargo, rustfmt, clippy, rust-analyzer
-- ✅ **Built-in testing**: cargo test integrated
-- ✅ **Better error messages**: Helpful compiler diagnostics
-
-### Deployment
-- ✅ **Single binary**: No external dependencies
-- ✅ **Tiny Docker images**: 10-20MB vs 100MB+ for PHP
-- ✅ **Static linking**: No shared library conflicts
-- ✅ **Cross-compilation**: Build for any platform
-- ✅ **ARM support**: Native performance on ARM64 handling
+Rust is used for the **interpreter implementation** because of memory safety in safe code, strong tooling (`cargo test`, clippy), and LLVM for the host binary. That does **not** automatically make every PHP workload faster or more secure end-to-end — measure your scripts or read [PERFORMANCE.md](PERFORMANCE.md).
 
 ## Code Quality Improvements (Completed)
 
@@ -437,5 +407,5 @@
 ## Documentation
 
 - [SPEC.md](SPEC.md) - Project specification and scope
-- [PERFORMANCE.md](PERFORMANCE.md) - Performance optimizations and benchmarks vs PHP 8
+- [PERFORMANCE.md](PERFORMANCE.md) - Evidence policy and optimization notes (not benchmark marketing)
 

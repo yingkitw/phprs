@@ -1,6 +1,8 @@
 # WordPress Theme and Plugin Support in phprs
 
-This directory demonstrates a complete WordPress-style theme and plugin system implemented in phprs.
+> **Status:** Demo stubs only — not production WordPress. Bootstrap may fail on `require` of `wp-includes/wp-db.php` until `array()` syntax is supported or the stub uses `[]`. See [README.md](README.md).
+
+This directory demonstrates a **WordPress-style** theme and plugin stub system for phprs (not production WordPress).
 
 ## Features Implemented
 
@@ -19,9 +21,9 @@ This directory demonstrates a complete WordPress-style theme and plugin system i
 - **Template Functions**: `get_header()`, `get_footer()`, `get_sidebar()`, `get_template_part()`
 - **Asset Enqueuing**: `wp_enqueue_script()`, `wp_enqueue_style()` (stubs)
 
-### Session Handling
-- **Session Functions**: `wp_session_start()`, `wp_session_get()`, `wp_session_set()`, `wp_session_delete()`
-- **PHP Session Stubs**: `session_start()`, `session_destroy()`, `session_id()`, etc.
+### Session Handling (WordPress demo stubs only)
+- **wp_session_*** helpers in `wp-includes/session.php` for the example tree
+- **Not** the PHP `session` extension in the main engine (`src/` has no `session_start` builtin)
 
 ### Database Integration
 - **wpdb Class**: Full in-memory database abstraction

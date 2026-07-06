@@ -1,116 +1,47 @@
-# phprs Development Guidelines
+# Agent Development Loop
 
-Guidelines for contributing to phprs codebase.
+This document defines the continuous improvement cycle for the project.
 
-## Commands
+## The Loop
 
-### Build & Check
-```bash
-cargo build              # Build project
-cargo build --release    # Build optimized release
-cargo check             # Quick syntax/type checking
-cargo clippy            # Run linter with all checks
-cargo fmt                # Format code
-```
+### 1. Complete Remaining TODO Items
+Pick the next highest-priority item from `TODO.md` (or `ARCHITECTURE.md` if the task is architectural). Implement it with minimal, focused changes. Do not add speculative features.
 
-### Testing
-```bash
-cargo test                           # Run all tests
-cargo test <test_name>              # Run specific test
-cargo test --test <test_file>       # Run integration test
-cargo test -- --nocapture            # Show test output
-```
+### 2. Create Tests and Examples
+For every new capability:
+- Write integration tests in `tests/` and unit tests next to components that exercise the feature end-to-end where possible
+- Add unit tests for core logic where appropriate
+- Provide a minimal usage example if the feature is client-facing
 
-### Examples
-```bash
-cargo run --example <name>           # Run specific example
-```
+### 3. Ensure `cargo test` Passes
+Run the full test suite. Fix any failures before proceeding. Warnings are acceptable but should be noted.
 
-### Workspace
-```bash
-cargo build -p php                    # Build PHP binary
-cargo build -p php-pkg                # Build package manager
-cargo build -p php-server            # Build server binary
-```
+### 4. Loop Back to Step 1
+Return to `TODO.md` and pick the next item. Repeat until the backlog is clear.
 
-## Code Style
+### 5. Audit and Optimize
+After each batch of features, perform a quality pass:
+- **Maintainability**: Are functions small and well-named? Is the module structure logical?
+- **Leanness**: Remove dead code, unused imports, and speculative abstractions
+- **Wiring**: Ensure all new features are properly integrated into `main.rs`, `Cargo.toml` scripts, and docs
+- **Small footprint**: Avoid unnecessary crates; prefer the standard library or lightweight dependencies
+- **Consistency**: Match existing code style and patterns
 
-### Structure
-- `src/engine/` - Core Engine (types, vm, string, hash, compile, lexer)
-- `src/php/` - PHP Runtime (runtime, streams, variables, filesystem, sapi)
-- `tests/` - Integration tests
-- `examples/` - Example code
+### 6. Competitive Intelligence
+Research similar open-source TeX to PDF converters (Tectonic, Pandoc, Typst, texlive). Identify capabilities they have that this project lacks. Add the most valuable ones to the `TODO.md` brainstorming section. Prioritize features that provide clear competitive advantage.
 
-### Import Order
-```rust
-// std → third-party → local
-use std::sync::atomic::{AtomicU32, Ordering};
-use anyhow::Result;
-use crate::engine::types::PhpType;
-```
+### 7. Update Documentation
+Keep all project docs aligned with the current implementation:
+- **`README.md`**: Quick start, feature list, architecture summary
+- **`TODO.md`**: Mark completed items, move them to Done, keep brainstorming current
+- **`SPEC.md`**: Scope and requirements for the site, technical stack, quality bar
+- **`ARCHITECTURE.md`**: Module relationships, data flow, deployment topology
+- **`AGENTS.md`**: This file — update if the loop itself evolves
 
-- Avoid glob imports (`use *;`)
-- Group related imports
+## Principles
 
-### Naming Conventions
-- Types: `PascalCase` (e.g., `PhpString`, `Val`, `CompileContext`)
-- Functions: `snake_case` (e.g., `string_init`, `compile_expression`)
-- Constants: `SCREAMING_SNAKE_CASE`
-- Files: `snake_case.rs`
-- Enum variants: `PascalCase`
-
-### Rust Patterns
-- Use `#[repr(u8)]` for enums mapping to C values
-- Use `#[derive(Debug, Clone, Copy, PartialEq, Eq)]` for simple enums
-- Implement `From` traits for type conversions
-- Use `Result<T, Box<dyn std::error::Error>>` for complex errors
-- Use `Result<T, String>` for simple errors
-- Prefer `Box::new()` for heap allocation
-- Use `AtomicU32` for reference counting
-- Prefer immutable references (`&`) over mutable (`&mut`)
-- Use `?` operator for error propagation
-
-### Documentation
-- Use module-level comments (`//!`)
-- Use function comments (`///`) for public functions
-- Include examples when appropriate
-- Document unsafe blocks with `# Safety` comments
-
-### Code Organization
-- **KISS**: Keep functions simple and focused
-- **DRY**: Extract common functionality; avoid duplication
-- **SoC**: Separate concerns logically
-- Keep functions under 50 lines when possible
-- Extract complex logic into separate functions
-
-### Testing
-- Unit tests in `tests.rs` modules within source files
-- Integration tests in `tests/` directory
-- Use `#[test]` attribute
-- Use `#[cfg(test)]` for test-only code
-- Test names: `test_function_name_behavior`
-- Include positive and negative test cases
-
-## Architecture Notes
-
-- Single crate architecture with all code in `src/`
-- Workspace with binary crates in `bin/` directory
-- Migration from C to Rust maintaining PHP compatibility
-- Memory safety handled by Rust's ownership system
-- Optimized release profile in Cargo.toml
-
-## Key Dependencies
-
-- `anyhow`/`thiserror` - Error handling
-- `serde` - Serialization
-- `log`/`env_logger` - Logging
-
-## Workflow
-
-1. Focus on one module at a time
-2. Reference original PHP/C implementation when needed
-3. Always run `cargo check` and `cargo test` before committing
-4. Use `cargo fmt` and `cargo clippy` to ensure quality
-5. Consider performance and memory safety
-6. Write maintainable, reusable code
-7. Update both implementation and tests for new features
+- **Simplicity over flexibility**: Solve the problem at hand, not every hypothetical future problem
+- **Surgical changes**: Touch only what you must; clean up only your own mess
+- **Goal-driven**: Every change should have a verifiable success criterion
+- **Test before ship**: No feature is complete until it has passing tests
+- **Docs are code**: Documentation drift is a bug

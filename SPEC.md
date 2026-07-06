@@ -2,70 +2,67 @@
 
 ## Purpose
 
-phprs is a **PHP interpreter implemented in Rust**, built from the ground up to leverage Rust's memory safety, concurrency, and performance advantages. It aims to execute PHP code with:
+phprs is a **PHP interpreter implemented in Rust**. It aims to execute PHP code with:
 
-- **Memory Safety**: Zero memory leaks, no buffer overflows, no use-after-free bugs
-- **Thread Safety**: Fearless concurrency with compile-time race detection
-- **Superior Performance**: 2-3x faster than PHP 8.3 through LLVM optimization
-- **PHP Compatibility**: Preserving PHP semantics while eliminating C-based vulnerabilities
+- **Memory safety** for the **interpreter implementation** (Rust ownership and bounds checking in safe code)
+- **Thread-safe host code** where shared engine state uses Rust concurrency primitives
+- **Growing PHP compatibility** — semantics and extensions are implemented incrementally; parity with Zend PHP is not claimed globally
+- **Measured performance** — optimization work is welcome; published speedups vs stock PHP require reproducible benchmarks (see [PERFORMANCE.md](PERFORMANCE.md))
 
-## Why Rust Over C?
+## Why Rust?
 
-### Security Advantages
-- **70% fewer CVEs**: Rust's ownership system eliminates entire classes of vulnerabilities
-- **No Buffer Overflows**: Compile-time bounds checking prevents exploits
-- **No Memory Corruption**: Borrow checker guarantees memory safety
-- **Safe Concurrency**: Data races impossible by design
+### Security (implementation)
+- Fewer classic memory-safety bug classes in **safe Rust** than in a typical C extension/runtime
+- Explicit `unsafe` blocks should be rare and documented
+- Application security still depends on scripts, deployment, and extensions you enable
 
-### Performance Advantages
-- **LLVM Backend**: Superior optimization compared to GCC/Clang
-- **Zero-Cost Abstractions**: High-level code with C-like performance
-- **No GC Pauses**: Deterministic memory management
-- **Better Inlining**: Cross-crate optimization with LTO
+### Performance (hypothesis, not a product claim)
+- LLVM backend for the host binary
+- Room for opcode dispatch, caching, and JIT-oriented hooks
+- **No guaranteed multiplier vs PHP 8.x** without workload-specific measurements
 
-### Development Advantages
-- **Fearless Refactoring**: Type system catches errors at compile time
-- **Rich Ecosystem**: 100,000+ crates on crates.io
-- **Modern Tooling**: cargo, rustfmt, clippy, rust-analyzer
-- **Better Testing**: Built-in test framework, property-based testing
+### Development
+- `cargo test`, clippy, rustfmt, and a large crates.io ecosystem
+- Type-driven refactors for engine code
 
 ## Scope
 
-### In Scope (Implemented)
+### In Scope (Implemented to varying degrees)
 
-- **Core engine**: Type system (Val, strings, arrays, objects), string handling (DJBX33A), hash tables, memory allocation (persistent/non-persistent), garbage collection (tri-color marking), operators and type conversion.
-- **Compiler**: Lexer (PHP tokens including `?`, `??`, `?->`, `::`), expression and statement parsing, control flow, functions, classes, traits, namespaces, closures, type declarations, PHP 8.0 features (match, attributes, generators), PHP 8.1 features (enums with `T_ENUM`, `T_READONLY`, union/intersection type parsing, variadic params, named arguments, anonymous classes).
-- **VM**: 67 opcodes, dispatch-table execution, 100+ built-in functions, exceptions (try/catch/finally/throw), static member access (`FetchStaticProp`, `DoStaticCall`), cloning (`CloneObj`), named argument passing (`SendValNamed`), late static binding (`called_class` resolution), magic method fallbacks (`__get`, `__set`, `__call`, `__callStatic`).
-- **Runtime**: INI config, variables, streams, SAPI (CLI), output buffering, filesystem, extension framework.
-- **Standard Library**: Math functions (20+), hash functions (md5, sha1, sha256, sha512, base64), datetime functions (time, date, strtotime, mktime, microtime).
-- **Stream Wrappers**: HTTP/HTTPS (reqwest), file streams, custom stream contexts.
-- **Regex**: Full PCRE compatibility with Rust regex crate (preg_match, preg_match_all, preg_replace, preg_split).
-- **Sessions**: In-memory and file-based session handling.
-- **PDO**: Database abstraction layer with prepared statements.
-- **Tooling**: Unified CLI (`run`, `serve`, `pkg`), web playground, package manager (Composer-style, Packagist, PSR-4 autoload).
-- **Performance**: JIT for hot functions, function optimizer, opcode cache, optimized VM dispatch, memory and array optimizations.
-- **Framework Support**: WordPress (complete), CodeIgniter 4 (bootstrap), Drupal (bootstrap).
+- **Core engine**: Types, strings, hash tables, allocation, GC, operators, arrays.
+- **Compiler**: Lexer, expressions, statements, control flow, functions, classes, traits, namespaces, closures, PHP 8.0+ features (match, attributes, generators, enums, readonly, union/intersection parsing, named args, variadics).
+- **VM**: Opcode dispatch table, built-in functions (see `src/engine/vm/builtins.rs` and `builtin_capability_tests.rs`), exceptions, includes, static members, magic-method fallbacks.
+- **Runtime**: INI, variables, streams, SAPI (CLI), output buffering, filesystem helpers, extension framework.
+- **Standard library (partial)**: Math, hash, datetime, mbstring subset, URL helpers, regex (`preg_*` via Rust `regex`), HTTP `file_get_contents`, PDO **stub**, JSON, introspection helpers.
+- **Tooling**: CLI (`run`, `serve`, `pkg`), Composer-style package manager (partial).
+- **Performance scaffolding**: JIT hooks, function optimizer, opcode cache, phprs-only benchmark export (no bundled PHP baseline).
+- **Framework demos**: Minimal trees under `examples/` for WordPress-shaped, CodeIgniter 4, and Drupal bootstraps (not full framework parity).
+- **Tests**: 376+ workspace tests including `examples_runtime` (all root `examples/*.php`), `build_rust_examples`, and broad builtin capability tests.
+
+### Explicitly Limited or Not Implemented
+
+- **PHP session extension** (`session_start`, `session_id`, …) — not in the engine; `examples/session-examples.php` simulates `$_SESSION` as a plain array
+- **User-defined function calls from CLI** — incomplete in some paths (see `examples/functions.php`); engine tests cover more than the demo scripts
+- **Full PCRE** — Rust regex: no look-ahead/look-behind; some PHP patterns need rewriting
+- **Real PDO drivers** — in-memory/stub behavior only
+- **Production WordPress / Laravel / Symfony** — demo stubs only
 
 ### Rust-Specific Features
 
-- **Thread-Safe JIT**: Arc, RwLock, OnceLock for safe concurrent compilation
-- **Lock-Free Data Structures**: Atomic operations for performance
-- **Async I/O**: Tokio runtime for non-blocking operations
-- **Zero-Copy String Handling**: Efficient string operations
-- **Type-Safe Opcodes**: Enum-based opcode system with exhaustive matching
-- **Safe FFI**: Controlled unsafe blocks for C interop
+- Thread-safe globals where needed (`Arc`, `OnceLock`, `RwLock`)
+- Tokio for async HTTP in the host
+- Enum-based opcodes with exhaustive dispatch setup
 
 ## Compliance
 
-- **PHP semantics**: Expression and statement behavior aligned with PHP 7/8 where implemented.
-- **Rust**: Edition 2024, `cargo build` and `cargo test` must succeed.
-- **Memory Safety**: All unsafe code documented with safety invariants.
-- **Thread Safety**: All shared state protected by Rust's type system.
-- **Zero Warnings**: Clean compilation with clippy and rustfmt.
+- **PHP semantics**: Aligned with PHP 7/8 **where implemented**; gaps are bugs or backlog items.
+- **Rust**: Edition 2024; `cargo build --workspace` and `cargo test --workspace` must succeed.
+- **Documentation**: Must not claim features or benchmarks without tests or measured methodology.
+- **Examples**: Every root-level `examples/*.php` must compile and run to `PhpResult::Success` under `tests/examples_runtime.rs`.
 
 ## References
 
 - [README.md](README.md) - Quick start and overview
 - [ARCHITECTURE.md](ARCHITECTURE.md) - Module layout and execution flow
 - [TODO.md](TODO.md) - Roadmap and statistics
-- [PERFORMANCE.md](PERFORMANCE.md) - Optimizations and benchmarks
+- [PERFORMANCE.md](PERFORMANCE.md) - Evidence policy and optimization notes
