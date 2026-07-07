@@ -64,6 +64,54 @@ fn test_compile_context_finalize() {
 }
 
 #[test]
+fn test_parse_primary_strlen_first_class_callable() {
+    use crate::engine::compile::expression::primary::parse_primary_expr;
+    use crate::engine::lexer::Lexer;
+    use crate::engine::types::PhpType;
+
+    let mut context = CompileContext::new();
+    let mut lexer = Lexer::new("strlen(...)");
+    let (val, _) = parse_primary_expr(&mut lexer, &mut context).expect("parse");
+    assert_eq!(
+        val.get_type(),
+        PhpType::Callable,
+        "expected Callable from strlen(...), got {:?}",
+        val.get_type()
+    );
+}
+
+#[test]
+fn test_lexer_strlen_fcc_tokens() {
+    use crate::engine::lexer::{Lexer, TokenType};
+
+    let mut lexer = Lexer::new("strlen(...)");
+    assert_eq!(lexer.next_token().unwrap().token_type, TokenType::T_STRING);
+    assert_eq!(lexer.next_token().unwrap().token_type, TokenType::T_STRING);
+    assert_eq!(lexer.next_token().unwrap().token_type, TokenType::T_ELLIPSIS);
+    assert_eq!(lexer.next_token().unwrap().token_type, TokenType::T_STRING);
+}
+
+#[test]
+fn test_compile_first_class_callable_assignment() {
+    use crate::engine::compile::compile_string_with_functions;
+    use crate::engine::types::PhpType;
+
+    let (op_array, _) =
+        compile_string_with_functions("$fn = strlen(...);", "test.php").expect("compile");
+    let assign = op_array
+        .ops
+        .iter()
+        .find(|op| op.opcode == Opcode::Assign)
+        .expect("assign opcode");
+    assert_eq!(
+        assign.op2.get_type(),
+        PhpType::Callable,
+        "expected Callable on RHS, got {:?}",
+        assign.op2.get_type()
+    );
+}
+
+#[test]
 fn test_compile_string() {
     let result = compile_string("<?php echo 'hello';", "test.php");
     assert!(result.is_ok());

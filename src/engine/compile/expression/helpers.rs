@@ -331,6 +331,16 @@ fn parse_static_access(
 
     let peek = lexer.next_token()?;
     if token_is_punct(&peek, "(") {
+        let arg_token = lexer.next_token()?;
+        if arg_token.token_type == TokenType::T_ELLIPSIS {
+            let close = lexer.next_token()?;
+            if !token_is_punct(&close, ")") {
+                return Err("Expected ')' after '...' in first-class callable".to_string());
+            }
+            let callable = emit_first_class_static_callable(context, class_val, member_name);
+            return Ok((callable, lexer.next_token()?));
+        }
+
         // Static method call: ClassName::method(args...)
         context.emit_opcode(
             Opcode::InitFCall,
@@ -339,7 +349,7 @@ fn parse_static_access(
             facade::null_val(),
         );
 
-        let mut arg_token = lexer.next_token()?;
+        let mut arg_token = arg_token;
         while !token_is_punct(&arg_token, ")") {
             arg_token = parse_call_arg_unknown(lexer, context, arg_token)?;
             if token_is_punct(&arg_token, ",") {
@@ -375,6 +385,20 @@ pub(crate) fn parse_method_call(
     obj: Val,
     member_zval: Val,
 ) -> Result<(Val, Token), String> {
+    let method_name = crate::engine::operators::zval_get_string(&member_zval)
+        .as_str()
+        .to_string();
+
+    let arg_token = lexer.next_token()?;
+    if arg_token.token_type == TokenType::T_ELLIPSIS {
+        let close = lexer.next_token()?;
+        if !token_is_punct(&close, ")") {
+            return Err("Expected ')' after '...' in first-class callable".to_string());
+        }
+        let callable = emit_first_class_method_callable(context, obj, &method_name);
+        return Ok((callable, lexer.next_token()?));
+    }
+
     context.emit_opcode(
         Opcode::InitMethodCall,
         crate::engine::facade::clone_val(&obj),
@@ -383,7 +407,7 @@ pub(crate) fn parse_method_call(
     );
 
     // Parse arguments
-    let mut arg_token = lexer.next_token()?;
+    let mut arg_token = arg_token;
     while !token_is_punct(&arg_token, ")") {
         arg_token = parse_call_arg_unknown(lexer, context, arg_token)?;
         if token_is_punct(&arg_token, ",") {
@@ -843,14 +867,106 @@ pub(crate) fn parse_call_arg_unknown(
     )
 }
 
-/// Parse function call: function_name(arg1, arg2, ...)
-/// The opening '(' has already been consumed
+fn compile_first_class_function(name: &str) -> Val {
+    Val::new(
+        PhpValue::String(Box::new(string_init(name, false))),
+        PhpType::Callable,
+    )
+}
+
+fn compile_first_class_static(class_name: &str, method: &str) -> Val {
+    let encoded = format!("{class_name}::{method}");
+    Val::new(
+        PhpValue::String(Box::new(string_init(&encoded, false))),
+        PhpType::Callable,
+    )
+}
+
+fn emit_array_assoc_pair(context: &mut CompileContext, arr: Val, key: &str, value: Val) {
+    context.emit_opcode(
+        Opcode::AddArrayElement,
+        arr,
+        value,
+        facade::string_val(key),
+    );
+    let last_idx = context.current_op_index() - 1;
+    context.update_jump_target(last_idx, 1);
+}
+
+fn emit_first_class_method_callable(
+    context: &mut CompileContext,
+    obj: Val,
+    method: &str,
+) -> Val {
+    let arr_slot = context.alloc_temp();
+    context.emit_opcode(
+        Opcode::InitArray,
+        facade::null_val(),
+        facade::null_val(),
+        temp_var_ref(arr_slot),
+    );
+    let arr = temp_var_ref(arr_slot);
+    emit_array_assoc_pair(
+        context,
+        facade::clone_val(&arr),
+        "type",
+        facade::string_val("method"),
+    );
+    emit_array_assoc_pair(
+        context,
+        facade::clone_val(&arr),
+        "method",
+        facade::string_val(method),
+    );
+    emit_array_assoc_pair(context, facade::clone_val(&arr), "object", obj);
+    arr
+}
+
+fn emit_first_class_static_callable(
+    context: &mut CompileContext,
+    class_val: Val,
+    method: &str,
+) -> Val {
+    if let PhpValue::String(ref s) = class_val.value {
+        return compile_first_class_static(s.as_str(), method);
+    }
+    let arr_slot = context.alloc_temp();
+    context.emit_opcode(
+        Opcode::InitArray,
+        facade::null_val(),
+        facade::null_val(),
+        temp_var_ref(arr_slot),
+    );
+    let arr = temp_var_ref(arr_slot);
+    emit_array_assoc_pair(
+        context,
+        facade::clone_val(&arr),
+        "type",
+        facade::string_val("static"),
+    );
+    emit_array_assoc_pair(context, facade::clone_val(&arr), "class", class_val);
+    emit_array_assoc_pair(
+        context,
+        facade::clone_val(&arr),
+        "method",
+        facade::string_val(method),
+    );
+    arr
+}
+
 pub(crate) fn parse_function_call(
     lexer: &mut Lexer,
     context: &mut CompileContext,
     function_name: &str,
 ) -> Result<(Val, Token), String> {
     let mut current_token = lexer.next_token()?;
+    if current_token.token_type == TokenType::T_ELLIPSIS {
+        let close = lexer.next_token()?;
+        if !token_is_punct(&close, ")") {
+            return Err("Expected ')' after '...' in first-class callable".to_string());
+        }
+        return Ok((compile_first_class_function(function_name), lexer.next_token()?));
+    }
 
     // Emit InitFCall
     context.emit_opcode(

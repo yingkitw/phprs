@@ -236,3 +236,30 @@ echo $obj->value;
     assert!(matches!(r, PhpResult::Success), "vm result: {r:?}, output: {out:?}");
     assert!(out.contains("5"), "anon class with ctor output: {out:?}");
 }
+
+#[test]
+fn test_first_class_callable_syntax() {
+    let code = r#"<?php
+$strlen = strlen(...);
+echo $strlen("hello");
+
+class MathHelper {
+    public static function double($n) {
+        return $n * 2;
+    }
+    public function inc($n) {
+        return $n + 1;
+    }
+}
+$d = MathHelper::double(...);
+echo $d(4);
+$obj = new MathHelper();
+$inc = $obj->inc(...);
+echo $inc(9);
+"#;
+    let (r, out) = run_php(code).expect("run");
+    assert!(matches!(r, PhpResult::Success), "vm result: {r:?}, output: {out:?}");
+    assert!(out.contains("5"), "strlen FCC output: {out:?}");
+    assert!(out.contains("8"), "static FCC output: {out:?}");
+    assert!(out.contains("10"), "method FCC output: {out:?}");
+}

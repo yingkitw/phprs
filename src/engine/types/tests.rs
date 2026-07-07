@@ -20,6 +20,12 @@ fn test_zval_get_type() {
     let str_val = string_init("test", false);
     let zval_string = Val::new(PhpValue::String(Box::new(str_val)), PhpType::String);
     assert_eq!(zval_string.get_type(), PhpType::String);
+
+    let callable = Val::new(
+        PhpValue::String(Box::new(string_init("strlen", false))),
+        PhpType::Callable,
+    );
+    assert_eq!(callable.get_type(), PhpType::Callable);
 }
 
 #[test]

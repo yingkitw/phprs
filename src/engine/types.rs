@@ -275,22 +275,7 @@ impl Val {
     }
 
     pub fn get_type(&self) -> PhpType {
-        // Extract type from type_info (low 8 bits)
-        match self.type_info & 0xff {
-            0 => PhpType::Undef,
-            1 => PhpType::Null,
-            2 => PhpType::False,
-            3 => PhpType::True,
-            4 => PhpType::Long,
-            5 => PhpType::Double,
-            6 => PhpType::String,
-            7 => PhpType::Array,
-            8 => PhpType::Object,
-            9 => PhpType::Resource,
-            10 => PhpType::Reference,
-            11 => PhpType::ConstantAst,
-            _ => PhpType::Undef,
-        }
+        PhpType::from_u8((self.type_info & 0xff) as u8)
     }
 }
 

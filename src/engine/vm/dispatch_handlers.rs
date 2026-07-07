@@ -9,7 +9,9 @@ use super::execute_data::{
 };
 use super::opcodes::{Op, OpArray, Opcode};
 
+use crate::engine::hash::hash_find;
 use crate::engine::jit::{increment_execution_counter, try_inline_operation};
+use crate::engine::string::string_init;
 use crate::engine::types::{PhpType, PhpValue, Val};
 
 /// Call __toString magic method on an object if it exists
@@ -392,6 +394,244 @@ pub fn execute_return(op: &Op, execute_data: &mut ExecuteData) -> Result<ExecRes
     Ok(ExecResult::Return(val))
 }
 
+fn fcc_array_string_field(arr: &crate::engine::types::PhpArray, key: &str) -> Option<String> {
+    let k = string_init(key, false);
+    hash_find(arr, &k).map(|v| crate::engine::operators::zval_get_string(v).as_str().to_string())
+}
+
+fn try_invoke_first_class_callable(
+    callable: &Val,
+    args: Vec<Val>,
+    arg_names: Vec<Option<String>>,
+    arg_by_ref: Vec<bool>,
+    execute_data: &mut ExecuteData,
+) -> Result<Option<Val>, String> {
+    if let PhpValue::Array(ref arr) = callable.value {
+        let Some(kind) = fcc_array_string_field(arr, "type") else {
+            return Ok(None);
+        };
+        return match kind.as_str() {
+            "method" => {
+                let method = fcc_array_string_field(arr, "method")
+                    .ok_or_else(|| "Invalid method first-class callable".to_string())?;
+                let k = string_init("object", false);
+                let obj = hash_find(arr, &k).ok_or_else(|| {
+                    "Invalid method first-class callable: missing object".to_string()
+                })?;
+                fcc_invoke_instance_method(
+                    execute_data,
+                    clone_val(obj),
+                    &method,
+                    args,
+                    arg_names,
+                    arg_by_ref,
+                )
+            }
+            "static" => {
+                let class = fcc_array_string_field(arr, "class")
+                    .ok_or_else(|| "Invalid static first-class callable".to_string())?;
+                let method = fcc_array_string_field(arr, "method")
+                    .ok_or_else(|| "Invalid static first-class callable".to_string())?;
+                fcc_invoke_static_method(
+                    execute_data,
+                    &class,
+                    &method,
+                    args,
+                    arg_names,
+                    arg_by_ref,
+                )
+            }
+            _ => Ok(None),
+        };
+    }
+
+    if callable.get_type() != PhpType::Callable {
+        return Ok(None);
+    }
+
+    let PhpValue::String(ref name) = callable.value else {
+        return Ok(None);
+    };
+    let target = name.as_str();
+
+    if let Some((class_name, method_name)) = target.split_once("::") {
+        return fcc_invoke_static_method(
+            execute_data,
+            class_name,
+            method_name,
+            args,
+            arg_names,
+            arg_by_ref,
+        );
+    }
+
+    let func_name = target.to_ascii_lowercase();
+    if let Some(result) = execute_builtin_function(&func_name, &args, execute_data)? {
+        return Ok(Some(result));
+    }
+
+    Err(format!("Call to undefined function {target}()"))
+}
+
+fn fcc_invoke_static_method(
+    execute_data: &mut ExecuteData,
+    class_name: &str,
+    method_name: &str,
+    args: Vec<Val>,
+    arg_names: Vec<Option<String>>,
+    arg_by_ref: Vec<bool>,
+) -> Result<Option<Val>, String> {
+    let resolved_class = class_name.to_string();
+    let method_info = execute_data
+        .class_table
+        .get(&resolved_class)
+        .and_then(|ce| ce.methods.get(method_name))
+        .map(|m| {
+            let params = m.params.clone();
+            let ops: Vec<Op> = m
+                .op_array
+                .ops
+                .iter()
+                .map(|op| {
+                    Op::new(
+                        op.opcode,
+                        clone_val(&op.op1),
+                        clone_val(&op.op2),
+                        clone_val(&op.result),
+                        op.extended_value,
+                    )
+                })
+                .collect();
+            let file_label = m
+                .op_array
+                .filename
+                .clone()
+                .filter(|f| !f.is_empty())
+                .unwrap_or_else(|| format!("{resolved_class}::{method_name}"));
+            (
+                params,
+                ops,
+                file_label,
+                m.op_array.variadic_param.clone(),
+                m.op_array.ref_params.clone(),
+            )
+        });
+
+    let Some((params, ops, oparray_filename, variadic, ref_params)) = method_info else {
+        return Err(format!(
+            "Call to undefined static method {resolved_class}::{method_name}()"
+        ));
+    };
+
+    let saved_current_op = execute_data.current_op;
+    let saved_op_array = execute_data.op_array.take();
+    let saved_script_dir = execute_data.current_script_dir.clone();
+    let saved_called_class = execute_data.called_class.clone();
+    execute_data.called_class = Some(resolved_class);
+
+    bind_call_args(
+        execute_data,
+        &params,
+        &args,
+        &arg_names,
+        &variadic,
+        &ref_params,
+        &arg_by_ref,
+    );
+
+    let mut method_op_array = OpArray::with_capacity(ops.len(), oparray_filename);
+    method_op_array.ops = ops;
+    let (_status, return_val) = super::execute::execute_ex_returning(execute_data, &method_op_array);
+
+    execute_data.op_array = saved_op_array;
+    execute_data.current_op = saved_current_op;
+    execute_data.current_script_dir = saved_script_dir;
+    execute_data.called_class = saved_called_class;
+
+    Ok(return_val.or_else(|| Some(Val::new(PhpValue::Long(0), PhpType::Null))))
+}
+
+fn fcc_invoke_instance_method(
+    execute_data: &mut ExecuteData,
+    obj_val: Val,
+    method_name: &str,
+    args: Vec<Val>,
+    arg_names: Vec<Option<String>>,
+    arg_by_ref: Vec<bool>,
+) -> Result<Option<Val>, String> {
+    let PhpValue::Object(ref obj) = obj_val.value else {
+        return Err("First-class method callable requires an object".to_string());
+    };
+    let class_name = obj.class_name.clone();
+
+    let method_info = execute_data
+        .class_table
+        .get(&class_name)
+        .and_then(|ce| ce.methods.get(method_name))
+        .map(|m| {
+            let params = m.params.clone();
+            let ops: Vec<Op> = m
+                .op_array
+                .ops
+                .iter()
+                .map(|op| {
+                    Op::new(
+                        op.opcode,
+                        clone_val(&op.op1),
+                        clone_val(&op.op2),
+                        clone_val(&op.result),
+                        op.extended_value,
+                    )
+                })
+                .collect();
+            let file_label = m
+                .op_array
+                .filename
+                .clone()
+                .filter(|f| !f.is_empty())
+                .unwrap_or_else(|| format!("{class_name}::{method_name}"));
+            (
+                params,
+                ops,
+                file_label,
+                m.op_array.variadic_param.clone(),
+                m.op_array.ref_params.clone(),
+            )
+        });
+
+    let Some((params, ops, oparray_filename, variadic, ref_params)) = method_info else {
+        return Err(format!("Call to undefined method {class_name}::{method_name}()"));
+    };
+
+    let saved_current_op = execute_data.current_op;
+    let saved_op_array = execute_data.op_array.take();
+    let saved_script_dir = execute_data.current_script_dir.clone();
+    let saved_called_class = execute_data.called_class.clone();
+    execute_data.called_class = Some(class_name.clone());
+    execute_data.set_var("this", clone_val(&obj_val));
+
+    bind_call_args(
+        execute_data,
+        &params,
+        &args,
+        &arg_names,
+        &variadic,
+        &ref_params,
+        &arg_by_ref,
+    );
+
+    let mut method_op_array = OpArray::with_capacity(ops.len(), oparray_filename);
+    method_op_array.ops = ops;
+    let (_status, return_val) = super::execute::execute_ex_returning(execute_data, &method_op_array);
+
+    execute_data.op_array = saved_op_array;
+    execute_data.current_op = saved_current_op;
+    execute_data.current_script_dir = saved_script_dir;
+    execute_data.called_class = saved_called_class;
+
+    Ok(return_val.or_else(|| Some(Val::new(PhpValue::Long(0), PhpType::Null))))
+}
+
 #[inline]
 pub fn execute_do_fcall(op: &Op, execute_data: &mut ExecuteData) -> Result<ExecResult, String> {
     let resolved_op1 = if is_var_ref(&op.op1) || is_temp_ref(&op.op1) {
@@ -456,17 +696,29 @@ pub fn execute_do_fcall(op: &Op, execute_data: &mut ExecuteData) -> Result<ExecR
         }
     }
 
-    let func_name = crate::engine::operators::zval_get_string(&resolved_op1)
-        .as_str()
-        .to_ascii_lowercase();
-
-    // Check JIT compilation for hot functions
-    increment_execution_counter(&func_name);
-
     let (base, names_base) = execute_data.call_arg_stack.pop().unwrap_or((0, 0));
     let args: Vec<Val> = execute_data.call_args.drain(base..).collect();
     let arg_names: Vec<Option<String>> = execute_data.call_arg_names.drain(names_base..).collect();
     let arg_by_ref: Vec<bool> = execute_data.call_arg_by_ref.drain(base..).collect();
+
+    if let Some(result) = try_invoke_first_class_callable(
+        &resolved_op1,
+        args.clone(),
+        arg_names.clone(),
+        arg_by_ref.clone(),
+        execute_data,
+    )? {
+        if let Some(slot) = result_slot(op) {
+            execute_data.set_temp(slot, result);
+        }
+        return Ok(ExecResult::Continue);
+    }
+
+    let func_name = crate::engine::operators::zval_get_string(&resolved_op1)
+        .as_str()
+        .to_ascii_lowercase();
+
+    increment_execution_counter(&func_name);
 
     match execute_builtin_function(&func_name, &args, execute_data)? {
         Some(result) => {
@@ -1839,7 +2091,7 @@ pub fn execute_clone_obj(
 
 /// Bind call arguments to parameters, supporting named args, variadic, and by-ref params
 #[inline]
-fn bind_call_args(
+pub(crate) fn bind_call_args(
     execute_data: &mut ExecuteData,
     param_names: &[String],
     args: &[Val],

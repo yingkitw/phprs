@@ -79,6 +79,7 @@
 - [x] Example scripts adjusted for phprs compiler limits (regex lookahead, session simulation, foreach value-only)
 - [x] Look-ahead/look-behind regex via `fancy-regex` fallback in `preg_*`
 - [x] Session builtins + file-backed storage for `phprs serve`
+- [x] First-class callable syntax (`strlen(...)`, static/instance method forms)
 
 ### Package Manager
 - [x] CLI framework
@@ -223,7 +224,7 @@ Rust is used for the **interpreter implementation** because of memory safety in 
 - [x] **Intersection types** (PHP 8.1) - `Countable&ArrayAccess` parsing
 - [x] **Readonly properties** (PHP 8.1) - `T_READONLY` keyword + class body parsing
 - [x] **Enums** (PHP 8.1) - Pure and backed enums (`enum Color: string { case Red = 'red'; }`)
-- [ ] **First-class callable syntax** (PHP 8.1) - `strlen(...)`
+- [x] **First-class callable syntax** (PHP 8.1) - `strlen(...)`, `Class::method(...)`, `$obj->method(...)`
 - [x] **Foreach with key** — `foreach ($a as $k => $v)`
 - [x] **Array append / chained dim assign** — `$arr[] = $x`, `$a['b']['c'] = $v`
 - [x] **User-defined functions in CLI scripts** — top-level `function foo()` callable from same file
