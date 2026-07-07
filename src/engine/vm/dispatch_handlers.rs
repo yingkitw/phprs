@@ -466,6 +466,7 @@ pub fn execute_do_fcall(op: &Op, execute_data: &mut ExecuteData) -> Result<ExecR
     let (base, names_base) = execute_data.call_arg_stack.pop().unwrap_or((0, 0));
     let args: Vec<Val> = execute_data.call_args.drain(base..).collect();
     let arg_names: Vec<Option<String>> = execute_data.call_arg_names.drain(names_base..).collect();
+    let arg_by_ref: Vec<bool> = execute_data.call_arg_by_ref.drain(base..).collect();
 
     match execute_builtin_function(&func_name, &args, execute_data)? {
         Some(result) => {
@@ -509,6 +510,8 @@ pub fn execute_do_fcall(op: &Op, execute_data: &mut ExecuteData) -> Result<ExecR
                         func_op_array.filename.clone().unwrap_or_default(),
                     );
                     cloned.function_name = func_op_array.function_name.clone();
+                    cloned.ref_params = func_op_array.ref_params.clone();
+                    cloned.variadic_param = func_op_array.variadic_param.clone();
                     for op in &func_op_array.ops {
                         cloned.add_op(super::opcodes::Op::new(
                             op.opcode,
@@ -522,6 +525,7 @@ pub fn execute_do_fcall(op: &Op, execute_data: &mut ExecuteData) -> Result<ExecR
                     });
 
             if let Some((param_names, variadic_param, func_op_array)) = func_data {
+                let ref_params = func_op_array.ref_params.clone();
                 // Note: JIT compilation check removed to prevent deadlock
                 // The function will be JIT compiled on subsequent calls if it's hot enough
 
@@ -529,11 +533,14 @@ pub fn execute_do_fcall(op: &Op, execute_data: &mut ExecuteData) -> Result<ExecR
                 let saved_op = execute_data.current_op;
                 let saved_op_array = execute_data.op_array.take();
                 let saved_temps = std::mem::take(&mut execute_data.temp_vars);
+                let saved_ref_caller_scope = execute_data.ref_caller_scope.take();
                 let saved_symbol_table = execute_data.symbol_table.take();
                 let saved_call_arg_stack = std::mem::take(&mut execute_data.call_arg_stack);
                 let saved_call_args = std::mem::take(&mut execute_data.call_args);
                 let saved_call_arg_names = std::mem::take(&mut execute_data.call_arg_names);
+                let saved_call_arg_by_ref = std::mem::take(&mut execute_data.call_arg_by_ref);
                 let saved_global_imports = std::mem::take(&mut execute_data.global_imports);
+                let saved_ref_bindings = std::mem::take(&mut execute_data.ref_param_bindings);
 
                 if execute_data.global_script_table.is_none() {
                     if let Some(ref saved) = saved_symbol_table {
@@ -542,11 +549,18 @@ pub fn execute_do_fcall(op: &Op, execute_data: &mut ExecuteData) -> Result<ExecR
                     }
                 }
 
-                // Set up fresh symbol table for function scope
+                execute_data.ref_caller_scope = saved_symbol_table;
                 execute_data.symbol_table = Some(crate::engine::types::PhpArray::new());
 
-                // Bind arguments to parameter names (supports named args and variadic)
-                bind_call_args(execute_data, &param_names, &args, &arg_names, &variadic_param);
+                bind_call_args(
+                    execute_data,
+                    &param_names,
+                    &args,
+                    &arg_names,
+                    &variadic_param,
+                    &ref_params,
+                    &arg_by_ref,
+                );
 
                 let saved_script_dir = execute_data.current_script_dir.clone();
                 let saved_magic_dir = execute_data.constants.get("__DIR__").map(clone_val);
@@ -556,19 +570,21 @@ pub fn execute_do_fcall(op: &Op, execute_data: &mut ExecuteData) -> Result<ExecR
                     super::execute::execute_ex_returning(execute_data, &func_op_array);
 
                 // Restore execution state
-                if let Some(mut saved) = saved_symbol_table {
+                execute_data.symbol_table = execute_data.ref_caller_scope.take();
+                if let Some(mut saved) = execute_data.symbol_table.take() {
                     execute_data.merge_globals_into(&mut saved);
                     execute_data.symbol_table = Some(saved);
-                } else {
-                    execute_data.symbol_table = saved_symbol_table;
                 }
+                execute_data.ref_caller_scope = saved_ref_caller_scope;
                 execute_data.global_imports = saved_global_imports;
+                execute_data.ref_param_bindings = saved_ref_bindings;
                 execute_data.temp_vars = saved_temps;
                 execute_data.op_array = saved_op_array;
                 execute_data.current_op = saved_op;
                 execute_data.call_arg_stack = saved_call_arg_stack;
                 execute_data.call_args = saved_call_args;
                 execute_data.call_arg_names = saved_call_arg_names;
+                execute_data.call_arg_by_ref = saved_call_arg_by_ref;
                 execute_data.current_script_dir = saved_script_dir;
                 match saved_magic_dir {
                     Some(v) => {
@@ -647,6 +663,15 @@ pub fn execute_send_val(op: &Op, execute_data: &mut ExecuteData) -> Result<ExecR
     let val = resolve_operand(&op.op1, execute_data);
     execute_data.call_args.push(val);
     execute_data.call_arg_names.push(None);
+    execute_data.call_arg_by_ref.push(false);
+    Ok(ExecResult::Continue)
+}
+
+#[inline]
+pub fn execute_send_var_ref(op: &Op, execute_data: &mut ExecuteData) -> Result<ExecResult, String> {
+    execute_data.call_args.push(clone_val(&op.op1));
+    execute_data.call_arg_names.push(None);
+    execute_data.call_arg_by_ref.push(true);
     Ok(ExecResult::Continue)
 }
 
@@ -657,6 +682,7 @@ pub fn execute_send_val_named(op: &Op, execute_data: &mut ExecuteData) -> Result
     let name = crate::engine::operators::zval_get_string(&name_val);
     execute_data.call_args.push(val);
     execute_data.call_arg_names.push(Some(name.as_str().to_string()));
+    execute_data.call_arg_by_ref.push(false);
     Ok(ExecResult::Continue)
 }
 
@@ -979,7 +1005,7 @@ pub fn execute_fetch_obj_prop(
                     PhpValue::String(Box::new(crate::engine::string::string_init(prop_name.as_str(), false))),
                     PhpType::String,
                 );
-                bind_call_args(execute_data, &params, &[name_val], &[None], &None);
+                bind_call_args(execute_data, &params, &[name_val], &[None], &None, &[], &[false]);
 
                 let mut method_op_array = OpArray::with_capacity(ops.len(), oparray_filename);
                 method_op_array.ops = ops;
@@ -1061,7 +1087,7 @@ pub fn execute_fetch_obj_prop(
                     PhpValue::String(Box::new(crate::engine::string::string_init(prop_name.as_str(), false))),
                     PhpType::String,
                 );
-                bind_call_args(execute_data, &params, &[name_val], &[None], &None);
+                bind_call_args(execute_data, &params, &[name_val], &[None], &None, &[], &[false]);
 
                 let mut method_op_array = OpArray::with_capacity(ops.len(), oparray_filename);
                 method_op_array.ops = ops;
@@ -1202,7 +1228,7 @@ pub fn execute_assign_obj_prop(
                     PhpValue::String(Box::new(crate::engine::string::string_init(prop_name.as_str(), false))),
                     PhpType::String,
                 );
-                bind_call_args(execute_data, &params, &[name_val, clone_val(&value)], &[None, None], &None);
+                bind_call_args(execute_data, &params, &[name_val, clone_val(&value)], &[None, None], &None, &[], &[false, false]);
 
                 let mut method_op_array = OpArray::with_capacity(ops.len(), oparray_filename);
                 method_op_array.ops = ops;
@@ -1382,12 +1408,27 @@ pub fn execute_do_method_call(
             let (base, names_base) = execute_data.call_arg_stack.pop().unwrap_or((0, 0));
             let args: Vec<Val> = execute_data.call_args.drain(base..).collect();
             let arg_names: Vec<Option<String>> = execute_data.call_arg_names.drain(names_base..).collect();
+            let arg_by_ref: Vec<bool> = execute_data.call_arg_by_ref.drain(base..).collect();
             let variadic = execute_data
                 .class_table
                 .get(&class_name)
                 .and_then(|ce| ce.methods.get(method_name.as_str()))
                 .and_then(|m| m.op_array.variadic_param.clone());
-            bind_call_args(execute_data, &params, &args, &arg_names, &variadic);
+            let ref_params = execute_data
+                .class_table
+                .get(&class_name)
+                .and_then(|ce| ce.methods.get(method_name.as_str()))
+                .map(|m| m.op_array.ref_params.clone())
+                .unwrap_or_default();
+            bind_call_args(
+                execute_data,
+                &params,
+                &args,
+                &arg_names,
+                &variadic,
+                &ref_params,
+                &arg_by_ref,
+            );
 
             // Execute method
             let mut method_op_array = OpArray::with_capacity(ops.len(), oparray_filename);
@@ -1503,7 +1544,7 @@ pub fn execute_do_method_call(
             }
             arr.n_next_free_element = args.len() as i64;
             let args_val = Val::new(PhpValue::Array(Box::new(arr)), PhpType::Array);
-            bind_call_args(execute_data, &params, &[name_val, args_val], &[None, None], &None);
+            bind_call_args(execute_data, &params, &[name_val, args_val], &[None, None], &None, &[], &[false, false]);
 
             let mut method_op_array = OpArray::with_capacity(ops.len(), oparray_filename);
             method_op_array.ops = ops;
@@ -1635,12 +1676,27 @@ pub fn execute_do_static_call(
         let (base, names_base) = execute_data.call_arg_stack.pop().unwrap_or((0, 0));
         let args: Vec<Val> = execute_data.call_args.drain(base..).collect();
         let arg_names: Vec<Option<String>> = execute_data.call_arg_names.drain(names_base..).collect();
+        let arg_by_ref: Vec<bool> = execute_data.call_arg_by_ref.drain(base..).collect();
         let variadic = execute_data
             .class_table
             .get(&resolved_class)
             .and_then(|ce| ce.methods.get(method_name.as_str()))
             .and_then(|m| m.op_array.variadic_param.clone());
-        bind_call_args(execute_data, &params, &args, &arg_names, &variadic);
+        let ref_params = execute_data
+            .class_table
+            .get(&resolved_class)
+            .and_then(|ce| ce.methods.get(method_name.as_str()))
+            .map(|m| m.op_array.ref_params.clone())
+            .unwrap_or_default();
+        bind_call_args(
+            execute_data,
+            &params,
+            &args,
+            &arg_names,
+            &variadic,
+            &ref_params,
+            &arg_by_ref,
+        );
 
         let mut method_op_array = OpArray::with_capacity(ops.len(), oparray_filename);
         method_op_array.ops = ops;
@@ -1781,7 +1837,7 @@ pub fn execute_clone_obj(
     Ok(ExecResult::Continue)
 }
 
-/// Bind call arguments to parameters, supporting named args and variadic params
+/// Bind call arguments to parameters, supporting named args, variadic, and by-ref params
 #[inline]
 fn bind_call_args(
     execute_data: &mut ExecuteData,
@@ -1789,6 +1845,8 @@ fn bind_call_args(
     args: &[Val],
     arg_names: &[Option<String>],
     variadic_param: &Option<String>,
+    ref_params: &[bool],
+    arg_by_ref: &[bool],
 ) {
     let regular_count = if variadic_param.is_some() {
         param_names.len().saturating_sub(1)
@@ -1797,6 +1855,31 @@ fn bind_call_args(
     };
 
     let mut bound = vec![false; regular_count];
+
+    let bind_one = |execute_data: &mut ExecuteData,
+                    pos: usize,
+                    clean: &str,
+                    arg: &Val,
+                    arg_idx: usize| {
+        if ref_params.get(pos).copied().unwrap_or(false)
+            && arg_by_ref.get(arg_idx).copied().unwrap_or(false)
+            && is_var_ref(arg)
+        {
+            if let PhpValue::String(ref s) = arg.value {
+                let caller = s.as_str();
+                let caller_clean = if caller.starts_with('$') {
+                    &caller[1..]
+                } else {
+                    caller
+                };
+                execute_data
+                    .ref_param_bindings
+                    .insert(clean.to_string(), caller_clean.to_string());
+                return;
+            }
+        }
+        execute_data.set_var(clean, clone_val(arg));
+    };
 
     // First pass: bind named arguments
     for (i, name_opt) in arg_names.iter().enumerate() {
@@ -1808,7 +1891,7 @@ fn bind_call_args(
                 if let Some(arg) = args.get(i) {
                     let p = &param_names[pos];
                     let clean = if p.starts_with('$') { &p[1..] } else { p.as_str() };
-                    execute_data.set_var(clean, clone_val(arg));
+                    bind_one(execute_data, pos, clean, arg, i);
                     bound[pos] = true;
                 }
             }
@@ -1819,7 +1902,6 @@ fn bind_call_args(
     let mut param_idx = 0;
     for (i, name_opt) in arg_names.iter().enumerate() {
         if name_opt.is_none() {
-            // Skip already-bound params
             while param_idx < regular_count && bound[param_idx] {
                 param_idx += 1;
             }
@@ -1827,7 +1909,7 @@ fn bind_call_args(
                 if let Some(arg) = args.get(i) {
                     let p = &param_names[param_idx];
                     let clean = if p.starts_with('$') { &p[1..] } else { p.as_str() };
-                    execute_data.set_var(clean, clone_val(arg));
+                    bind_one(execute_data, param_idx, clean, arg, i);
                     bound[param_idx] = true;
                     param_idx += 1;
                 }
@@ -1899,6 +1981,7 @@ pub fn dispatch_opcode(op: &Op, execute_data: &mut ExecuteData) -> Result<ExecRe
         Opcode::FetchVar => execute_fetch_var(op, execute_data),
         Opcode::SendVal => execute_send_val(op, execute_data),
         Opcode::SendValNamed => execute_send_val_named(op, execute_data),
+        Opcode::SendVarRef => execute_send_var_ref(op, execute_data),
         Opcode::BindGlobal => execute_bind_global(op, execute_data),
         Opcode::Include => execute_include(op, execute_data),
         Opcode::InitArray => execute_init_array(op, execute_data),

@@ -33,7 +33,7 @@ cd examples && chmod +x run-all-tests.sh && ./run-all-tests.sh
 
 ### regex-examples.php
 - 15 practical `preg_*` scenarios
-- Uses **Rust `regex`** — no look-ahead/look-behind; password demo uses multiple checks instead of `(?=…)`
+- Uses **Rust `regex` + `fancy-regex`** — look-around supported; not full PCRE
 - No `foreach ($arr as $key => $value)` — use value-only foreach or separate variables
 
 ### http-stream-examples.php

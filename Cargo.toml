@@ -1,6 +1,6 @@
 [package]
 name = "phprs"
-version = "0.1.13"
+version = "0.1.14"
 authors = ["Ying kit WONG"]
 license = "Apache-2.0"
 description = "A PHP interpreter with build/package manager written in Rust"
@@ -39,8 +39,9 @@ env_logger = "0.11"
 # JSON repair
 anyrepair = "0.2"
 
-# Regular expressions
+# Regular expressions (std engine + fancy-regex for look-around)
 regex = "1.10"
+fancy-regex = "0.18"
 
 # URL parsing
 url = "2.5"

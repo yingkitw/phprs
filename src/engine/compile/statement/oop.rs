@@ -1,10 +1,12 @@
 //! OOP statement compilation (class definitions)
 
 use crate::engine::compile::context::CompileContext;
+use crate::engine::compile::const_eval::eval_class_default_expr;
 use crate::engine::compile::expression::parse_expression;
 use crate::engine::compile::expression::helpers::token_is_punct;
 use crate::engine::facade::null_val;
 use crate::engine::lexer::{Token, Lexer, TokenType};
+use crate::engine::compile::function::parse_params;
 use crate::engine::types::{ClassEntry, ClassMethod, Visibility};
 
 use super::{parse_statement, skip_attribute_block};
@@ -290,7 +292,7 @@ pub(crate) fn compile_enum(
 /// Compile a class method definition
 fn compile_class_method(
     lexer: &mut Lexer,
-    context: &CompileContext,
+    context: &mut CompileContext,
     ce: &mut ClassEntry,
     visibility: Visibility,
     is_static: bool,
@@ -307,19 +309,17 @@ fn compile_class_method(
         return Err("Expected '(' after method name".to_string());
     }
 
-    let mut params = Vec::new();
-    let mut pt = lexer.next_token()?;
-    while !token_is_punct(&pt, ")") {
-        if pt.token_type == TokenType::T_VARIABLE {
-            let pname = pt.value.as_ref().unwrap().as_str();
-            let pname = if pname.starts_with('$') { &pname[1..] } else { pname };
-            params.push(pname.to_string());
-        }
-        pt = lexer.next_token()?;
-        if token_is_punct(&pt, ",") {
-            pt = lexer.next_token()?;
-        }
-    }
+    let (param_names, variadic, ref_flags) = parse_params(lexer, context)?;
+    let params: Vec<String> = param_names
+        .iter()
+        .map(|p| {
+            if p.starts_with('$') {
+                p[1..].to_string()
+            } else {
+                p.to_string()
+            }
+        })
+        .collect();
 
     // Parse method body: { ... }
     let open_brace = lexer.next_token()?;
@@ -346,13 +346,15 @@ fn compile_class_method(
         body_token = parse_statement(lexer, &mut method_context, body_token)?;
     }
 
-    let method = ClassMethod {
+    let mut method = ClassMethod {
         name: method_name.clone(),
         visibility,
         is_static,
         params,
         op_array: method_context.take_op_array(),
     };
+    method.op_array.variadic_param = variadic;
+    method.op_array.ref_params = ref_flags;
     ce.methods.insert(method_name, method);
     Ok(lexer.next_token()?)
 }
@@ -373,7 +375,7 @@ fn compile_class_property(
 
     let peek = lexer.next_token()?;
     let mut next = if peek.token_type == TokenType::T_EQUAL {
-        let (default_val, after) = parse_expression(lexer, context)?;
+        let (default_val, after) = eval_class_default_expr(lexer, context)?;
         if is_static {
             ce.static_properties.insert(prop_name.clone(), default_val);
         } else {
@@ -421,7 +423,7 @@ fn compile_class_const(
         return Err("Expected '=' after constant name".to_string());
     }
 
-    let (value, after) = parse_expression(lexer, context)?;
+    let (value, after) = eval_class_default_expr(lexer, context)?;
     ce.constants.insert(const_name, value);
 
     let mut next = after;

@@ -249,6 +249,21 @@ echo strlen("hello world");
 }
 
 #[test]
+fn test_pass_by_reference_parameter() {
+    let code = r#"<?php
+function inc(&$n) {
+    $n = $n + 1;
+}
+$x = 5;
+inc($x);
+echo $x;
+"#;
+    let (result, output) = run_php_code(code);
+    assert!(matches!(result, PhpResult::Success), "output={output:?}");
+    assert_eq!(output, "6");
+}
+
+#[test]
 fn test_compile_and_execute_strtoupper() {
     let code = r#"<?php
 echo strtoupper("php-rs");
@@ -561,9 +576,92 @@ fn test_chained_array_assign_dim() {
 }
 
 #[test]
+fn test_obj_prop_chained_assign_dim() {
+    let code = r#"<?php
+class Box {
+    public $data;
+}
+$b = new Box();
+$b->data = array();
+$b->data['outer']['inner'] = 'ok';
+echo $b->data['outer']['inner'];
+"#;
+    let (result, output) = run_php_code(code);
+    assert!(matches!(result, PhpResult::Success));
+    assert_eq!(output, "ok");
+}
+
+#[test]
+fn test_this_prop_assign_in_method() {
+    let code = r#"<?php
+class Box {
+    public $x;
+    function set() {
+        $this->x = 'v';
+    }
+}
+$b = new Box();
+$b->set();
+echo $b->x;
+"#;
+    let (result, output) = run_php_code(code);
+    assert!(matches!(result, PhpResult::Success));
+    assert_eq!(output, "v");
+}
+
+#[test]
+fn test_class_property_default_array() {
+    let code = r#"<?php
+class Box {
+    public $data = array();
+}
+$b = new Box();
+$b->data['k'] = 'v';
+echo $b->data['k'];
+"#;
+    let (result, output) = run_php_code(code);
+    assert!(matches!(result, PhpResult::Success));
+    assert_eq!(output, "v");
+}
+
+#[test]
+fn test_this_prop_assign_dim_in_method() {
+    let code = r#"<?php
+class Box {
+    public $data = array();
+    function set() {
+        $this->data['k'] = 'v';
+    }
+}
+$b = new Box();
+$b->set();
+echo $b->data['k'];
+"#;
+    let (result, output) = run_php_code(code);
+    assert!(matches!(result, PhpResult::Success));
+    assert_eq!(output, "v");
+}
+
+#[test]
 fn test_array_append_assign() {
     let code = "<?php\n$list = array();\n$list[] = 'first';\n$list[] = 'second';\necho $list[0] . $list[1];\n";
     let (result, output) = run_php_code(code);
     assert!(matches!(result, PhpResult::Success));
     assert_eq!(output, "firstsecond");
+}
+
+#[test]
+fn test_assign_after_nested_user_function_calls() {
+    let code = r#"<?php
+function f() { return "OK"; }
+function outer() { g(); }
+function g() { h(); }
+function h() { return 1; }
+outer();
+$x = f();
+echo $x;
+"#;
+    let (result, output) = run_php_code(code);
+    assert!(matches!(result, PhpResult::Success), "output={output:?}");
+    assert_eq!(output, "OK");
 }

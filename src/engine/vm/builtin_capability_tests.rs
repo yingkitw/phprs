@@ -432,6 +432,28 @@ fn preg_match_replace_split_match_all() {
     assert_eq!(zval_get_long(&all), 4);
 }
 
+#[test]
+fn preg_match_lookahead() {
+    let mut ed = ExecuteData::new();
+    let m = run(
+        "preg_match",
+        &[str_val("/foo(?=bar)/"), str_val("foobar")],
+        &mut ed,
+    )
+    .unwrap()
+    .unwrap();
+    assert_eq!(zval_get_long(&m), 1);
+
+    let m = run(
+        "preg_match",
+        &[str_val("/foo(?=bar)/"), str_val("foobaz")],
+        &mut ed,
+    )
+    .unwrap()
+    .unwrap();
+    assert_eq!(zval_get_long(&m), 0);
+}
+
 // --- Output / debug ---
 
 #[test]

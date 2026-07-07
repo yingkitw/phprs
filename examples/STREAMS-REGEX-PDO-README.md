@@ -6,7 +6,7 @@ This document describes the implementation of PHP's standard library features in
 
 ### 1. Regular Expressions (`preg_*`)
 
-Regular expression support using Rust's `regex` crate with PHP-like `preg_*` wrappers. **Not full PCRE** — look-ahead, look-behind, and some advanced PCRE features are unsupported.
+Regular expression support using Rust's `regex` crate with PHP-like `preg_*` wrappers, plus `fancy-regex` for look-around assertions. **Not full PCRE** — backreferences and some advanced PCRE features may still be unsupported.
 
 #### Supported Functions
 
@@ -283,7 +283,7 @@ src/engine/vm/
 
 ### Current Implementation
 
-1. **Regex**: No look-ahead/look-behind; not full PCRE
+1. **Regex**: Look-around supported via `fancy-regex`; not full PCRE
 2. **HTTP**: Primarily GET via `file_get_contents()` for remote URLs
 3. **Sessions**: No `session_*` builtins; no production session storage
 4. **PDO**: Stub implementation, no real database connections

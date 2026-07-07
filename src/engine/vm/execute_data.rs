@@ -119,6 +119,12 @@ pub struct ExecuteData {
     pub called_class: Option<String>,
     /// Stack for nested function call argument tracking (InitFCall pushes, DoFCall pops)
     pub call_arg_stack: Vec<(usize, usize)>,
+    /// Parallel to call_args: true when argument was passed by variable reference
+    pub call_arg_by_ref: Vec<bool>,
+    /// Caller scope for pass-by-reference parameters during UDF execution
+    pub ref_caller_scope: Option<crate::engine::types::PhpArray>,
+    /// Maps callee ref-parameter name → caller variable name
+    pub ref_param_bindings: std::collections::HashMap<String, String>,
     /// SPL autoload function names (registered by spl_autoload_register())
     pub autoload_functions: Vec<String>,
     /// Temp slot for foreach key when iterating `as $key => $value` (set by FeReset).
@@ -149,6 +155,9 @@ impl ExecuteData {
             shutdown_functions: Vec::new(),
             called_class: None,
             call_arg_stack: Vec::new(),
+            call_arg_by_ref: Vec::new(),
+            ref_caller_scope: None,
+            ref_param_bindings: std::collections::HashMap::new(),
             autoload_functions: Vec::new(),
             fe_key_slot: None,
             global_script_table: None,
@@ -189,6 +198,15 @@ impl ExecuteData {
 
     /// Look up a variable by name in the symbol table
     pub fn get_var(&self, name: &str) -> Val {
+        if let Some(caller_var) = self.ref_param_bindings.get(name) {
+            if let Some(ref scope) = self.ref_caller_scope {
+                let key = crate::engine::string::string_init(caller_var, false);
+                if let Some(val) = crate::engine::hash::hash_find(scope, &key) {
+                    return clone_val(val);
+                }
+            }
+            return Val::new(PhpValue::Long(0), PhpType::Null);
+        }
         if self.global_imports.contains(name) {
             if let Some(ref global) = self.global_script_table {
                 let key = crate::engine::string::string_init(name, false);
@@ -209,7 +227,22 @@ impl ExecuteData {
 
     /// Set a variable in the symbol table
     pub fn set_var(&mut self, name: &str, val: Val) {
+        if let Some(caller_var) = self.ref_param_bindings.get(name).cloned() {
+            if let Some(ref mut scope) = self.ref_caller_scope {
+                let key = crate::engine::string::string_init(&caller_var, false);
+                let key_box = Box::new(key);
+                let _ = crate::engine::hash::hash_add_or_update(
+                    scope,
+                    Some(&*key_box),
+                    0,
+                    val,
+                    0,
+                );
+            }
+            return;
+        }
         if self.global_imports.contains(name) {
+            self.ensure_global_script_table();
             if let Some(ref mut global) = self.global_script_table {
                 let key = crate::engine::string::string_init(name, false);
                 let key_box = Box::new(key);
@@ -230,8 +263,20 @@ impl ExecuteData {
         }
     }
 
+    /// Ensure the script-global table exists (lazy init from current symbol table).
+    fn ensure_global_script_table(&mut self) {
+        if self.global_script_table.is_none() {
+            if let Some(ref st) = self.symbol_table {
+                self.global_script_table = Some(Self::clone_php_array(st));
+            } else {
+                self.global_script_table = Some(crate::engine::types::PhpArray::new());
+            }
+        }
+    }
+
     /// Import a script-global variable into the current function scope.
     pub fn bind_global(&mut self, name: &str) {
+        self.ensure_global_script_table();
         self.global_imports.insert(name.to_string());
     }
 

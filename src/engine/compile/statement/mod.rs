@@ -339,6 +339,103 @@ fn emit_dim_assignment(
     Ok(())
 }
 
+/// Compile `$obj->prop[k] = v` and chained variants (`$this->data['a']['b'] = v`).
+fn emit_obj_prop_dim_assignment(
+    context: &mut CompileContext,
+    obj_var_name: &str,
+    prop_name: &str,
+    keys: &[DimAssignKey],
+    value: Val,
+) -> Result<(), String> {
+    if keys.is_empty() {
+        return Err("Object property array assignment requires at least one index".to_string());
+    }
+
+    let obj_var = var_ref(obj_var_name);
+    let prop_zval = string_val(prop_name);
+
+    let prop_slot = context.alloc_temp();
+    context.emit_opcode(
+        Opcode::FetchObjProp,
+        clone_val(&obj_var),
+        clone_val(&prop_zval),
+        temp_var_ref(prop_slot),
+    );
+
+    if keys.len() == 1 {
+        let last = &keys[0];
+        if last.append {
+            context.emit_opcode_ext(
+                Opcode::AssignDim,
+                temp_var_ref(prop_slot),
+                value,
+                null_val(),
+                1,
+            );
+        } else {
+            context.emit_opcode(
+                Opcode::AssignDim,
+                temp_var_ref(prop_slot),
+                value,
+                clone_val(&last.key),
+            );
+        }
+        context.emit_opcode(
+            Opcode::AssignObjProp,
+            obj_var,
+            prop_zval,
+            temp_var_ref(prop_slot),
+        );
+        return Ok(());
+    }
+
+    let mut slots = vec![prop_slot];
+    for key in &keys[..keys.len() - 1] {
+        if key.append {
+            return Err("Array append '[]' is only valid as the final dimension".to_string());
+        }
+        let next_slot = context.alloc_temp();
+        context.emit_opcode(
+            Opcode::FetchDim,
+            temp_var_ref(*slots.last().unwrap()),
+            clone_val(&key.key),
+            temp_var_ref(next_slot),
+        );
+        slots.push(next_slot);
+    }
+
+    let last = keys.last().unwrap();
+    let container = temp_var_ref(*slots.last().unwrap());
+    if last.append {
+        context.emit_opcode_ext(Opcode::AssignDim, container, value, null_val(), 1);
+    } else {
+        context.emit_opcode(
+            Opcode::AssignDim,
+            container,
+            value,
+            clone_val(&last.key),
+        );
+    }
+
+    for i in (0..keys.len() - 1).rev() {
+        context.emit_opcode(
+            Opcode::AssignDim,
+            temp_var_ref(slots[i]),
+            temp_var_ref(slots[i + 1]),
+            clone_val(&keys[i].key),
+        );
+    }
+
+    context.emit_opcode(
+        Opcode::AssignObjProp,
+        obj_var,
+        prop_zval,
+        temp_var_ref(prop_slot),
+    );
+
+    Ok(())
+}
+
 fn emit_dim_inc_dec(
     context: &mut CompileContext,
     var_name: &str,
@@ -443,7 +540,7 @@ fn compile_object_stmt(
         );
         let mut arg_token = lexer.next_token()?;
         while !token_is_punct(&arg_token, ")") {
-            arg_token = crate::engine::compile::expression::helpers::parse_call_arg(lexer, context, arg_token)?;
+            arg_token = crate::engine::compile::expression::helpers::parse_call_arg_unknown(lexer, context, arg_token)?;
             if token_is_punct(&arg_token, ",") {
                 arg_token = lexer.next_token()?;
             }
@@ -464,6 +561,16 @@ fn compile_object_stmt(
         context.emit_opcode(Opcode::AssignObjProp, var_zval, member_zval, value);
         let next = lexer.next_token()?;
         skip_semicolon(lexer, next)
+    } else if token_is_punct(&peek, "[") {
+        // Property dimension assignment: $var->prop['k'] = expr; $var->prop['a']['b'] = expr;
+        let (keys, after_target) = parse_dim_assign_keys(lexer, context, peek)?;
+        if after_target.token_type == TokenType::T_EQUAL {
+            let (value, after_value) = parse_expression(lexer, context)?;
+            emit_obj_prop_dim_assignment(context, var_name, member_name, &keys, value)?;
+            skip_semicolon(lexer, after_value)
+        } else {
+            Err("Expected '=' after object property index assignment target".to_string())
+        }
     } else {
         Ok(peek)
     }
@@ -518,7 +625,7 @@ fn compile_string_stmt(
                 );
                 let mut arg_token = lexer.next_token()?;
                 while !token_is_punct(&arg_token, ")") {
-                    arg_token = super::expression::helpers::parse_call_arg(lexer, context, arg_token)?;
+                    arg_token = super::expression::helpers::parse_call_arg_unknown(lexer, context, arg_token)?;
                     if token_is_punct(&arg_token, ",") {
                         arg_token = lexer.next_token()?;
                     }

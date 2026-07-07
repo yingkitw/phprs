@@ -7,6 +7,7 @@
 #[cfg(test)]
 mod tests;
 
+pub mod const_eval;
 pub mod context;
 pub mod control_flow;
 pub mod expression;

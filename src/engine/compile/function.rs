@@ -50,17 +50,18 @@ fn is_type_hint(token: &Token) -> bool {
 }
 
 /// Parse parameter list (the opening '(' has already been consumed)
-/// Returns (param_names, variadic_param_name). Supports type declarations and variadic params.
-fn parse_params(
+/// Returns (param_names, variadic_param_name, ref_flags).
+pub(crate) fn parse_params(
     lexer: &mut Lexer,
     context: &mut CompileContext,
-) -> Result<(Vec<String>, Option<String>), String> {
+) -> Result<(Vec<String>, Option<String>, Vec<bool>), String> {
     let mut params = Vec::new();
+    let mut ref_flags = Vec::new();
     let mut variadic = None;
     let mut current_token = lexer.next_token()?;
 
     if is_punct(&current_token, ")") {
-        return Ok((params, variadic));
+        return Ok((params, variadic, ref_flags));
     }
 
     loop {
@@ -92,6 +93,14 @@ fn parse_params(
             false
         };
 
+        // Pass-by-reference: &$param
+        let is_ref = if current_token.token_type == TokenType::T_AMPERSAND_FOLLOWED_BY_VAR_OR_VARARG {
+            current_token = lexer.next_token()?;
+            true
+        } else {
+            false
+        };
+
         if current_token.token_type != TokenType::T_VARIABLE {
             return Err(format!(
                 "Expected variable parameter in function definition, got {:?}",
@@ -104,6 +113,7 @@ fn parse_params(
         if is_variadic {
             variadic = Some(param_name.to_string());
             params.push(param_name.to_string());
+            ref_flags.push(is_ref);
             current_token = lexer.next_token()?;
             // Variadic must be the last parameter
             if is_punct(&current_token, ",") {
@@ -116,6 +126,7 @@ fn parse_params(
         }
 
         params.push(param_name.to_string());
+        ref_flags.push(is_ref);
 
         current_token = lexer.next_token()?;
 
@@ -136,7 +147,7 @@ fn parse_params(
         current_token = lexer.next_token()?;
     }
 
-    Ok((params, variadic))
+    Ok((params, variadic, ref_flags))
 }
 
 /// Skip return type declaration after ')' if present: ): type
@@ -264,6 +275,7 @@ pub fn compile_function(lexer: &mut Lexer, context: &mut CompileContext) -> Resu
         .map(|p| crate::engine::vm::var_ref(p))
         .collect();
     func_op_array.variadic_param = params.1;
+    func_op_array.ref_params = params.2;
 
     context
         .function_table
@@ -338,6 +350,7 @@ fn compile_closure_inner(
         .map(|p| crate::engine::vm::var_ref(p))
         .collect();
     func_context.op_array.variadic_param = params.1;
+    func_context.op_array.ref_params = params.2;
 
     parse_statement_block(lexer, &mut func_context)?;
     let func_op_array = func_context.finalize();

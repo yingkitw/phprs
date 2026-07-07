@@ -62,7 +62,7 @@ phprs run examples/wordpress/index.php            # may fail on wp-db array() sy
 - **Not a drop-in Zend replacement** — try your script, read errors, check [TODO.md](TODO.md).
 - **Sessions** — `session_start()` is not an engine builtin; see `examples/session-examples.php`.
 - **PDO** — stub/in-memory API for demos, not a real DB driver.
-- **Regex** — Rust `regex` engine; no look-ahead patterns without rewriting.
+- **Regex** — Rust `regex` + `fancy-regex` for look-around; not full PCRE.
 - **Performance** — use `cargo build --release`; see [PERFORMANCE.md](PERFORMANCE.md) (no invented PHP speedup tables).
 
 ## Development workflow

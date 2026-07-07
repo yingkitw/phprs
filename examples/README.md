@@ -57,7 +57,7 @@ cargo run --example performance_demo
 | `attributes.php` | Attributes (partial) |
 | `generators.php` | `yield` (partial) |
 | `mbstring.php` | `mb_*` subset |
-| `regex-examples.php` | `preg_*` demos (Rust regex; no look-ahead) |
+| `regex-examples.php` | `preg_*` demos (look-around via fancy-regex) |
 | `http-stream-examples.php` | HTTP stream patterns |
 | `session-examples.php` | **Simulated** `$_SESSION` (no `session_*` builtins) |
 | `pdo-examples.php` | PDO stub API |

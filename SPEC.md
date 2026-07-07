@@ -43,7 +43,7 @@ phprs is a **PHP interpreter implemented in Rust**. It aims to execute PHP code 
 
 - **PHP session extension** (`session_start`, `session_id`, …) — not in the engine; `examples/session-examples.php` simulates `$_SESSION` as a plain array
 - **User-defined function calls from CLI** — incomplete in some paths (see `examples/functions.php`); engine tests cover more than the demo scripts
-- **Full PCRE** — Rust regex: no look-ahead/look-behind; some PHP patterns need rewriting
+- **Full PCRE** — Rust `regex` + `fancy-regex` for look-around; backreferences and other advanced PCRE features may still need rewriting
 - **Real PDO drivers** — in-memory/stub behavior only
 - **Production WordPress / Laravel / Symfony** — demo stubs only
 

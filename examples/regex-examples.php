@@ -63,15 +63,10 @@ $passwords = [
     'VeryStrong@123'
 ];
 
-// At least 8 chars, 1 uppercase, 1 lowercase, 1 digit, 1 special char
-// (phprs uses the Rust regex engine — no look-ahead; use several checks.)
+// At least 8 chars, 1 uppercase, 1 lowercase, 1 digit, 1 special char (look-ahead supported)
+$strong_pattern = '/^(?=.*[a-z])(?=.*[A-Z])(?=.*[0-9])(?=.*[@$!%*?&]).{8,}$/';
 foreach ($passwords as $pass) {
-    $long_enough = strlen($pass) >= 8;
-    $has_lower = preg_match('/[a-z]/', $pass);
-    $has_upper = preg_match('/[A-Z]/', $pass);
-    $has_digit = preg_match('/[0-9]/', $pass);
-    $has_special = preg_match('/[@$!%*?&]/', $pass);
-    $is_strong = $long_enough && $has_lower && $has_upper && $has_digit && $has_special;
+    $is_strong = preg_match($strong_pattern, $pass);
     echo "  $pass: " . ($is_strong ? "✓ Strong" : "✗ Weak") . "\n";
 }
 echo "\n";

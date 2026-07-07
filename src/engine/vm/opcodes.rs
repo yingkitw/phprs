@@ -78,6 +78,7 @@ pub enum Opcode {
     CloneObj = 69,        // Clone object (op1=obj, result=cloned obj)
     SendValNamed = 70,    // Push named argument for function call (op1=value, op2=param name string)
     BindGlobal = 71,      // Import a variable from script globals into function scope
+    SendVarRef = 72,      // Push variable reference for by-ref parameter (op1=var name)
 }
 
 /// Operation structure
@@ -113,6 +114,8 @@ pub struct OpArray {
     pub function_name: Option<String>,
     pub class_table: std::collections::HashMap<String, crate::engine::types::ClassEntry>,
     pub variadic_param: Option<String>,
+    /// Per-parameter pass-by-reference flags (aligned with `vars`).
+    pub ref_params: Vec<bool>,
 }
 
 impl OpArray {
@@ -126,6 +129,7 @@ impl OpArray {
             class_table: std::collections::HashMap::new(),
             function_name: None,
             variadic_param: None,
+            ref_params: Vec::new(),
         }
     }
 
@@ -140,6 +144,7 @@ impl OpArray {
             class_table: std::collections::HashMap::new(),
             function_name: None,
             variadic_param: None,
+            ref_params: Vec::new(),
         }
     }
 
@@ -180,6 +185,7 @@ pub fn get_opcode_name(opcode: Opcode) -> &'static str {
         Opcode::CloneObj => "CLONE_OBJ",
         Opcode::SendValNamed => "SEND_VAL_NAMED",
         Opcode::BindGlobal => "BIND_GLOBAL",
+        Opcode::SendVarRef => "SEND_VAR_REF",
         _ => "UNKNOWN",
     }
 }

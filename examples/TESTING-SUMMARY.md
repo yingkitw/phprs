@@ -35,7 +35,7 @@ Roughly **376+** tests across:
 
 | Script | Focus | Engine reality |
 |--------|--------|----------------|
-| `regex-examples.php` | `preg_*` | Rust regex; no lookahead |
+| `regex-examples.php` | `preg_*` | look-around via fancy-regex |
 | `http-stream-examples.php` | HTTP streams | `reqwest` + blocking wrapper |
 | `session-examples.php` | Session **patterns** | No `session_*` builtins; simulated `$_SESSION` |
 | `pdo-examples.php` | PDO API shape | In-memory stub |

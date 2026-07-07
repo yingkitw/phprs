@@ -7,8 +7,8 @@ $wp_filter = array();
 $wp_actions = array();
 $wp_current_filter = array();
 
-// Minimal sort helper used by do_action / apply_filters (no-op; phprs lacks pass-by-ref params)
-function ksort($array) {
+// Minimal sort helper used by do_action / apply_filters
+function ksort(&$array) {
     return true;
 }
 

@@ -342,7 +342,7 @@ cargo run -p phprs-cli -- run examples/wordpress/index.php
 
 **Array Functions**: `array_map`, `array_filter`, `array_merge`, `count`, `in_array`, `array_key_exists`
 
-**Regular Expressions**: `preg_match`, `preg_match_all`, `preg_replace`, `preg_split` (Rust `regex` — no look-ahead/look-behind)
+**Regular Expressions**: `preg_match`, `preg_match_all`, `preg_replace`, `preg_split` (Rust `regex` + `fancy-regex` for look-around; not full PCRE)
 
 **File System**: `file_get_contents`, `file_put_contents`, `file_exists`, `dirname`, `basename`
 

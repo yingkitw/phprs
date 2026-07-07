@@ -341,7 +341,7 @@ fn parse_static_access(
 
         let mut arg_token = lexer.next_token()?;
         while !token_is_punct(&arg_token, ")") {
-            arg_token = parse_call_arg(lexer, context, arg_token)?;
+            arg_token = parse_call_arg_unknown(lexer, context, arg_token)?;
             if token_is_punct(&arg_token, ",") {
                 arg_token = lexer.next_token()?;
             }
@@ -385,7 +385,7 @@ pub(crate) fn parse_method_call(
     // Parse arguments
     let mut arg_token = lexer.next_token()?;
     while !token_is_punct(&arg_token, ")") {
-        arg_token = parse_call_arg(lexer, context, arg_token)?;
+        arg_token = parse_call_arg_unknown(lexer, context, arg_token)?;
         if token_is_punct(&arg_token, ",") {
             arg_token = lexer.next_token()?;
         }
@@ -418,11 +418,11 @@ fn parse_callable_var(
     );
 
     if !token_is_punct(&current_token, ")") {
-        current_token = parse_call_arg(lexer, context, current_token)?;
+        current_token = parse_call_arg_unknown(lexer, context, current_token)?;
 
         while token_is_punct(&current_token, ",") {
             let next = lexer.next_token()?;
-            current_token = parse_call_arg(lexer, context, next)?;
+            current_token = parse_call_arg_unknown(lexer, context, next)?;
         }
 
         if !token_is_punct(&current_token, ")") {
@@ -775,11 +775,13 @@ pub(crate) fn parse_long_array_literal(
 }
 
 /// Parse a single call argument, detecting named arguments (name: value)
-/// Emits SendVal or SendValNamed directly
+/// Emits SendVal, SendVarRef, or SendValNamed directly
 pub(crate) fn parse_call_arg(
     lexer: &mut Lexer,
     context: &mut CompileContext,
     first_token: Token,
+    ref_params: Option<&[bool]>,
+    positional_idx: &mut usize,
 ) -> Result<Token, String> {
     // Check for named argument: name: value
     if first_token.token_type == TokenType::T_STRING {
@@ -798,11 +800,47 @@ pub(crate) fn parse_call_arg(
         }
     }
 
+    // Pass-by-reference: bare $var when callee declares &$param
+    if first_token.token_type == TokenType::T_VARIABLE {
+        let wants_ref = ref_params
+            .and_then(|flags| flags.get(*positional_idx))
+            .copied()
+            .unwrap_or(false);
+        if wants_ref {
+            let name = first_token.value.as_ref().unwrap().as_str();
+            context.emit_opcode(
+                Opcode::SendVarRef,
+                var_ref(name),
+                facade::null_val(),
+                facade::null_val(),
+            );
+            *positional_idx += 1;
+            return Ok(lexer.next_token()?);
+        }
+    }
+
     // Positional argument (or non-named T_STRING)
     let (arg_val, after) =
         super::operators::parse_additive_expr_with_initial(lexer, context, first_token)?;
     context.emit_opcode(Opcode::SendVal, arg_val, facade::null_val(), facade::null_val());
+    *positional_idx += 1;
     Ok(after)
+}
+
+/// Parse a call argument when callee ref metadata is unknown (dynamic calls).
+pub(crate) fn parse_call_arg_unknown(
+    lexer: &mut Lexer,
+    context: &mut CompileContext,
+    first_token: Token,
+) -> Result<Token, String> {
+    let mut positional_idx = 0;
+    parse_call_arg(
+        lexer,
+        context,
+        first_token,
+        None,
+        &mut positional_idx,
+    )
 }
 
 /// Parse function call: function_name(arg1, arg2, ...)
@@ -822,12 +860,30 @@ pub(crate) fn parse_function_call(
         facade::null_val(),
     );
 
+    let ref_params: Option<Vec<bool>> = context
+        .function_table
+        .lookup_function(function_name)
+        .map(|op_array| op_array.ref_params.clone());
+    let mut positional_idx = 0;
+
     if !token_is_punct(&current_token, ")") {
-        current_token = parse_call_arg(lexer, context, current_token)?;
+        current_token = parse_call_arg(
+            lexer,
+            context,
+            current_token,
+            ref_params.as_deref(),
+            &mut positional_idx,
+        )?;
 
         while token_is_punct(&current_token, ",") {
             let next = lexer.next_token()?;
-            current_token = parse_call_arg(lexer, context, next)?;
+            current_token = parse_call_arg(
+                lexer,
+                context,
+                next,
+                ref_params.as_deref(),
+                &mut positional_idx,
+            )?;
         }
 
         if !token_is_punct(&current_token, ")") {

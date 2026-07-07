@@ -42,7 +42,8 @@
 - [x] Array append assignment (`$arr[] = $v`)
 - [x] CLI/serve function table wiring (`compile_file_with_functions`, include merge)
 - [x] `global $var` statement (BindGlobal opcode; script globals in user functions)
-- [x] Builtin calls inside user-defined functions (DoFCall stack fix; no JIT fallback loop)
+- [x] Chained object property dimension assignment (`$obj->prop['k'] = v`, `$this->data['a']['b'] = v`)
+- [x] Class property defaults with constant expressions (`public $data = array()`)
 
 ### Tools
 - [x] Unified CLI (`bin/phprs`) with `run`, `serve`, `pkg` subcommands
@@ -76,6 +77,7 @@
 - [x] `src/engine/vm/builtin_capability_tests.rs` — broad builtin coverage
 - [x] [PERFORMANCE.md](PERFORMANCE.md) evidence policy (phprs-only benchmarks; no fake PHP baselines)
 - [x] Example scripts adjusted for phprs compiler limits (regex lookahead, session simulation, foreach value-only)
+- [x] Look-ahead/look-behind regex via `fancy-regex` fallback in `preg_*`
 
 ### Package Manager
 - [x] CLI framework
@@ -155,14 +157,14 @@
 - **Engine**: types, string, hash, alloc, gc, operators, compile, vm, jit, benchmark, …
 - **PHP runtime**: modules under `src/php/` (regex, http_stream, pdo stub, math, hash, datetime, mbstring, …)
 - **Framework examples**: WordPress-shaped (partial), CodeIgniter 4 demo (CI-tested), Drupal demo (CI-tested)
-- **72 opcodes** (dispatch table)
+- **73 opcodes** (dispatch table)
 - **130+ built-in functions** — see `builtin_capability_tests.rs` for exercised surface
 - **385+ workspace tests** (`cargo test --workspace`)
 - **21 root PHP examples** — all run via `examples_root_php_scripts_all_run`
-- **Known gaps**: look-ahead regex; `$this->prop['k'] =` object property dim assign; pass-by-reference parameters (`&$var`)
+- **Known gaps**: (none tracked — see brainstorming for future work)
 
 ### Standard library (honest)
-- Regex via Rust `regex` (`preg_*`) — no look-ahead/look-behind
+- Regex via Rust `regex` + `fancy-regex` for look-around (`preg_*`); not full PCRE
 - HTTP GET via `file_get_contents` + `reqwest`
 - PDO **stub** (in-memory)
 - Session **not** implemented as PHP extension (demo uses `$_SESSION` variable)
