@@ -59,6 +59,9 @@ struct ExecRequest {
 // ---------------------------------------------------------------------------
 
 pub fn start(port: u16) {
+    let session_dir = std::env::temp_dir().join("phprs-serve-sessions");
+    phprs::php::session::configure_save_path(session_dir);
+
     let (listener, port) = bind_with_retry(port, 10);
 
     println!("PHP-RS Server running at http://localhost:{port}");
@@ -125,14 +128,18 @@ fn handle_connection(mut stream: std::net::TcpStream) -> Result<(), String> {
 
     // Read headers
     let mut content_length: usize = 0;
+    let mut cookie_header = String::new();
     loop {
         let mut line = String::new();
         reader.read_line(&mut line).map_err(|e| e.to_string())?;
         if line.trim().is_empty() {
             break;
         }
-        if let Some(val) = line.to_lowercase().strip_prefix("content-length:") {
+        let lower = line.to_lowercase();
+        if let Some(val) = lower.strip_prefix("content-length:") {
             content_length = val.trim().parse().unwrap_or(0);
+        } else if let Some(val) = lower.strip_prefix("cookie:") {
+            cookie_header = val.trim().to_string();
         }
     }
 
@@ -146,19 +153,22 @@ fn handle_connection(mut stream: std::net::TcpStream) -> Result<(), String> {
 
     println!("{method} {path}");
 
-    let (status, content_type, response_body) = route_request(method, path, &body);
+    let (status, content_type, response_body, set_cookie) = route_request(method, path, &body, &cookie_header);
 
-    let resp = format!(
+    let mut resp = format!(
         "HTTP/1.1 {status}\r\n\
          Content-Type: {content_type}\r\n\
          Content-Length: {len}\r\n\
          Access-Control-Allow-Origin: *\r\n\
          Access-Control-Allow-Methods: GET, POST, OPTIONS\r\n\
          Access-Control-Allow-Headers: Content-Type\r\n\
-         Connection: close\r\n\
-         \r\n",
+         Connection: close\r\n",
         len = response_body.len()
     );
+    if let Some(cookie) = set_cookie {
+        resp.push_str(&format!("Set-Cookie: {cookie}\r\n"));
+    }
+    resp.push_str("\r\n");
 
     stream
         .write_all(resp.as_bytes())
@@ -174,9 +184,9 @@ fn handle_connection(mut stream: std::net::TcpStream) -> Result<(), String> {
 // Router
 // ---------------------------------------------------------------------------
 
-fn route_request(method: &str, path: &str, body: &str) -> (String, String, String) {
+fn route_request(method: &str, path: &str, body: &str, cookies: &str) -> (String, String, String, Option<String>) {
     if method == "OPTIONS" {
-        return ("204 No Content".into(), "text/plain".into(), String::new());
+        return ("204 No Content".into(), "text/plain".into(), String::new(), None);
     }
 
     let json = "application/json".to_string();
@@ -187,17 +197,19 @@ fn route_request(method: &str, path: &str, body: &str) -> (String, String, Strin
             "200 OK".into(),
             "text/html; charset=utf-8".into(),
             INDEX_HTML.to_string(),
+            None,
         ),
         ("GET", "/favicon.ico") => (
             "204 No Content".into(),
             "image/x-icon".into(),
             String::new(),
+            None,
         ),
 
         // ---- API ----
         ("GET", "/api/health") => {
             let r = serde_json::json!({"success":true,"data":{"status":"ok","version":"0.1.0"}});
-            ("200 OK".into(), json, r.to_string())
+            ("200 OK".into(), json, r.to_string(), None)
         }
         ("GET", "/api/examples") => {
             let r = list_examples();
@@ -205,6 +217,7 @@ fn route_request(method: &str, path: &str, body: &str) -> (String, String, Strin
                 "200 OK".into(),
                 json,
                 serde_json::to_string(&r).unwrap_or_default(),
+                None,
             )
         }
         ("GET", p) if p.starts_with("/api/examples/") => {
@@ -214,14 +227,16 @@ fn route_request(method: &str, path: &str, body: &str) -> (String, String, Strin
                 "200 OK".into(),
                 json,
                 serde_json::to_string(&r).unwrap_or_default(),
+                None,
             )
         }
         ("POST", "/api/execute") => {
-            let r = handle_execute(body);
+            let (r, set_cookie) = handle_execute(body, cookies);
             (
                 "200 OK".into(),
                 json,
                 serde_json::to_string(&r).unwrap_or_default(),
+                set_cookie,
             )
         }
 
@@ -236,9 +251,22 @@ fn route_request(method: &str, path: &str, body: &str) -> (String, String, Strin
                 "404 Not Found".into(),
                 json,
                 serde_json::to_string(&r).unwrap_or_default(),
+                None,
             )
         }
     }
+}
+
+fn parse_cookie_value(cookies: &str, name: &str) -> Option<String> {
+    cookies.split(';').find_map(|part| {
+        let part = part.trim();
+        let (k, v) = part.split_once('=')?;
+        if k.trim() == name {
+            Some(v.trim().to_string())
+        } else {
+            None
+        }
+    })
 }
 
 // ---------------------------------------------------------------------------
@@ -302,15 +330,18 @@ fn get_example(name: &str) -> ApiResponse<ExampleFile> {
     }
 }
 
-fn handle_execute(body: &str) -> ApiResponse<ExecResult> {
+fn handle_execute(body: &str, cookies: &str) -> (ApiResponse<ExecResult>, Option<String>) {
     let req: ExecRequest = match serde_json::from_str(body) {
         Ok(r) => r,
         Err(e) => {
-            return ApiResponse {
-                success: false,
-                data: None,
-                error: Some(format!("Invalid JSON: {e}")),
-            };
+            return (
+                ApiResponse {
+                    success: false,
+                    data: None,
+                    error: Some(format!("Invalid JSON: {e}")),
+                },
+                None,
+            );
         }
     };
 
@@ -319,21 +350,27 @@ fn handle_execute(body: &str) -> ApiResponse<ExecResult> {
         match std::fs::read_to_string(&fpath) {
             Ok(c) => (c, Some(f.clone())),
             Err(e) => {
-                return ApiResponse {
-                    success: false,
-                    data: None,
-                    error: Some(format!("Failed to read file: {e}")),
-                };
+                return (
+                    ApiResponse {
+                        success: false,
+                        data: None,
+                        error: Some(format!("Failed to read file: {e}")),
+                    },
+                    None,
+                );
             }
         }
     } else if let Some(ref c) = req.code {
         (c.clone(), None)
     } else {
-        return ApiResponse {
-            success: false,
-            data: None,
-            error: Some("Provide 'code' or 'filename'".into()),
-        };
+        return (
+            ApiResponse {
+                success: false,
+                data: None,
+                error: Some("Provide 'code' or 'filename'".into()),
+            },
+            None,
+        );
     };
 
     // Compile
@@ -342,11 +379,14 @@ fn handle_execute(body: &str) -> ApiResponse<ExecResult> {
     let (op_array, function_table) = match compile_string_with_functions(&code, fname) {
         Ok(pair) => pair,
         Err(e) => {
-            return ApiResponse {
-                success: false,
-                data: None,
-                error: Some(format!("Compile error: {e}")),
-            };
+            return (
+                ApiResponse {
+                    success: false,
+                    data: None,
+                    error: Some(format!("Compile error: {e}")),
+                },
+                None,
+            );
         }
     };
     let compile_time_ms = t0.elapsed().as_secs_f64() * 1000.0;
@@ -367,21 +407,28 @@ fn handle_execute(body: &str) -> ApiResponse<ExecResult> {
     let t1 = std::time::Instant::now();
     let mut exec_data = ExecuteData::new();
     exec_data.function_table = Some(Arc::new(function_table));
+    if let Some(id) = parse_cookie_value(cookies, "PHPSESSID") {
+        phprs::php::session::apply_incoming_session_id(&mut exec_data, &id);
+    }
     let _result = execute_ex(&mut exec_data, &op_array);
     let exec_time_ms = t1.elapsed().as_secs_f64() * 1000.0;
     let output = php_output_end().unwrap_or_default();
+    let set_cookie = phprs::php::session::cookie_header_value(&exec_data);
 
-    ApiResponse {
-        success: true,
-        data: Some(ExecResult {
-            output,
-            opcodes,
-            filename,
-            compile_time_ms,
-            exec_time_ms,
-        }),
-        error: None,
-    }
+    (
+        ApiResponse {
+            success: true,
+            data: Some(ExecResult {
+                output,
+                opcodes,
+                filename,
+                compile_time_ms,
+                exec_time_ms,
+            }),
+            error: None,
+        },
+        set_cookie,
+    )
 }
 
 // ---------------------------------------------------------------------------

@@ -133,6 +133,12 @@ pub struct ExecuteData {
     pub global_script_table: Option<crate::engine::types::PhpArray>,
     /// Names imported via `global $name` in the current function scope.
     pub global_imports: std::collections::HashSet<String>,
+    /// Session active for this request.
+    pub session_active: bool,
+    /// Current session id (empty until started or set via cookie).
+    pub session_id: String,
+    /// Session cookie/name (default PHPSESSID).
+    pub session_name: String,
 }
 
 impl ExecuteData {
@@ -162,6 +168,9 @@ impl ExecuteData {
             fe_key_slot: None,
             global_script_table: None,
             global_imports: std::collections::HashSet::new(),
+            session_active: false,
+            session_id: String::new(),
+            session_name: String::new(),
         };
         ed.register_reflection_classes();
         ed

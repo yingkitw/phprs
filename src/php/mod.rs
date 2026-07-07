@@ -18,6 +18,7 @@ pub mod pdo;
 pub mod regex;
 pub mod runtime;
 pub mod sapi;
+pub mod session;
 pub mod streams;
 pub mod url;
 pub mod variables;

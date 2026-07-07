@@ -6,10 +6,9 @@
  * This script mirrors common patterns using a plain $_SESSION array so the demo runs here.
  */
 
-echo '=== Session Handling Examples (simulated $_SESSION) ===' . "\n\n";
-echo 'Note: session_* functions are not available in phprs; using $_SESSION as an array.' . "\n\n";
+echo '=== Session Handling Examples ===' . "\n\n";
 
-$_SESSION = [];
+session_start();
 
 // Example 1: Basic usage
 echo "Example 1: Store session-like data\n";

@@ -80,6 +80,7 @@ pub(crate) fn is_builtin_function(name: &str) -> bool {
         | "time" | "microtime" | "date" | "mktime" | "strtotime" | "parse_url"
         | "http_build_query" | "urlencode" | "urldecode" | "rawurlencode" | "rawurldecode"
         | "parse_str" | "get_headers" | "str_getcsv" | "fgetcsv" | "fputcsv"
+        | "session_start" | "session_destroy" | "session_id" | "session_name"
         | "gzcompress" | "gzuncompress" | "gzencode" | "gzdecode" | "gzdeflate"
         | "gzinflate" | "mb_strlen" | "mb_substr" | "mb_strtolower" | "mb_strtoupper"
         | "mb_strpos" | "mb_strrpos" | "mb_convert_encoding" | "mb_substr_count"
@@ -1149,6 +1150,24 @@ pub(crate) fn execute_builtin_function(
         "rawurldecode" => crate::php::url::rawurldecode(args).map(Some),
         "parse_str" => crate::php::url::parse_str(args).map(Some),
         "get_headers" => crate::php::url::get_headers(args).map(Some),
+
+        // --- Session functions ---
+        "session_start" => {
+            let ok = crate::php::session::session_start(_execute_data)?;
+            Ok(Some(bool_val(ok)))
+        }
+        "session_destroy" => {
+            let ok = crate::php::session::session_destroy(_execute_data)?;
+            Ok(Some(bool_val(ok)))
+        }
+        "session_id" => {
+            let id = crate::php::session::session_id(args, _execute_data)?;
+            Ok(Some(string_val(&id)))
+        }
+        "session_name" => {
+            let name = crate::php::session::session_name(args, _execute_data)?;
+            Ok(Some(string_val(&name)))
+        }
 
         // --- CSV functions ---
         "str_getcsv" => crate::php::csv::str_getcsv(args).map(Some),

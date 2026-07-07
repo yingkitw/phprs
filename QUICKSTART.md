@@ -42,7 +42,7 @@ phprs pkg init               # Composer-style project stub
 phprs run examples/01_hello_world.php
 phprs run examples/regex-examples.php
 phprs run examples/pdo-examples.php
-phprs run examples/session-examples.php   # simulated $_SESSION, not session_start()
+phprs run examples/session-examples.php   # session_start() + $_SESSION
 phprs run examples/integration-test.php
 
 # CI-equivalent: all root examples/*.php
@@ -60,7 +60,7 @@ phprs run examples/wordpress/index.php            # may fail on wp-db array() sy
 ## Expectations
 
 - **Not a drop-in Zend replacement** — try your script, read errors, check [TODO.md](TODO.md).
-- **Sessions** — `session_start()` is not an engine builtin; see `examples/session-examples.php`.
+- **Sessions** — `session_start()`, `session_destroy()`, `session_id()`, `session_name()`; persisted via JSON files (cookie in `phprs serve`).
 - **PDO** — stub/in-memory API for demos, not a real DB driver.
 - **Regex** — Rust `regex` + `fancy-regex` for look-around; not full PCRE.
 - **Performance** — use `cargo build --release`; see [PERFORMANCE.md](PERFORMANCE.md) (no invented PHP speedup tables).

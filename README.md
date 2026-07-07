@@ -66,7 +66,7 @@ Progressive compatibility with popular PHP frameworks and CMSs (stubs and demos 
 - **Regex**: the `regex` crate (different tradeoffs vs PCRE — not a drop-in performance claim)
 - **Crypto / hashing**: common Rust crates for checksums and tooling
 - **PDO / JSON / regex / HTTP**: implemented or stubbed to varying degrees — see `builtin_capability_tests.rs` and tests for what is real today
-- **Sessions**: PHP session extension (`session_start`, etc.) **not** in the engine; `examples/session-examples.php` uses `$_SESSION` as a plain array
+- **Sessions**: `session_start`, `session_destroy`, `session_id`, `session_name` — JSON file storage; `phprs serve` sends `PHPSESSID` cookie
 - **Package manager**: Composer-oriented workflows with `semver` for version parsing
 - **Dev server**: `phprs serve` for local tries
 

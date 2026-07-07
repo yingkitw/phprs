@@ -172,6 +172,7 @@ pub fn execute_ex_returning(
             Ok(ExecResult::Continue) => {
                 execute_data.current_op += 1;
                 if execute_data.exit_requested.is_some() {
+                    finalize_request(execute_data);
                     return (PhpResult::Success, None);
                 }
             }
@@ -179,6 +180,7 @@ pub fn execute_ex_returning(
                 execute_data.current_op = target as usize;
             }
             Ok(ExecResult::Return(value)) => {
+                finalize_request(execute_data);
                 return (PhpResult::Success, Some(value));
             }
             Err(e) => {
@@ -187,6 +189,7 @@ pub fn execute_ex_returning(
             }
         }
     }
+    finalize_request(execute_data);
     (PhpResult::Success, None)
 }
 
@@ -323,6 +326,7 @@ pub fn execute_ex(execute_data: &mut ExecuteData, op_array: &OpArray) -> PhpResu
             Ok(ExecResult::Continue) => {
                 execute_data.current_op += 1;
                 if execute_data.exit_requested.is_some() {
+                    finalize_request(execute_data);
                     return PhpResult::Success;
                 }
             }
@@ -330,6 +334,7 @@ pub fn execute_ex(execute_data: &mut ExecuteData, op_array: &OpArray) -> PhpResu
                 execute_data.current_op = target as usize;
             }
             Ok(ExecResult::Return(_value)) => {
+                finalize_request(execute_data);
                 return PhpResult::Success;
             }
             Err(e) => {
@@ -339,5 +344,12 @@ pub fn execute_ex(execute_data: &mut ExecuteData, op_array: &OpArray) -> PhpResu
         }
     }
 
+    finalize_request(execute_data);
     PhpResult::Success
+}
+
+fn finalize_request(execute_data: &mut ExecuteData) {
+    if let Err(e) = crate::php::session::session_write_close(execute_data) {
+        eprintln!("Session write error: {e}");
+    }
 }

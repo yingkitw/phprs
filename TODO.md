@@ -78,6 +78,7 @@
 - [x] [PERFORMANCE.md](PERFORMANCE.md) evidence policy (phprs-only benchmarks; no fake PHP baselines)
 - [x] Example scripts adjusted for phprs compiler limits (regex lookahead, session simulation, foreach value-only)
 - [x] Look-ahead/look-behind regex via `fancy-regex` fallback in `preg_*`
+- [x] Session builtins + file-backed storage for `phprs serve`
 
 ### Package Manager
 - [x] CLI framework
@@ -103,8 +104,8 @@
   - [x] PCRE flag support (i, m, s, x)
   - [x] Regex compilation and caching
 - [x] Session **demo patterns** (`examples/session-examples.php` — plain `$_SESSION` array; not Zend session extension)
-  - [ ] `session_start()`, `session_destroy()`, `session_id()` as engine builtins
-  - [ ] File-backed / request-scoped session storage in `phprs serve`
+  - [x] `session_start()`, `session_destroy()`, `session_id()` as engine builtins
+  - [x] File-backed / request-scoped session storage in `phprs serve`
 - [x] PDO/database layer
   - [x] PDO class with connection management
   - [x] Query execution (query(), exec())
@@ -167,7 +168,7 @@
 - Regex via Rust `regex` + `fancy-regex` for look-around (`preg_*`); not full PCRE
 - HTTP GET via `file_get_contents` + `reqwest`
 - PDO **stub** (in-memory)
-- Session **not** implemented as PHP extension (demo uses `$_SESSION` variable)
+- Session builtins (`session_start`, `session_destroy`, `session_id`, `session_name`) with JSON file storage; cookie support in `phprs serve`
 - Math functions (20+): abs, ceil, floor, round, sqrt, pow, trig functions, max, min, rand
 - Hash functions: md5, sha1, sha256, sha512, base64_encode, base64_decode
 - DateTime functions: time, date, strtotime, mktime, microtime
