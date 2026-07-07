@@ -160,6 +160,14 @@ fn example_filesystem_runs() {
     assert!(out.contains("Contents length:"), "output: {out:?}");
 }
 
+#[test]
+fn example_wordpress_index_runs() {
+    let (r, out) = run_example_phprs("wordpress/index.php").expect("run");
+    assert!(matches!(r, PhpResult::Success), "vm result: {r:?}, output: {out:?}");
+    assert!(out.contains("Hello from WordPress (phprs)!"), "output: {out:?}");
+    assert!(out.contains("Blog name = WordPress"), "output: {out:?}");
+}
+
 /// Every **root-level** `examples/*.php` script must compile and finish with [`PhpResult::Success`].
 /// Nested demos (framework trees) are covered by their own tests below.
 #[test]

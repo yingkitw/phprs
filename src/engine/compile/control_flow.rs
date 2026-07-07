@@ -275,31 +275,43 @@ pub fn compile_foreach(lexer: &mut Lexer, context: &mut CompileContext) -> Resul
         return Err("Expected 'as' after foreach array expression".to_string());
     }
 
-    // Parse value variable (and optionally key variable)
-    let value_token = lexer.next_token()?;
-    if value_token.token_type != TokenType::T_VARIABLE {
+    // Parse loop variables: `as $value` or `as $key => $value`
+    let first_var_token = lexer.next_token()?;
+    if first_var_token.token_type != TokenType::T_VARIABLE {
         return Err("Expected variable after 'as' in foreach".to_string());
     }
+    let first_var_name = first_var_token.value.as_ref().unwrap().clone();
 
-    let value_var_name = value_token.value.as_ref().unwrap().as_str();
+    let next_after_first = lexer.next_token()?;
+    let (key_var_name, value_var_name, close_paren) =
+        if next_after_first.token_type == TokenType::T_DOUBLE_ARROW {
+            let value_token = lexer.next_token()?;
+            if value_token.token_type != TokenType::T_VARIABLE {
+                return Err("Expected value variable after '=>' in foreach".to_string());
+            }
+            let value_name = value_token.value.as_ref().unwrap().clone();
+            let close = lexer.next_token()?;
+            (Some(first_var_name), value_name, close)
+        } else {
+            (None, first_var_name, next_after_first)
+        };
 
-    let next_after_value = lexer.next_token()?;
-    if next_after_value.token_type == TokenType::T_DOUBLE_ARROW {
-        return Err("foreach with key => value is not yet supported".to_string());
-    }
-    if next_after_value.token_type != TokenType::T_STRING
-        || next_after_value.value.as_ref().map(|s| s.as_str()) != Some(")")
+    if close_paren.token_type != TokenType::T_STRING
+        || close_paren.value.as_ref().map(|s| s.as_str()) != Some(")")
     {
-        return Err("Expected ')' after foreach value variable".to_string());
+        return Err("Expected ')' after foreach variables".to_string());
     }
 
     let iterator_slot = context.alloc_temp();
     let value_slot = context.alloc_temp();
+    let key_slot = key_var_name.as_ref().map(|_| context.alloc_temp());
 
     context.emit_opcode(
         Opcode::FeReset,
         array_expr.clone(),
-        null_val(),
+        key_slot
+            .map(temp_var_ref)
+            .unwrap_or_else(null_val),
         temp_var_ref(iterator_slot),
     );
 
@@ -313,7 +325,7 @@ pub fn compile_foreach(lexer: &mut Lexer, context: &mut CompileContext) -> Resul
         temp_var_ref(iterator_slot),
     );
 
-    let value_var = crate::engine::vm::var_ref(value_var_name);
+    let value_var = crate::engine::vm::var_ref(value_var_name.as_str());
     let value_ref = temp_var_ref(value_slot);
     let value_ref_assign = clone_val(&value_ref);
     context.emit_opcode(
@@ -322,6 +334,13 @@ pub fn compile_foreach(lexer: &mut Lexer, context: &mut CompileContext) -> Resul
         value_ref,
         value_ref_assign,
     );
+
+    if let (Some(key_name), Some(key_slot)) = (key_var_name.as_ref(), key_slot) {
+        let key_var = crate::engine::vm::var_ref(key_name.as_str());
+        let key_ref = temp_var_ref(key_slot);
+        let key_ref_assign = clone_val(&key_ref);
+        context.emit_opcode(Opcode::Assign, key_var, key_ref, key_ref_assign);
+    }
 
     // Parse foreach body (statements in braces)
     let brace_token = lexer.next_token()?;

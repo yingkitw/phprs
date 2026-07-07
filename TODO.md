@@ -37,6 +37,12 @@
 - [x] VM execution (63 opcodes, dispatch table)
 - [x] Built-in functions (40+ functions)
 - [x] Legacy `array()` constructor syntax (`array()`, `array('k' => v)`, indexed elements)
+- [x] Foreach with key => value (`foreach ($a as $k => $v)`)
+- [x] Chained array dimension assignment (`$a['b']['c'] = $v`)
+- [x] Array append assignment (`$arr[] = $v`)
+- [x] CLI/serve function table wiring (`compile_file_with_functions`, include merge)
+- [x] `global $var` statement (BindGlobal opcode; script globals in user functions)
+- [x] Builtin calls inside user-defined functions (DoFCall stack fix; no JIT fallback loop)
 
 ### Tools
 - [x] Unified CLI (`bin/phprs`) with `run`, `serve`, `pkg` subcommands
@@ -127,7 +133,7 @@
 - [x] Bootstrap (index.php → wp-blog-header.php → wp-load.php → wp-config.php → wp-settings.php)
 - [x] wp-config-style constants (ABSPATH, WP_DEBUG; define/defined/constant, __DIR__, __FILE__)
 - [x] Relative include resolution; include restores caller state
-- [x] Minimal example in examples/wordpress (`wp-db.php` compiles after `array()` support; full bootstrap still blocked on nested includes like `plugin.php`)
+- [x] Minimal example in examples/wordpress (full bootstrap runs: index.php → wp-settings → plugins/theme hooks)
 - [x] do_action / apply_filters (full implementation with priority support)
 - [x] wp-config.php parsing (DB_*, table prefix)
 - [x] Database layer for wpdb (in-memory stub with query/get_results/insert/update/delete)
@@ -141,7 +147,7 @@
   - [x] WordPress demo session stubs (`wp_session_*` in `examples/wordpress/` only)
   - [x] Example plugin with activation hooks and filters
   - [x] Example theme with functions.php and theme setup
-  - [x] Comprehensive test script (test-theme-plugin.php)
+  - [x] `call_user_func_array` invokes string callbacks; `ksort` / `add_shortcode` stubs in plugin.php
 
 ## Statistics
 
@@ -149,11 +155,11 @@
 - **Engine**: types, string, hash, alloc, gc, operators, compile, vm, jit, benchmark, …
 - **PHP runtime**: modules under `src/php/` (regex, http_stream, pdo stub, math, hash, datetime, mbstring, …)
 - **Framework examples**: WordPress-shaped (partial), CodeIgniter 4 demo (CI-tested), Drupal demo (CI-tested)
-- **67 opcodes** (dispatch table)
+- **72 opcodes** (dispatch table)
 - **130+ built-in functions** — see `builtin_capability_tests.rs` for exercised surface
-- **376+ workspace tests** (`cargo test --workspace`; 319 library unit tests including `array()` constructor)
+- **385+ workspace tests** (`cargo test --workspace`)
 - **21 root PHP examples** — all run via `examples_root_php_scripts_all_run`
-- **Known gaps**: UDF calls incomplete in some CLI paths; `foreach ($k => $v)`; look-ahead regex; `$arr[]` append; chained `$a['b']['c'] =` assignment
+- **Known gaps**: look-ahead regex; `$this->prop['k'] =` object property dim assign; pass-by-reference parameters (`&$var`)
 
 ### Standard library (honest)
 - Regex via Rust `regex` (`preg_*`) — no look-ahead/look-behind
@@ -215,9 +221,9 @@ Rust is used for the **interpreter implementation** because of memory safety in 
 - [x] **Readonly properties** (PHP 8.1) - `T_READONLY` keyword + class body parsing
 - [x] **Enums** (PHP 8.1) - Pure and backed enums (`enum Color: string { case Red = 'red'; }`)
 - [ ] **First-class callable syntax** (PHP 8.1) - `strlen(...)`
-- [ ] **Foreach with key** — `foreach ($a as $k => $v)` (value-only foreach works today)
-- [ ] **Array append / chained dim assign** — `$arr[] = $x`, `$this->prop['k'] = $v`
-- [ ] **User-defined functions in CLI scripts** — top-level `function foo()` callable from same file
+- [x] **Foreach with key** — `foreach ($a as $k => $v)`
+- [x] **Array append / chained dim assign** — `$arr[] = $x`, `$a['b']['c'] = $v`
+- [x] **User-defined functions in CLI scripts** — top-level `function foo()` callable from same file
 - [ ] **Fibers** (PHP 8.1) - Lightweight concurrency
 - [x] **Never type** (PHP 8.1) - recognized in type hints
 - [ ] **Final class constants** (PHP 8.1)

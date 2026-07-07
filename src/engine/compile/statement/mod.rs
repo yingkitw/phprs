@@ -13,8 +13,9 @@ use super::expression::{parse_expression, parse_additive_expr_with_initial};
 use super::expression::helpers::token_is_punct;
 use super::function::compile_function;
 use crate::engine::facade::{null_val, result_val, string_val, string_val_copy, zero_val, clone_val, StdValFactory, ValFactory};
+use crate::engine::types::Val;
 use crate::engine::lexer::{Token, Lexer, TokenType};
-use crate::engine::vm::{Opcode, temp_var_ref};
+use crate::engine::vm::{Opcode, temp_var_ref, var_ref};
 
 /// Helper: consume semicolon if present, return next token
 fn skip_semicolon(lexer: &mut Lexer, token: Token) -> Result<Token, String> {
@@ -105,6 +106,7 @@ pub fn parse_statement(
         TokenType::T_ENUM => oop::compile_enum(lexer, context),
         TokenType::T_TRAIT => oop::compile_trait(lexer, context),
         TokenType::T_RETURN => compile_return(lexer, context),
+        TokenType::T_GLOBAL => compile_global(lexer, context),
         TokenType::T_YIELD => compile_yield(lexer, context),
         TokenType::T_NAMESPACE => compile_namespace(lexer, context),
         TokenType::T_USE => compile_use(lexer, context),
@@ -173,20 +175,22 @@ fn compile_variable_stmt(
         context.emit_opcode(Opcode::Assign, var_name_zval, value_zval, value_zval_op2);
         skip_semicolon(lexer, after_expr)
     } else if token_is_punct(&next_token, "[") {
-        // $var[key] = value;
-        let idx_first = lexer.next_token()?;
-        let (index_val, after_index) = parse_additive_expr_with_initial(lexer, context, idx_first)?;
-        if !token_is_punct(&after_index, "]") {
-            return Err("Expected ']' after array index in assignment".to_string());
+        // $var[key] = value;  $var[a][b] = value;  $var[] = value;
+        let (keys, after_target) = parse_dim_assign_keys(lexer, context, next_token)?;
+        if after_target.token_type == TokenType::T_EQUAL {
+            let (value_zval, after_value) = parse_expression(lexer, context)?;
+            emit_dim_assignment(context, var_name, &keys, value_zval)?;
+            skip_semicolon(lexer, after_value)
+        } else if after_target.token_type == TokenType::T_INC
+            || after_target.token_type == TokenType::T_DEC
+        {
+            let is_inc = after_target.token_type == TokenType::T_INC;
+            emit_dim_inc_dec(context, var_name, &keys, is_inc)?;
+            let next = lexer.next_token()?;
+            skip_semicolon(lexer, next)
+        } else {
+            Err("Expected '=' after array index assignment target".to_string())
         }
-        let after_close = lexer.next_token()?;
-        if after_close.token_type != TokenType::T_EQUAL {
-            return Err("Expected '=' after array index assignment target".to_string());
-        }
-        let (value_zval, after_value) = parse_expression(lexer, context)?;
-        let var_name_zval = string_val(var_name);
-        context.emit_opcode(Opcode::AssignDim, var_name_zval, value_zval, index_val);
-        skip_semicolon(lexer, after_value)
     } else if token_is_punct(&next_token, "(") {
         // Callable variable: $var(args...)
         let var_zval = crate::engine::vm::var_ref(var_name);
@@ -211,6 +215,208 @@ fn compile_variable_stmt(
     } else {
         Ok(next_token)
     }
+}
+
+/// One dimension in `$var[k1][k2][] =` — key expression or append when `append` is true.
+struct DimAssignKey {
+    key: Val,
+    append: bool,
+}
+
+fn parse_dim_assign_keys(
+    lexer: &mut Lexer,
+    context: &mut CompileContext,
+    open_bracket: Token,
+) -> Result<(Vec<DimAssignKey>, Token), String> {
+    if !token_is_punct(&open_bracket, "[") {
+        return Err("Expected '[' to start array index assignment".to_string());
+    }
+
+    let mut keys = Vec::new();
+    let mut token = lexer.next_token()?;
+
+    loop {
+        if token_is_punct(&token, "]") {
+            keys.push(DimAssignKey {
+                key: null_val(),
+                append: true,
+            });
+            token = lexer.next_token()?;
+            break;
+        }
+
+        let (index_val, after_index) =
+            parse_additive_expr_with_initial(lexer, context, token)?;
+        if !token_is_punct(&after_index, "]") {
+            return Err("Expected ']' after array index in assignment".to_string());
+        }
+        keys.push(DimAssignKey {
+            key: index_val,
+            append: false,
+        });
+        token = lexer.next_token()?;
+        if token_is_punct(&token, "[") {
+            token = lexer.next_token()?;
+            continue;
+        }
+        break;
+    }
+
+    Ok((keys, token))
+}
+
+fn emit_dim_assignment(
+    context: &mut CompileContext,
+    var_name: &str,
+    keys: &[DimAssignKey],
+    value: Val,
+) -> Result<(), String> {
+    if keys.is_empty() {
+        return Err("Array assignment requires at least one index".to_string());
+    }
+
+    if keys.len() == 1 {
+        let var_name_zval = string_val(var_name);
+        let last = &keys[0];
+        if last.append {
+            context.emit_opcode_ext(Opcode::AssignDim, var_name_zval, value, null_val(), 1);
+        } else {
+            context.emit_opcode(Opcode::AssignDim, var_name_zval, value, clone_val(&last.key));
+        }
+        return Ok(());
+    }
+
+    let root_slot = context.alloc_temp();
+    context.emit_opcode(
+        Opcode::FetchVar,
+        var_ref(var_name),
+        null_val(),
+        temp_var_ref(root_slot),
+    );
+
+    let mut slots = vec![root_slot];
+    for key in &keys[..keys.len() - 1] {
+        if key.append {
+            return Err("Array append '[]' is only valid as the final dimension".to_string());
+        }
+        let next_slot = context.alloc_temp();
+        context.emit_opcode(
+            Opcode::FetchDim,
+            temp_var_ref(*slots.last().unwrap()),
+            clone_val(&key.key),
+            temp_var_ref(next_slot),
+        );
+        slots.push(next_slot);
+    }
+
+    let last = keys.last().unwrap();
+    let container = temp_var_ref(*slots.last().unwrap());
+    if last.append {
+        context.emit_opcode_ext(Opcode::AssignDim, container, value, null_val(), 1);
+    } else {
+        context.emit_opcode(
+            Opcode::AssignDim,
+            container,
+            value,
+            clone_val(&last.key),
+        );
+    }
+
+    for i in (0..keys.len() - 1).rev() {
+        let parent = if i == 0 {
+            string_val(var_name)
+        } else {
+            temp_var_ref(slots[i])
+        };
+        context.emit_opcode(
+            Opcode::AssignDim,
+            parent,
+            temp_var_ref(slots[i + 1]),
+            clone_val(&keys[i].key),
+        );
+    }
+
+    Ok(())
+}
+
+fn emit_dim_inc_dec(
+    context: &mut CompileContext,
+    var_name: &str,
+    keys: &[DimAssignKey],
+    increment: bool,
+) -> Result<(), String> {
+    if keys.is_empty() || keys.iter().any(|k| k.append) {
+        return Err("Increment/decrement requires fixed array indices".to_string());
+    }
+
+    let current_slot = emit_dim_fetch_chain(context, var_name, keys)?;
+    let one = crate::engine::facade::long_val(1);
+    let updated = super::expression::helpers::emit_binary_op(
+        context,
+        if increment { Opcode::Add } else { Opcode::Sub },
+        temp_var_ref(current_slot),
+        one,
+    );
+    emit_dim_assignment(context, var_name, keys, updated)
+}
+
+/// Load `$var[k1][k2]...` into a temp slot (auto-vivifies missing intermediate arrays on write-back only).
+fn emit_dim_fetch_chain(
+    context: &mut CompileContext,
+    var_name: &str,
+    keys: &[DimAssignKey],
+) -> Result<u32, String> {
+    if keys.is_empty() {
+        return Err("Array fetch requires at least one index".to_string());
+    }
+
+    if keys.len() == 1 {
+        let root_slot = context.alloc_temp();
+        context.emit_opcode(
+            Opcode::FetchVar,
+            var_ref(var_name),
+            null_val(),
+            temp_var_ref(root_slot),
+        );
+        let slot = context.alloc_temp();
+        context.emit_opcode(
+            Opcode::FetchDim,
+            temp_var_ref(root_slot),
+            clone_val(&keys[0].key),
+            temp_var_ref(slot),
+        );
+        return Ok(slot);
+    }
+
+    let root_slot = context.alloc_temp();
+    context.emit_opcode(
+        Opcode::FetchVar,
+        var_ref(var_name),
+        null_val(),
+        temp_var_ref(root_slot),
+    );
+
+    let mut slots = vec![root_slot];
+    for key in &keys[..keys.len() - 1] {
+        let next_slot = context.alloc_temp();
+        context.emit_opcode(
+            Opcode::FetchDim,
+            temp_var_ref(*slots.last().unwrap()),
+            clone_val(&key.key),
+            temp_var_ref(next_slot),
+        );
+        slots.push(next_slot);
+    }
+
+    let leaf_slot = context.alloc_temp();
+    let last = keys.last().unwrap();
+    context.emit_opcode(
+        Opcode::FetchDim,
+        temp_var_ref(*slots.last().unwrap()),
+        clone_val(&last.key),
+        temp_var_ref(leaf_slot),
+    );
+    Ok(leaf_slot)
 }
 
 /// Compile $var->method() or $var->prop = expr statement
@@ -338,6 +544,38 @@ fn compile_string_stmt(
     }
 }
 
+/// Compile global statement: global $a, $b;
+fn compile_global(
+    lexer: &mut Lexer,
+    context: &mut CompileContext,
+) -> Result<Token, String> {
+    let mut token = lexer.next_token()?;
+    loop {
+        if token.token_type != TokenType::T_VARIABLE {
+            return Err("Expected variable after global".to_string());
+        }
+        let var_name = token.value.as_ref().unwrap().as_str();
+        let clean = if var_name.starts_with('$') {
+            &var_name[1..]
+        } else {
+            var_name
+        };
+        context.emit_opcode(
+            Opcode::BindGlobal,
+            string_val(clean),
+            null_val(),
+            null_val(),
+        );
+        token = lexer.next_token()?;
+        if token_is_punct(&token, ",") {
+            token = lexer.next_token()?;
+            continue;
+        }
+        break;
+    }
+    skip_semicolon(lexer, token)
+}
+
 /// Compile include/require statement
 fn compile_include(
     lexer: &mut Lexer,
@@ -453,8 +691,10 @@ fn compile_return(
         context.emit_opcode(Opcode::Return, null_val(), null_val(), null_val());
         return lexer.next_token().map(Ok)?;
     }
-    // Parse the return expression
-    let (return_value, after) = crate::engine::compile::expression::parse_additive_expr_with_initial(lexer, context, peek)?;
+    let (return_value, after) =
+        crate::engine::compile::expression::operators::parse_ternary_expr_with_initial(
+            lexer, context, peek,
+        )?;
     context.emit_opcode(Opcode::Return, return_value, null_val(), null_val());
     skip_semicolon(lexer, after)
 }

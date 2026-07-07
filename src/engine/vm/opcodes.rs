@@ -77,6 +77,7 @@ pub enum Opcode {
     DoStaticCall = 68,    // Execute static method call (op1=method name, op2=class name, result=temp)
     CloneObj = 69,        // Clone object (op1=obj, result=cloned obj)
     SendValNamed = 70,    // Push named argument for function call (op1=value, op2=param name string)
+    BindGlobal = 71,      // Import a variable from script globals into function scope
 }
 
 /// Operation structure
@@ -178,6 +179,7 @@ pub fn get_opcode_name(opcode: Opcode) -> &'static str {
         Opcode::DoStaticCall => "DO_STATIC_CALL",
         Opcode::CloneObj => "CLONE_OBJ",
         Opcode::SendValNamed => "SEND_VAL_NAMED",
+        Opcode::BindGlobal => "BIND_GLOBAL",
         _ => "UNKNOWN",
     }
 }

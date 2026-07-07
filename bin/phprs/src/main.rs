@@ -67,15 +67,17 @@ async fn main() -> anyhow::Result<()> {
 
 /// Execute a PHP file
 fn cmd_run(filename: &str) -> anyhow::Result<()> {
-    use phprs::engine::compile::compile_file;
+    use phprs::engine::compile::compile_file_with_functions;
     use phprs::engine::vm::{execute_ex, ExecuteData};
     use phprs::php::output::{php_output_end, php_output_start};
+    use std::sync::Arc;
 
-    let op_array = compile_file(filename)
+    let (op_array, function_table) = compile_file_with_functions(filename)
         .map_err(|e| anyhow::anyhow!("Compile error: {}", e))?;
 
     let _ = php_output_start();
     let mut ed = ExecuteData::new();
+    ed.function_table = Some(Arc::new(function_table));
     let _result = execute_ex(&mut ed, &op_array);
     let output = php_output_end().unwrap_or_default();
 

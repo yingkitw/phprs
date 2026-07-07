@@ -45,6 +45,7 @@ fn init_dispatch_table() {
         table[Opcode::FetchVar as usize] = execute_fetch_var;
         table[Opcode::SendVal as usize] = execute_send_val;
         table[Opcode::SendValNamed as usize] = execute_send_val_named;
+        table[Opcode::BindGlobal as usize] = execute_bind_global;
         table[Opcode::Include as usize] = execute_include;
         table[Opcode::InitArray as usize] = execute_init_array;
         table[Opcode::AddArrayElement as usize] = execute_add_array_element;

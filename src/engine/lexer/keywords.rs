@@ -46,6 +46,7 @@ pub fn keyword_to_token(keyword: &str) -> TokenType {
         "clone" => TokenType::T_CLONE,
         "instanceof" => TokenType::T_INSTANCEOF,
         "do" => TokenType::T_DO,
+        "global" => TokenType::T_GLOBAL,
         "include" => TokenType::T_INCLUDE,
         "include_once" => TokenType::T_INCLUDE_ONCE,
         "require" => TokenType::T_REQUIRE,
@@ -68,7 +69,7 @@ pub fn is_keyword(keyword: &str) -> bool {
         "case" | "default" | "try" | "catch" | "throw" | "namespace" | "use" |
         "as" | "abstract" | "extends" | "final" | "implements" | "interface" |
         "trait" | "clone" | "instanceof" | "do" | "callable" | "insteadof" |
-        "include" | "include_once" | "require" | "require_once" | "match" | "yield"
+        "include" | "include_once" | "require" | "require_once" | "match" | "yield" | "global"
     )
 }
 

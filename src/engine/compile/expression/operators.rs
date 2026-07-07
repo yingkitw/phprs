@@ -14,8 +14,25 @@ pub(crate) fn parse_ternary_expr(
     context: &mut CompileContext,
 ) -> Result<(Val, Token), String> {
     let (condition, token) = parse_null_coalesce_expr(lexer, context)?;
+    parse_ternary_tail(lexer, context, condition, token)
+}
 
-    // Check for ? (ternary)
+/// Parse a ternary/null-coalesce expression starting from a pre-consumed token.
+pub(crate) fn parse_ternary_expr_with_initial(
+    lexer: &mut Lexer,
+    context: &mut CompileContext,
+    initial: Token,
+) -> Result<(Val, Token), String> {
+    let (condition, token) = parse_null_coalesce_expr_with_initial(lexer, context, initial)?;
+    parse_ternary_tail(lexer, context, condition, token)
+}
+
+fn parse_ternary_tail(
+    lexer: &mut Lexer,
+    context: &mut CompileContext,
+    condition: Val,
+    token: Token,
+) -> Result<(Val, Token), String> {
     if !token_is_punct(&token, "?") {
         return Ok((condition, token));
     }
@@ -120,7 +137,24 @@ fn parse_null_coalesce_expr(
     context: &mut CompileContext,
 ) -> Result<(Val, Token), String> {
     let (left, token) = parse_logical_or_expr(lexer, context)?;
+    parse_null_coalesce_tail(lexer, context, left, token)
+}
 
+fn parse_null_coalesce_expr_with_initial(
+    lexer: &mut Lexer,
+    context: &mut CompileContext,
+    initial: Token,
+) -> Result<(Val, Token), String> {
+    let (left, token) = parse_logical_or_expr_with_initial(lexer, context, initial)?;
+    parse_null_coalesce_tail(lexer, context, left, token)
+}
+
+fn parse_null_coalesce_tail(
+    lexer: &mut Lexer,
+    context: &mut CompileContext,
+    left: Val,
+    token: Token,
+) -> Result<(Val, Token), String> {
     if token.token_type == TokenType::T_COALESCE {
         // Right-associative: parse right side as another null coalesce
         let (right, next_token) = parse_null_coalesce_expr(lexer, context)?;
@@ -142,8 +176,25 @@ pub(crate) fn parse_logical_or_expr(
     lexer: &mut Lexer,
     context: &mut CompileContext,
 ) -> Result<(Val, Token), String> {
-    let (mut left, mut token) = parse_logical_and_expr(lexer, context)?;
+    let (left, token) = parse_logical_and_expr(lexer, context)?;
+    parse_logical_or_tail(lexer, context, left, token)
+}
 
+fn parse_logical_or_expr_with_initial(
+    lexer: &mut Lexer,
+    context: &mut CompileContext,
+    initial: Token,
+) -> Result<(Val, Token), String> {
+    let (left, token) = parse_logical_and_expr_with_initial(lexer, context, initial)?;
+    parse_logical_or_tail(lexer, context, left, token)
+}
+
+fn parse_logical_or_tail(
+    lexer: &mut Lexer,
+    context: &mut CompileContext,
+    mut left: Val,
+    mut token: Token,
+) -> Result<(Val, Token), String> {
     while token.token_type == TokenType::T_BOOLEAN_OR {
         let (right, next_token) = parse_logical_and_expr(lexer, context)?;
         let or_result = result_val(crate::engine::types::PhpType::Bool);
@@ -161,8 +212,25 @@ fn parse_logical_and_expr(
     lexer: &mut Lexer,
     context: &mut CompileContext,
 ) -> Result<(Val, Token), String> {
-    let (mut left, mut token) = parse_logical_not_expr(lexer, context)?;
+    let (left, token) = parse_logical_not_expr(lexer, context)?;
+    parse_logical_and_tail(lexer, context, left, token)
+}
 
+fn parse_logical_and_expr_with_initial(
+    lexer: &mut Lexer,
+    context: &mut CompileContext,
+    initial: Token,
+) -> Result<(Val, Token), String> {
+    let (left, token) = parse_logical_not_expr_with_initial(lexer, context, initial)?;
+    parse_logical_and_tail(lexer, context, left, token)
+}
+
+fn parse_logical_and_tail(
+    lexer: &mut Lexer,
+    context: &mut CompileContext,
+    mut left: Val,
+    mut token: Token,
+) -> Result<(Val, Token), String> {
     while token.token_type == TokenType::T_BOOLEAN_AND {
         let (right, next_token) = parse_logical_not_expr(lexer, context)?;
         let and_result = result_val(crate::engine::types::PhpType::Bool);
@@ -181,7 +249,14 @@ fn parse_logical_not_expr(
     context: &mut CompileContext,
 ) -> Result<(Val, Token), String> {
     let token = lexer.next_token()?;
+    parse_logical_not_expr_with_initial(lexer, context, token)
+}
 
+fn parse_logical_not_expr_with_initial(
+    lexer: &mut Lexer,
+    context: &mut CompileContext,
+    token: Token,
+) -> Result<(Val, Token), String> {
     if token.token_type == TokenType::T_BOOLEAN_NOT {
         let (expr, next_token) = parse_logical_not_expr(lexer, context)?;
         let bool_result = result_val(crate::engine::types::PhpType::Bool);

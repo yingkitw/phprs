@@ -121,6 +121,12 @@ pub struct ExecuteData {
     pub call_arg_stack: Vec<(usize, usize)>,
     /// SPL autoload function names (registered by spl_autoload_register())
     pub autoload_functions: Vec<String>,
+    /// Temp slot for foreach key when iterating `as $key => $value` (set by FeReset).
+    pub fe_key_slot: Option<u32>,
+    /// Script-level globals snapshot (shared across function calls).
+    pub global_script_table: Option<crate::engine::types::PhpArray>,
+    /// Names imported via `global $name` in the current function scope.
+    pub global_imports: std::collections::HashSet<String>,
 }
 
 impl ExecuteData {
@@ -144,6 +150,9 @@ impl ExecuteData {
             called_class: None,
             call_arg_stack: Vec::new(),
             autoload_functions: Vec::new(),
+            fe_key_slot: None,
+            global_script_table: None,
+            global_imports: std::collections::HashSet::new(),
         };
         ed.register_reflection_classes();
         ed
@@ -180,6 +189,15 @@ impl ExecuteData {
 
     /// Look up a variable by name in the symbol table
     pub fn get_var(&self, name: &str) -> Val {
+        if self.global_imports.contains(name) {
+            if let Some(ref global) = self.global_script_table {
+                let key = crate::engine::string::string_init(name, false);
+                if let Some(val) = crate::engine::hash::hash_find(global, &key) {
+                    return clone_val(val);
+                }
+            }
+            return Val::new(PhpValue::Long(0), PhpType::Null);
+        }
         if let Some(ref st) = self.symbol_table {
             let key = crate::engine::string::string_init(name, false);
             if let Some(val) = crate::engine::hash::hash_find(st, &key) {
@@ -191,11 +209,69 @@ impl ExecuteData {
 
     /// Set a variable in the symbol table
     pub fn set_var(&mut self, name: &str, val: Val) {
+        if self.global_imports.contains(name) {
+            if let Some(ref mut global) = self.global_script_table {
+                let key = crate::engine::string::string_init(name, false);
+                let key_box = Box::new(key);
+                let _ = crate::engine::hash::hash_add_or_update(
+                    global,
+                    Some(&*key_box),
+                    0,
+                    val,
+                    0,
+                );
+            }
+            return;
+        }
         if let Some(ref mut st) = self.symbol_table {
             let key = crate::engine::string::string_init(name, false);
             let key_box = Box::new(key);
             let _ = crate::engine::hash::hash_add_or_update(st, Some(&*key_box), 0, val, 0);
         }
+    }
+
+    /// Import a script-global variable into the current function scope.
+    pub fn bind_global(&mut self, name: &str) {
+        self.global_imports.insert(name.to_string());
+    }
+
+    /// Merge imported globals back into the caller symbol table on function return.
+    pub fn merge_globals_into(&self, outer: &mut crate::engine::types::PhpArray) {
+        if let Some(ref global) = self.global_script_table {
+            for name in &self.global_imports {
+                let key = crate::engine::string::string_init(name, false);
+                if let Some(val) = crate::engine::hash::hash_find(global, &key) {
+                    let key_box = Box::new(key);
+                    let _ = crate::engine::hash::hash_add_or_update(
+                        outer,
+                        Some(&*key_box),
+                        0,
+                        clone_val(val),
+                        0,
+                    );
+                }
+            }
+        }
+    }
+
+    /// Clone a PHP array (shallow copy of elements).
+    pub fn clone_php_array(arr: &crate::engine::types::PhpArray) -> crate::engine::types::PhpArray {
+        let mut copy = crate::engine::types::PhpArray::new();
+        for bucket in &arr.ar_data {
+            let val = clone_val(&bucket.val);
+            if let Some(ref key) = bucket.key {
+                let _ = crate::engine::hash::hash_add_or_update(
+                    &mut copy,
+                    Some(key.as_ref()),
+                    bucket.h,
+                    val,
+                    0,
+                );
+            } else {
+                let _ = crate::engine::hash::hash_add_or_update(&mut copy, None, bucket.h, val, 0);
+            }
+        }
+        copy
     }
 
     /// Remove a variable from the symbol table

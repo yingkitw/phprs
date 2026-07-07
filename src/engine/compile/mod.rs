@@ -48,7 +48,15 @@ pub fn compile_string_with_functions(code: &str, filename: &str) -> Result<(OpAr
 
 /// Compile file to opcodes
 pub fn compile_file(filename: &str) -> Result<OpArray, String> {
+    let (op_array, _) = compile_file_with_functions(filename)?;
+    Ok(op_array)
+}
+
+/// Compile file to opcodes and return the function table
+pub fn compile_file_with_functions(
+    filename: &str,
+) -> Result<(OpArray, function_table::FunctionTable), String> {
     use std::fs;
     let code = fs::read_to_string(filename).map_err(|e| format!("Failed to read file: {e}"))?;
-    compile_string(&code, filename)
+    compile_string_with_functions(&code, filename)
 }

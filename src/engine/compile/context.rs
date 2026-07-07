@@ -99,6 +99,25 @@ impl CompileContext {
         self.op_array.ops.push(op);
     }
 
+    /// Emit an opcode with a non-zero extended value (e.g. append-mode AssignDim).
+    pub fn emit_opcode_ext(
+        &mut self,
+        opcode: Opcode,
+        op1: Val,
+        op2: Val,
+        result: Val,
+        extended: u32,
+    ) {
+        let op = Op {
+            opcode,
+            op1,
+            op2,
+            result,
+            extended_value: extended,
+        };
+        self.op_array.ops.push(op);
+    }
+
     /// Emit an opcode and return its index
     pub fn emit_opcode_with_index(
         &mut self,

@@ -4,8 +4,9 @@
 //! and executes PHP code — all from a single Rust binary.
 
 use phprs::php::output::{php_output_end, php_output_start};
-use phprs::engine::compile::compile_string;
+use phprs::engine::compile::compile_string_with_functions;
 use phprs::engine::vm::{execute_ex, ExecuteData};
+use std::sync::Arc;
 use serde::{Deserialize, Serialize};
 use std::io::{BufRead, BufReader, Read, Write};
 use std::net::TcpListener;
@@ -338,8 +339,8 @@ fn handle_execute(body: &str) -> ApiResponse<ExecResult> {
     // Compile
     let t0 = std::time::Instant::now();
     let fname = filename.as_deref().unwrap_or("inline.php");
-    let op_array = match compile_string(&code, fname) {
-        Ok(oa) => oa,
+    let (op_array, function_table) = match compile_string_with_functions(&code, fname) {
+        Ok(pair) => pair,
         Err(e) => {
             return ApiResponse {
                 success: false,
@@ -365,6 +366,7 @@ fn handle_execute(body: &str) -> ApiResponse<ExecResult> {
     let _ = php_output_start();
     let t1 = std::time::Instant::now();
     let mut exec_data = ExecuteData::new();
+    exec_data.function_table = Some(Arc::new(function_table));
     let _result = execute_ex(&mut exec_data, &op_array);
     let exec_time_ms = t1.elapsed().as_secs_f64() * 1000.0;
     let output = php_output_end().unwrap_or_default();

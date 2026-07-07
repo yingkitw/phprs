@@ -308,22 +308,55 @@ pub fn execute_assign(op: &Op, execute_data: &mut ExecuteData) -> Result<ExecRes
 #[inline]
 pub fn execute_assign_dim(op: &Op, execute_data: &mut ExecuteData) -> Result<ExecResult, String> {
     let val = resolve_operand(&op.op2, execute_data);
-    let key = resolve_operand(&op.result, execute_data);
-    if let PhpValue::String(var_s) = &op.op1.value {
+    let append = op.extended_value == 1;
+    let key = if append {
+        None
+    } else {
+        Some(resolve_operand(&op.result, execute_data))
+    };
+
+    let write_back = |execute_data: &mut ExecuteData, container: Val, op1: &Val| {
+        if is_temp_ref(op1) {
+            if let PhpValue::Long(idx) = op1.value {
+                execute_data.set_temp(idx as usize, container);
+            }
+        } else if let PhpValue::String(var_s) = &op1.value {
+            let name = var_s.as_str();
+            let clean = if name.starts_with('$') {
+                &name[1..]
+            } else {
+                name
+            };
+            execute_data.set_var(clean, container);
+        }
+    };
+
+    let mut container = if is_temp_ref(&op.op1) {
+        resolve_operand(&op.op1, execute_data)
+    } else if let PhpValue::String(var_s) = &op.op1.value {
         let name = var_s.as_str();
         let clean = if name.starts_with('$') {
             &name[1..]
         } else {
             name
         };
-        let mut container = execute_data.get_var(clean);
-        if container.get_type() == PhpType::Null {
-            container = Val::new(
-                PhpValue::Array(Box::new(crate::engine::types::PhpArray::new())),
-                PhpType::Array,
-            );
-        }
-        if let PhpValue::Array(ref mut arr) = container.value {
+        execute_data.get_var(clean)
+    } else {
+        return Ok(ExecResult::Continue);
+    };
+
+    if container.get_type() == PhpType::Null {
+        container = Val::new(
+            PhpValue::Array(Box::new(crate::engine::types::PhpArray::new())),
+            PhpType::Array,
+        );
+    }
+
+    if let PhpValue::Array(ref mut arr) = container.value {
+        if append {
+            let next_idx = arr.n_num_used as u64;
+            let _ = crate::engine::hash::hash_add_or_update(arr, None, next_idx, val, 0);
+        } else if let Some(key) = key {
             match &key.value {
                 PhpValue::Long(i) => {
                     let _ = crate::engine::hash::hash_add_or_update(arr, None, *i as u64, val, 0);
@@ -335,8 +368,8 @@ pub fn execute_assign_dim(op: &Op, execute_data: &mut ExecuteData) -> Result<Exe
                 }
                 _ => {}
             }
-            execute_data.set_var(clean, container);
         }
+        write_back(execute_data, container, &op.op1);
     }
     Ok(ExecResult::Continue)
 }
@@ -425,7 +458,7 @@ pub fn execute_do_fcall(op: &Op, execute_data: &mut ExecuteData) -> Result<ExecR
 
     let func_name = crate::engine::operators::zval_get_string(&resolved_op1)
         .as_str()
-        .to_string();
+        .to_ascii_lowercase();
 
     // Check JIT compilation for hot functions
     increment_execution_counter(&func_name);
@@ -442,25 +475,7 @@ pub fn execute_do_fcall(op: &Op, execute_data: &mut ExecuteData) -> Result<ExecR
             Ok(ExecResult::Continue)
         }
         None => {
-            // Try JIT compilation first
-            let jit = crate::engine::jit::get_jit_compiler();
-            let jit = jit.read().unwrap();
-            let jit_result = jit.get_compiled_function(&func_name);
-            if let Some(jit_result) = jit_result {
-                execute_data.call_args.extend(args);
-                let _result = {
-                    let func = jit_result.clone();
-                    func(execute_data)?
-                };
-                if let Some(return_val) = execute_data.call_args.pop() {
-                    if let Some(slot) = result_slot(op) {
-                        execute_data.set_temp(slot, return_val);
-                    }
-                }
-                return Ok(ExecResult::Continue);
-            }
-
-            // Try user-defined function table - optimized lookup
+            // User-defined function lookup (skip JIT fallback — generic JIT interpreter can loop)
             let func_data: Option<(Vec<String>, Option<String>, super::opcodes::OpArray)> =
                 execute_data
                 .function_table
@@ -515,6 +530,17 @@ pub fn execute_do_fcall(op: &Op, execute_data: &mut ExecuteData) -> Result<ExecR
                 let saved_op_array = execute_data.op_array.take();
                 let saved_temps = std::mem::take(&mut execute_data.temp_vars);
                 let saved_symbol_table = execute_data.symbol_table.take();
+                let saved_call_arg_stack = std::mem::take(&mut execute_data.call_arg_stack);
+                let saved_call_args = std::mem::take(&mut execute_data.call_args);
+                let saved_call_arg_names = std::mem::take(&mut execute_data.call_arg_names);
+                let saved_global_imports = std::mem::take(&mut execute_data.global_imports);
+
+                if execute_data.global_script_table.is_none() {
+                    if let Some(ref saved) = saved_symbol_table {
+                        execute_data.global_script_table =
+                            Some(super::execute_data::ExecuteData::clone_php_array(saved));
+                    }
+                }
 
                 // Set up fresh symbol table for function scope
                 execute_data.symbol_table = Some(crate::engine::types::PhpArray::new());
@@ -530,10 +556,19 @@ pub fn execute_do_fcall(op: &Op, execute_data: &mut ExecuteData) -> Result<ExecR
                     super::execute::execute_ex_returning(execute_data, &func_op_array);
 
                 // Restore execution state
-                execute_data.symbol_table = saved_symbol_table;
+                if let Some(mut saved) = saved_symbol_table {
+                    execute_data.merge_globals_into(&mut saved);
+                    execute_data.symbol_table = Some(saved);
+                } else {
+                    execute_data.symbol_table = saved_symbol_table;
+                }
+                execute_data.global_imports = saved_global_imports;
                 execute_data.temp_vars = saved_temps;
                 execute_data.op_array = saved_op_array;
                 execute_data.current_op = saved_op;
+                execute_data.call_arg_stack = saved_call_arg_stack;
+                execute_data.call_args = saved_call_args;
+                execute_data.call_arg_names = saved_call_arg_names;
                 execute_data.current_script_dir = saved_script_dir;
                 match saved_magic_dir {
                     Some(v) => {
@@ -566,6 +601,14 @@ pub fn execute_do_fcall(op: &Op, execute_data: &mut ExecuteData) -> Result<ExecR
             Ok(ExecResult::Continue)
         }
     }
+}
+
+#[inline]
+pub fn execute_bind_global(op: &Op, execute_data: &mut ExecuteData) -> Result<ExecResult, String> {
+    let name_val = resolve_operand(&op.op1, execute_data);
+    let name = crate::engine::operators::zval_get_string(&name_val);
+    execute_data.bind_global(name.as_str());
+    Ok(ExecResult::Continue)
 }
 
 #[inline]
@@ -628,9 +671,13 @@ pub fn execute_include(op: &Op, execute_data: &mut ExecuteData) -> Result<ExecRe
     if is_once && execute_data.included_files.contains(&resolved) {
         return Ok(ExecResult::Continue);
     }
-    match crate::engine::compile::compile_file(&resolved) {
-        Ok(included_op_array) => {
+    match crate::engine::compile::compile_file_with_functions(&resolved) {
+        Ok((included_op_array, included_ft)) => {
             execute_data.included_files.insert(resolved.clone());
+            crate::engine::compile::function_table::merge_into_execute_data(
+                execute_data,
+                included_ft,
+            );
             let saved_op_array = execute_data.op_array.take();
             let saved_current_op = execute_data.current_op;
             let saved_script_dir = execute_data.current_script_dir.clone();
@@ -734,6 +781,7 @@ pub fn execute_fe_reset(op: &Op, execute_data: &mut ExecuteData) -> Result<ExecR
     let Some(iter_slot) = result_slot(op) else {
         return Ok(ExecResult::Continue);
     };
+    execute_data.fe_key_slot = temp_slot_index(&op.op2).map(|s| s as u32);
     if matches!(arr.value, PhpValue::Array(_)) {
         execute_data.set_temp(
             iter_slot,
@@ -774,6 +822,21 @@ pub fn execute_fe_fetch(op: &Op, execute_data: &mut ExecuteData) -> Result<ExecR
     };
     let elem = clone_val(&bucket.val);
     execute_data.set_temp(value_slot, elem);
+
+    if let Some(key_slot) = execute_data.fe_key_slot {
+        let key_val = if let Some(ref key_zs) = bucket.key {
+            Val::new(
+                PhpValue::String(Box::new(crate::engine::string::string_init(
+                    key_zs.as_str(),
+                    false,
+                ))),
+                PhpType::String,
+            )
+        } else {
+            Val::new(PhpValue::Long(bucket.h as i64), PhpType::Long)
+        };
+        execute_data.set_temp(key_slot as usize, key_val);
+    }
 
     let next_idx = current_idx + 1;
     execute_data.set_temp(
@@ -1836,6 +1899,7 @@ pub fn dispatch_opcode(op: &Op, execute_data: &mut ExecuteData) -> Result<ExecRe
         Opcode::FetchVar => execute_fetch_var(op, execute_data),
         Opcode::SendVal => execute_send_val(op, execute_data),
         Opcode::SendValNamed => execute_send_val_named(op, execute_data),
+        Opcode::BindGlobal => execute_bind_global(op, execute_data),
         Opcode::Include => execute_include(op, execute_data),
         Opcode::InitArray => execute_init_array(op, execute_data),
         Opcode::AddArrayElement => execute_add_array_element(op, execute_data),

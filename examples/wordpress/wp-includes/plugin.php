@@ -7,6 +7,16 @@ $wp_filter = array();
 $wp_actions = array();
 $wp_current_filter = array();
 
+// Minimal sort helper used by do_action / apply_filters (no-op; phprs lacks pass-by-ref params)
+function ksort($array) {
+    return true;
+}
+
+// Shortcode API stub (plugin registration only)
+function add_shortcode($tag, $callback) {
+    return true;
+}
+
 // Add an action hook
 function add_action($hook_name, $callback, $priority = 10, $accepted_args = 1) {
     return add_filter($hook_name, $callback, $priority, $accepted_args);
@@ -157,11 +167,23 @@ function func_get_args() {
     return array();
 }
 
-// Call user function with array of arguments (stub)
+// Call user function with array of arguments
 function call_user_func_array($callback, $args) {
-    // In a real implementation, this would call the callback with args
-    // For now, just return null
-    return null;
+    if (!is_string($callback)) {
+        return null;
+    }
+    $fn = $callback;
+    $n = count($args);
+    if ($n === 0) {
+        return $fn();
+    }
+    if ($n === 1) {
+        return $fn($args[0]);
+    }
+    if ($n === 2) {
+        return $fn($args[0], $args[1]);
+    }
+    return $fn($args[0]);
 }
 
 // Plugin activation/deactivation hooks

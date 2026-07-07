@@ -513,3 +513,57 @@ fn test_compile_generator_multiple_yields() {
     assert!(matches!(result, PhpResult::Success));
     assert_eq!(output, "2");
 }
+
+#[test]
+fn test_builtin_call_inside_user_function() {
+    let code = "<?php\nfunction test() { return strlen('hi'); }\necho test();\n";
+    let (result, output) = run_php_code(code);
+    assert!(matches!(result, PhpResult::Success));
+    assert_eq!(output, "2");
+}
+
+#[test]
+fn test_builtin_call_inside_user_function_via_compile_file() {
+    let path = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/udf_strlen.php");
+    let (op_array, ft) =
+        crate::engine::compile::compile_file_with_functions(path).unwrap();
+    crate::php::output::php_output_start().unwrap();
+    let mut ed = ExecuteData::new();
+    ed.function_table = Some(std::sync::Arc::new(ft));
+    let result = execute_ex(&mut ed, &op_array);
+    let output = crate::php::output::php_output_end().unwrap();
+    assert!(matches!(result, crate::engine::types::PhpResult::Success));
+    assert_eq!(output, "1\ndone\n");
+}
+
+#[test]
+fn test_global_statement_in_user_function() {
+    let code = "<?php\n$count = 0;\nfunction bump() {\n  global $count;\n  $count = $count + 1;\n}\nbump();\nbump();\necho $count;\n";
+    let (result, output) = run_php_code(code);
+    assert!(matches!(result, PhpResult::Success));
+    assert_eq!(output, "2");
+}
+
+#[test]
+fn test_foreach_key_value() {
+    let code = "<?php\n$items = array('a' => 1, 'b' => 2);\n$out = '';\nforeach ($items as $k => $v) {\n  $out = $out . $k . ':' . $v . ',';\n}\necho $out;\n";
+    let (result, output) = run_php_code(code);
+    assert!(matches!(result, PhpResult::Success));
+    assert_eq!(output, "a:1,b:2,");
+}
+
+#[test]
+fn test_chained_array_assign_dim() {
+    let code = "<?php\n$root = array();\n$root['outer']['inner'] = 'ok';\necho $root['outer']['inner'];\n";
+    let (result, output) = run_php_code(code);
+    assert!(matches!(result, PhpResult::Success));
+    assert_eq!(output, "ok");
+}
+
+#[test]
+fn test_array_append_assign() {
+    let code = "<?php\n$list = array();\n$list[] = 'first';\n$list[] = 'second';\necho $list[0] . $list[1];\n";
+    let (result, output) = run_php_code(code);
+    assert!(matches!(result, PhpResult::Success));
+    assert_eq!(output, "firstsecond");
+}

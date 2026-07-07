@@ -6,6 +6,7 @@ use crate::engine::vm::OpArray;
 use std::collections::HashMap;
 
 /// Function table for storing compiled functions
+#[derive(Debug)]
 pub struct FunctionTable {
     functions: HashMap<String, OpArray>,
 }
@@ -40,6 +41,34 @@ impl FunctionTable {
     pub fn get_function_names(&self) -> Vec<String> {
         self.functions.keys().cloned().collect()
     }
+
+    /// Merge functions from another table (existing names are kept).
+    pub fn merge(&mut self, mut other: FunctionTable) {
+        for (name, op_array) in other.functions.drain() {
+            self.functions.entry(name).or_insert(op_array);
+        }
+    }
+}
+
+/// Merge compiled functions from an include/require into the running script's table.
+pub fn merge_into_execute_data(
+    execute_data: &mut crate::engine::vm::ExecuteData,
+    incoming: FunctionTable,
+) {
+    use std::sync::Arc;
+
+    let merged = match execute_data.function_table.take() {
+        None => incoming,
+        Some(arc) => {
+            let owned = Arc::downcast::<FunctionTable>(arc)
+                .expect("function_table must hold FunctionTable");
+            let mut base = Arc::try_unwrap(owned)
+                .expect("function_table Arc must be uniquely owned during merge");
+            base.merge(incoming);
+            base
+        }
+    };
+    execute_data.function_table = Some(Arc::new(merged));
 }
 
 impl Default for FunctionTable {
