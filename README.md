@@ -5,7 +5,7 @@
 [![Rust](https://img.shields.io/badge/rust-2024-orange.svg)](https://www.rust-lang.org/)
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
 [![Build Status](https://img.shields.io/badge/build-passing-brightgreen.svg)]()
-[![Tests](https://img.shields.io/badge/tests-472%2B%20passing-brightgreen.svg)]()
+[![Tests](https://img.shields.io/badge/tests-485%2B%20passing-brightgreen.svg)]()
 
 ## Why phprs? The Rust Advantage
 
@@ -14,7 +14,7 @@ PHP powers much of the web; many production runtimes are implemented in C and C+
 - **Safer by construction (Rust)**: Memory errors that plague C/C++ code are largely ruled out in safe Rust; the interpreter still has correctness and parity work ahead.
 - **A performance-minded design**: Opcode dispatch, JIT hooks, and LLVM for the host binary — without promising a given speedup over Zend until we publish reproducible benchmarks.
 - **Concurrency-friendly host code**: Rust’s type system helps avoid data races in the engine itself; PHP’s shared mutable runtime model is still evolving in phprs.
-- **Test-backed**: 472+ workspace tests; every root `examples/*.php` runs in `tests/examples_runtime.rs`; Rust demos compile via `build_rust_examples`.
+- **Test-backed**: 485+ workspace tests; every root `examples/*.php` runs in `tests/examples_runtime.rs`; Rust demos compile via `build_rust_examples`.
 
 **phprs** brings PHP into the future by:
 
@@ -234,6 +234,7 @@ See `examples/integration-test.php` for a short runnable script that exercises P
 
 **More Examples** (all root `examples/*.php` covered by `cargo test --test examples_runtime`):
 - `examples/stdlib_callbacks.php` - Callback builtins (`array_map`/`array_filter`/`call_user_func`), new array/string/math helpers, and the Reflection API
+- `examples/strings_and_serialize.php` - String helpers, printf precision, base conversion, fuzzy comparison, and `serialize`/`unserialize`
 - `examples/control_flow.php` - if/switch, **for**, **while**, **foreach** (see `tests/examples_runtime.rs`)
 - `examples/mbstring.php` - Multibyte string helpers (`mb_*` subset)
 - `examples/match_expression.php` - `match` expressions
@@ -337,12 +338,14 @@ cargo run -p phprs-cli -- run examples/wordpress/index.php
 - **Reflection API**: `ReflectionClass`, `ReflectionMethod`, `ReflectionProperty`, `ReflectionFunction`, `ReflectionParameter` (getName/getParameters/getNumberOfParameters/isBuiltin/hasMethod/hasProperty)
 - **Error Handling**: try/catch/finally, exceptions
 
-### ✅ Standard Library (160+ functions, expanding)
-**String Functions**: `strlen`, `substr`, `str_replace`, `trim`, `strtolower`, `strtoupper`, `ucfirst`, `substr_count`, `substr_replace`, `strpbrk`, `substr_compare`, and a growing **mbstring** subset (`mb_strlen`, `mb_substr`, … — see `src/php/mbstring.rs`, `examples/mbstring.php`)
+### ✅ Standard Library (195+ functions, expanding)
+**String Functions**: `strlen`, `substr`, `str_replace`, `trim`, `strtolower`, `strtoupper`, `ucfirst`, `ucwords`, `lcfirst`, `str_repeat`, `str_pad`, `str_split`, `strrev`, `str_contains`, `str_starts_with`, `str_ends_with`, `strtr`, `str_ireplace`, `nl2br`, `chunk_split`, `addslashes`, `stripslashes`, `quotemeta`, `strip_tags`, `htmlspecialchars`/`htmlspecialchars_decode`, `wordwrap`, `number_format`, `sprintf`/`vsprintf`, `substr_count`, `substr_replace`, `strpbrk`, `substr_compare`, plus a growing **mbstring** subset (`mb_strlen`, `mb_substr`, … — see `src/php/mbstring.rs`, `examples/mbstring.php`)
 
 **Callback helpers**: `call_user_func`, `call_user_func_array` (invoke builtins **and** user functions; see `src/engine/vm/callable.rs`)
 
-**Math / type helpers**: `abs`, `ceil`, `floor`, `round`, `sqrt`, `pow`, `max`, `min`, `intdiv`, `fmod`, `hypot`, `is_nan`, `is_infinite`, `is_finite`, `is_numeric`, `is_callable`, `boolval`
+**Math / type helpers**: `abs`, `ceil`, `floor`, `round`, `sqrt`, `pow`, `max`, `min`, `intdiv`, `fmod`, `hypot`, `is_nan`, `is_infinite`, `is_finite`, `is_numeric`, `is_callable`, `boolval`, base conversion (`decbin`/`decoct`/`dechex`/`bindec`/`octdec`/`hexdec`/`base_convert`), `deg2rad`, `rad2deg`, `similar_text`, `levenshtein`, `soundex`
+
+**Serialization**: `serialize()` / `unserialize()` (scalars, arrays, plain objects)
 
 **URL / query**: `parse_url`, `http_build_query`, and related helpers (`src/php/url.rs`)
 
@@ -475,7 +478,7 @@ The workspace runs **clean** (no warnings) on `cargo test --workspace` and `carg
 ### Core Documentation
 - **[SPEC.md](SPEC.md)** - Project specification and scope
 - **[ARCHITECTURE.md](ARCHITECTURE.md)** - Module structure and execution flow
-- **[TODO.md](TODO.md)** - Migration roadmap and statistics (160+ built-in functions, 15 PHP runtime modules)
+- **[TODO.md](TODO.md)** - Migration roadmap and statistics (195+ built-in functions, 16 PHP runtime modules)
 - **[PERFORMANCE.md](PERFORMANCE.md)** - Evidence policy and VM optimization notes (not benchmark marketing)
 
 ### Feature Documentation
@@ -493,7 +496,7 @@ The workspace runs **clean** (no warnings) on `cargo test --workspace` and `carg
 
 ### ✅ Completed (v0.1.x)
 - Core PHP engine with 73 opcodes (added FetchStaticProp, DoStaticCall, CloneObj, SendValNamed, BindGlobal, SendVarRef)
-- 160+ built-in functions (string, array, math, regex, hash, datetime, URL, mbstring, callbacks)
+- 195+ built-in functions (string, array, math, regex, hash, datetime, URL, mbstring, callbacks, serialize)
 - Regular expressions (`preg_*` via Rust `regex`)
 - HTTP/HTTPS stream wrappers
 - PDO database abstraction

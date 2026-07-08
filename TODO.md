@@ -34,8 +34,8 @@
 - [x] Control flow (if/else, while, for, foreach)
 - [x] Function compilation and calls
 - [x] Class compilation (properties, methods, constructors)
-- [x] VM execution (63 opcodes, dispatch table)
-- [x] Built-in functions (40+ functions)
+- [x] VM execution (73 opcodes, dispatch table)
+- [x] Built-in functions (160+ functions — see Statistics)
 - [x] Legacy `array()` constructor syntax (`array()`, `array('k' => v)`, indexed elements)
 - [x] Foreach with key => value (`foreach ($a as $k => $v)`)
 - [x] Chained array dimension assignment (`$a['b']['c'] = $v`)
@@ -160,10 +160,15 @@
 - **PHP runtime**: modules under `src/php/` (regex, http_stream, pdo stub, math, hash, datetime, mbstring, …)
 - **Framework examples**: WordPress-shaped (partial), CodeIgniter 4 demo (CI-tested), Drupal demo (CI-tested)
 - **73 opcodes** (dispatch table)
-- **160+ built-in functions** — see `builtin_capability_tests.rs` for exercised surface
-- **472+ workspace tests** (`cargo test --workspace`)
-- **22 root PHP examples** — all run via `examples_root_php_scripts_all_run`
-- **Known gaps**: (none tracked — see brainstorming for future work)
+- **195+ built-in functions** — see `builtin_capability_tests.rs` for exercised surface
+- **485+ workspace tests** (`cargo test --workspace`)
+- **23 root PHP examples** — all run via `examples_root_php_scripts_all_run`
+- **Known gaps** (verified during testing — tracked, not blocking):
+  - **Exceptions are not wired into the VM dispatch.** `throw`, `try`/`catch`/`finally` opcodes (`Throw`, `TryCatchBegin/End`, `CatchBegin/End`, `FinallyBegin/End`) are **no-ops** in the real dispatch table — `src/engine/vm/handlers.rs` has the logic but is unused dead code, and `execute_ex` only dispatches ~50 of the 73 opcodes. The `exception.rs` state machine (`ExceptionState`, `TryCatchBlock`) is never triggered, so `throw new X()` silently continues and `catch` blocks never run. Unit tests pass because they exercise `ExceptionState` directly. **This is the highest-priority correctness gap.**
+  - Other un-dispatched opcodes (no-ops today): bitwise (`Sl`, `Sr`, `BwOr/And/Xor/Not`), `BoolXor`, `AssignOp` (compound `+=` etc. via opcode), `AssignObj`, `TypeCheck`, `Unset`, `IsSet`, `Empty`, `Count`, `Keys`, `Values`, `ArrayDiff`. Several are covered by their builtin equivalents (`isset`/`empty`/`count`/`unset` work as function calls), but the opcode-level forms do nothing.
+  - `func()['key']` / `(func())['key']` — subscripting a function-call result directly returns the whole array instead of the element. **Workaround:** assign the return value to a variable first (`$x = func(); $x['key']`).
+  - Numeric-string array keys are not normalized to integers (PHP stores `'1'` as integer key `1`); lookups by the other form may miss.
+  - `Val::clone()` is shallow for arrays/objects (creates an empty/default copy); engine code must use `clone_val` (deep) — a frequent source of subtle bugs for contributors.
 
 ### Standard library (honest)
 - Regex via Rust `regex` + `fancy-regex` for look-around (`preg_*`); not full PCRE
@@ -180,8 +185,12 @@
 ### Standard library additions (recent)
 - **Callback-driven builtins** (`src/engine/vm/callable.rs`): `array_map`, `array_filter`, `array_reduce`, `array_walk`, `call_user_func`, `call_user_func_array` invoke builtins **and** user functions (safe VM re-entry mirroring `DoFCall`)
 - **Array helpers**: `array_combine`, `array_flip`, `array_search`, `array_unique`, `array_column`, `array_sum`, `array_product`, `array_chunk`, `array_diff`, `array_intersect`, `array_count_values`, `array_fill`, `array_pad`, `range`
-- **String helpers**: `substr_count`, `substr_replace`, `strpbrk`, `substr_compare`
-- **Math/type helpers**: `intdiv`, `fmod`, `hypot`, `is_nan`, `is_infinite`, `is_finite`, improved `is_numeric` (numeric strings), `is_callable`, `boolval`
+- **String helpers**: `substr_count`, `substr_replace`, `strpbrk`, `substr_compare`, plus previously-listed-but-unimplemented functions now real: `str_repeat`, `ucwords`, `lcfirst`, `str_split`, `strrev`, `str_contains`, `str_starts_with`, `str_ends_with`, `strtr` (char + assoc), `str_ireplace`, `nl2br`, `chunk_split`, `addslashes`, `stripslashes`, `quotemeta`, `strip_tags`, `htmlspecialchars_decode`, `wordwrap`, `number_format`
+- **printf family**: richer `sprintf` (`%s`/`%d`/`%f` with precision/`%x`/`%e`/`%%`) and `vsprintf`
+- **Math/type helpers**: `intdiv`, `fmod`, `hypot`, `is_nan`, `is_infinite`, `is_finite`, improved `is_numeric` (numeric strings), `is_callable`, `boolval`, base conversion (`decbin`/`decoct`/`dechex`/`bindec`/`octdec`/`hexdec`/`base_convert`), `deg2rad`, `rad2deg`
+- **Fuzzy string comparison**: `similar_text`, `levenshtein`, `soundex`, simplified `metaphone`
+- **Serialization**: `serialize()` / `unserialize()` (`src/php/serialize.rs`) — scalars, arrays, plain objects via properties; `__serialize`/`__unserialize` method hooks still pending (require method invocation from builtins)
+- **Bug fix**: void builtins returning `null` (e.g. `var_dump`, `echo`, `unset`) no longer emit spurious "Call to undefined function" warnings — `DoFCall` now treats a known builtin returning `None` as a successful void call
 
 ## Rust host advantages (engineering, not product guarantees)
 
@@ -189,7 +198,6 @@ Rust is used for the **interpreter implementation** because of memory safety in 
 
 ## Code Quality Improvements (Completed)
 
-### Rust 2024 Compliance 
 ### Rust 2024 Compliance ✅
 - [x] Fix unsafe blocks in unsafe functions (alloc.rs, gc.rs)
 - [x] Remove unused imports and dead code

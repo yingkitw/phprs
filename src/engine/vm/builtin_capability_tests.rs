@@ -1347,3 +1347,253 @@ fn is_numeric_and_is_callable_boolval() {
     ));
 }
 
+// --- phprs round 2: string helpers, base conversion, printf, fuzzy, serialize ---
+
+#[test]
+fn string_helpers_repeat_ucwords_lcfirst_split_reverse() {
+    let mut ed = ExecuteData::new();
+    assert_eq!(
+        zval_get_string(&run("str_repeat", &[str_val("ab"), long_val(3)], &mut ed).unwrap().unwrap())
+            .as_str(),
+        "ababab"
+    );
+    assert_eq!(
+        zval_get_string(&run("ucwords", &[str_val("hello world foo")], &mut ed).unwrap().unwrap())
+            .as_str(),
+        "Hello World Foo"
+    );
+    assert_eq!(
+        zval_get_string(&run("lcfirst", &[str_val("HelloWorld")], &mut ed).unwrap().unwrap())
+            .as_str(),
+        "helloWorld"
+    );
+    assert_eq!(
+        zval_get_string(&run("strrev", &[str_val("hello")], &mut ed).unwrap().unwrap()).as_str(),
+        "olleh"
+    );
+    let split = run("str_split", &[str_val("hello"), long_val(2)], &mut ed)
+        .unwrap()
+        .unwrap();
+    if let PhpValue::Array(a) = &split.value {
+        assert_eq!(a.ar_data.len(), 3);
+        assert_eq!(zval_get_string(&a.ar_data[0].val).as_str(), "he");
+        assert_eq!(zval_get_string(&a.ar_data[2].val).as_str(), "o");
+    } else {
+        panic!("str_split");
+    }
+}
+
+#[test]
+fn string_predicates_and_tr_and_ireplace() {
+    let mut ed = ExecuteData::new();
+    assert!(zval_get_bool(
+        &run("str_contains", &[str_val("hello world"), str_val("world")], &mut ed)
+            .unwrap()
+            .unwrap()
+    ));
+    assert!(!zval_get_bool(
+        &run("str_contains", &[str_val("hello"), str_val("x")], &mut ed)
+            .unwrap()
+            .unwrap()
+    ));
+    assert!(zval_get_bool(
+        &run("str_starts_with", &[str_val("hello"), str_val("he")], &mut ed)
+            .unwrap()
+            .unwrap()
+    ));
+    assert!(zval_get_bool(
+        &run("str_ends_with", &[str_val("hello"), str_val("lo")], &mut ed)
+            .unwrap()
+            .unwrap()
+    ));
+    // strtr char form
+    assert_eq!(
+        zval_get_string(&run("strtr", &[str_val("Hello"), str_val("el"), str_val("ip")], &mut ed)
+            .unwrap()
+            .unwrap())
+            .as_str(),
+        "Hippo"
+    );
+    // str_ireplace
+    assert_eq!(
+        zval_get_string(
+            &run("str_ireplace", &[str_val("WORLD"), str_val("php"), str_val("hello world")], &mut ed)
+                .unwrap()
+                .unwrap()
+        )
+        .as_str(),
+        "hello php"
+    );
+}
+
+#[test]
+fn string_escape_html_wordwrap_number_format() {
+    let mut ed = ExecuteData::new();
+    assert_eq!(
+        zval_get_string(&run("addslashes", &[str_val("it's")], &mut ed).unwrap().unwrap()).as_str(),
+        "it\\'s"
+    );
+    assert_eq!(
+        zval_get_string(&run("stripslashes", &[str_val("it\\'s")], &mut ed).unwrap().unwrap())
+            .as_str(),
+        "it's"
+    );
+    assert_eq!(
+        zval_get_string(&run("quotemeta", &[str_val("1+1=2?")], &mut ed).unwrap().unwrap()).as_str(),
+        "1\\+1=2\\?"
+    );
+    assert_eq!(
+        zval_get_string(&run("strip_tags", &[str_val("<b>hi</b><p>x</p>")], &mut ed).unwrap().unwrap())
+            .as_str(),
+        "hix"
+    );
+    assert_eq!(
+        zval_get_string(
+            &run("htmlspecialchars_decode", &[str_val("a &amp; b &lt;t&gt;")], &mut ed)
+                .unwrap()
+                .unwrap()
+        )
+        .as_str(),
+        "a & b <t>"
+    );
+    assert_eq!(
+        zval_get_string(&run("wordwrap", &[str_val("The quick brown fox"), long_val(10), str_val("/"), true_val()], &mut ed).unwrap().unwrap()).as_str(),
+        "The quick/brown fox"
+    );
+    assert_eq!(
+        zval_get_string(
+            &run("number_format", &[double_val(1234567.891), long_val(2)], &mut ed)
+                .unwrap()
+                .unwrap()
+        )
+        .as_str(),
+        "1,234,567.89"
+    );
+    // European separators
+    assert_eq!(
+        zval_get_string(
+            &run(
+                "number_format",
+                &[double_val(1234.5), long_val(2), str_val(","), str_val(".")],
+                &mut ed
+            )
+            .unwrap()
+            .unwrap()
+        )
+        .as_str(),
+        "1.234,50"
+    );
+}
+
+#[test]
+fn printf_sprintf_vsprintf_precision() {
+    let mut ed = ExecuteData::new();
+    let s = run(
+        "sprintf",
+        &[str_val("%s=%d pi=%.2f hex=%x"), str_val("k"), long_val(7), double_val(3.14159), long_val(255)],
+        &mut ed,
+    )
+    .unwrap()
+    .unwrap();
+    assert_eq!(zval_get_string(&s).as_str(), "k=7 pi=3.14 hex=ff");
+
+    let v = run(
+        "vsprintf",
+        &[str_val("%s-%s-%s"), array_from_vals(&[str_val("a"), str_val("b"), str_val("c")])],
+        &mut ed,
+    )
+    .unwrap()
+    .unwrap();
+    assert_eq!(zval_get_string(&v).as_str(), "a-b-c");
+}
+
+#[test]
+fn base_conversion_and_trig_helpers() {
+    let mut ed = ExecuteData::new();
+    assert_eq!(
+        zval_get_string(&run("decbin", &[long_val(10)], &mut ed).unwrap().unwrap()).as_str(),
+        "1010"
+    );
+    assert_eq!(
+        zval_get_string(&run("dechex", &[long_val(255)], &mut ed).unwrap().unwrap()).as_str(),
+        "ff"
+    );
+    assert_eq!(
+        zval_get_string(&run("decoct", &[long_val(8)], &mut ed).unwrap().unwrap()).as_str(),
+        "10"
+    );
+    assert_eq!(
+        zval_get_long(&run("bindec", &[str_val("1010")], &mut ed).unwrap().unwrap()),
+        10
+    );
+    assert_eq!(
+        zval_get_long(&run("hexdec", &[str_val("ff")], &mut ed).unwrap().unwrap()),
+        255
+    );
+    assert_eq!(
+        zval_get_string(&run("base_convert", &[str_val("ff"), long_val(16), long_val(2)], &mut ed).unwrap().unwrap()).as_str(),
+        "11111111"
+    );
+    let r = run("deg2rad", &[double_val(180.0)], &mut ed).unwrap().unwrap();
+    assert!((zval_get_double(&r) - std::f64::consts::PI).abs() < 1e-9);
+    let d = run("rad2deg", &[double_val(std::f64::consts::PI)], &mut ed)
+        .unwrap()
+        .unwrap();
+    assert!((zval_get_double(&d) - 180.0).abs() < 1e-9);
+}
+
+#[test]
+fn fuzzy_similarity_levenshtein_soundex() {
+    let mut ed = ExecuteData::new();
+    assert_eq!(
+        zval_get_long(&run("similar_text", &[str_val("abcde"), str_val("abfde")], &mut ed).unwrap().unwrap()),
+        4
+    );
+    assert_eq!(
+        zval_get_long(&run("levenshtein", &[str_val("kitten"), str_val("sitting")], &mut ed).unwrap().unwrap()),
+        3
+    );
+    // Robert and Rupert share the same soundex (R163).
+    assert_eq!(
+        zval_get_string(&run("soundex", &[str_val("Robert")], &mut ed).unwrap().unwrap()).as_str(),
+        "R163"
+    );
+    assert_eq!(
+        zval_get_string(&run("soundex", &[str_val("Rupert")], &mut ed).unwrap().unwrap()).as_str(),
+        "R163"
+    );
+}
+
+#[test]
+fn serialize_unserialize_round_trip_through_builtins() {
+    let mut ed = ExecuteData::new();
+    // int
+    let s = run("serialize", &[long_val(42)], &mut ed).unwrap().unwrap();
+    assert_eq!(zval_get_string(&s).as_str(), "i:42;");
+    let back = run("unserialize", &[s], &mut ed).unwrap().unwrap();
+    assert_eq!(zval_get_long(&back), 42);
+
+    // string
+    let s = run("serialize", &[str_val("hi")], &mut ed).unwrap().unwrap();
+    assert_eq!(zval_get_string(&s).as_str(), "s:2:\"hi\";");
+    let back = run("unserialize", &[s], &mut ed).unwrap().unwrap();
+    assert_eq!(zval_get_string(&back).as_str(), "hi");
+
+    // assoc array round-trip
+    let arr = array_from_str_keys(&[("a", "1"), ("b", "2")]);
+    let s = run("serialize", &[arr], &mut ed).unwrap().unwrap();
+    let back = run("unserialize", &[s], &mut ed).unwrap().unwrap();
+    if let PhpValue::Array(a) = &back.value {
+        assert_eq!(a.ar_data.len(), 2);
+        assert_eq!(a.ar_data[0].key.as_ref().unwrap().as_str(), "a");
+    } else {
+        panic!("expected array");
+    }
+
+    // invalid input → false
+    let bad = run("unserialize", &[str_val("not serialized")], &mut ed)
+        .unwrap()
+        .unwrap();
+    assert_eq!(bad.get_type(), PhpType::False);
+}
+

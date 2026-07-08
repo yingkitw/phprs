@@ -728,6 +728,15 @@ pub fn execute_do_fcall(op: &Op, execute_data: &mut ExecuteData) -> Result<ExecR
             Ok(ExecResult::Continue)
         }
         None => {
+            // A known builtin returning None is a void builtin (e.g. var_dump,
+            // echo, unset) whose side effects already ran. Don't treat it as
+            // "undefined" or fall through to user-function lookup.
+            if super::builtins::is_builtin_function(&func_name) {
+                if let Some(slot) = result_slot(op) {
+                    execute_data.set_temp(slot, Val::new(PhpValue::Long(0), PhpType::Null));
+                }
+                return Ok(ExecResult::Continue);
+            }
             // User-defined function lookup (skip JIT fallback — generic JIT interpreter can loop)
             let func_data: Option<(Vec<String>, Option<String>, super::opcodes::OpArray)> =
                 execute_data

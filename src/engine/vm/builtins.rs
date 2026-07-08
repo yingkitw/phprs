@@ -60,6 +60,236 @@ fn is_numeric_string(s: &str) -> bool {
             .unwrap_or(false)
 }
 
+/// Extract the precision (`.N`) from a printf spec like `%.2f` or `%5.2f`.
+fn parse_precision(spec: &str) -> Option<usize> {
+    let dot_idx = spec.find('.')?;
+    let after = &spec[dot_idx + 1..];
+    let digits: String = after.chars().take_while(|c| c.is_ascii_digit()).collect();
+    digits.parse().ok()
+}
+
+/// Minimal printf/sprintf supporting `%s`, `%d`, `%f`, `%%`, consuming args in order.
+fn php_sprintf(fmt: &crate::engine::types::PhpString, args: &[Val]) -> String {
+    let mut result = String::new();
+    let mut arg_iter = args.iter();
+    let bytes = fmt.as_str();
+    let mut chars = bytes.char_indices().peekable();
+    while let Some((_, c)) = chars.next() {
+        if c != '%' {
+            result.push(c);
+            continue;
+        }
+        // Collect a simple conversion spec: optional flags/width then a verb.
+        let mut spec = String::from('%');
+        while let Some(&(_, pc)) = chars.peek() {
+            if "0123456789.+- #".contains(pc) {
+                spec.push(pc);
+                chars.next();
+            } else {
+                break;
+            }
+        }
+        match chars.next().map(|(_, pc)| pc) {
+            Some('%') => result.push('%'),
+            Some('s') => {
+                let s = arg_iter
+                    .next()
+                    .map(|a| crate::engine::operators::zval_get_string(a).as_str().to_string())
+                    .unwrap_or_default();
+                result.push_str(&s);
+            }
+            Some('d' | 'i') => {
+                let v = arg_iter
+                    .next()
+                    .map(|a| crate::engine::operators::zval_get_long(a))
+                    .unwrap_or(0);
+                result.push_str(&format!("{v}"));
+            }
+            Some('f' | 'F') => {
+                let prec = parse_precision(&spec).unwrap_or(6);
+                let v = arg_iter
+                    .next()
+                    .map(|a| crate::engine::operators::zval_get_double(a))
+                    .unwrap_or(0.0);
+                result.push_str(&format!("{v:.prec$}"));
+            }
+            Some('e' | 'E') => {
+                let prec = parse_precision(&spec).unwrap_or(6);
+                let v = arg_iter
+                    .next()
+                    .map(|a| crate::engine::operators::zval_get_double(a))
+                    .unwrap_or(0.0);
+                result.push_str(&format!("{v:.prec$e}"));
+            }
+            Some('g' | 'G') => {
+                let v = arg_iter
+                    .next()
+                    .map(|a| crate::engine::operators::zval_get_double(a))
+                    .unwrap_or(0.0);
+                result.push_str(&format!("{v}"));
+            }
+            Some('x') => {
+                let v = arg_iter
+                    .next()
+                    .map(|a| crate::engine::operators::zval_get_long(a))
+                    .unwrap_or(0);
+                result.push_str(&format!("{v:x}"));
+            }
+            Some('X') => {
+                let v = arg_iter
+                    .next()
+                    .map(|a| crate::engine::operators::zval_get_long(a))
+                    .unwrap_or(0);
+                result.push_str(&format!("{v:X}"));
+            }
+            Some(other) => {
+                spec.push(other);
+                result.push_str(&spec);
+            }
+            None => result.push_str(&spec),
+        }
+    }
+    result
+}
+
+/// Format an integer into a string in an arbitrary base (2..=36).
+fn to_base(mut n: u64, base: u32) -> String {
+    if n == 0 {
+        return "0".to_string();
+    }
+    const DIGITS: &[u8] = b"0123456789abcdefghijklmnopqrstuvwxyz";
+    let mut out = Vec::new();
+    while n > 0 {
+        out.push(DIGITS[(n % base as u64) as usize] as char);
+        n /= base as u64;
+    }
+    out.iter().rev().collect()
+}
+
+/// PHP `similar_text` common-character count (recursive longest-common-substring).
+fn similar_text(a: &str, b: &str) -> usize {
+    let a: Vec<char> = a.chars().collect();
+    let b: Vec<char> = b.chars().collect();
+    sim_rec(&a, &b)
+}
+fn sim_rec(a: &[char], b: &[char]) -> usize {
+    let (mut max, mut pos1, mut pos2) = (0usize, 0usize, 0usize);
+    for i in 0..a.len() {
+        for j in 0..b.len() {
+            let mut k = 0;
+            while i + k < a.len() && j + k < b.len() && a[i + k] == b[j + k] {
+                k += 1;
+            }
+            if k > max {
+                max = k;
+                pos1 = i;
+                pos2 = j;
+            }
+        }
+    }
+    if max == 0 {
+        return 0;
+    }
+    let left = sim_rec(&a[..pos1], &b[..pos2]);
+    let right = sim_rec(&a[pos1 + max..], &b[pos2 + max..]);
+    max + left + right
+}
+
+/// Standard edit distance.
+fn levenshtein(a: &str, b: &str) -> usize {
+    let a: Vec<char> = a.chars().collect();
+    let b: Vec<char> = b.chars().collect();
+    let (n, m) = (a.len(), b.len());
+    if n == 0 {
+        return m;
+    }
+    if m == 0 {
+        return n;
+    }
+    let mut prev: Vec<usize> = (0..=m).collect();
+    let mut cur = vec![0usize; m + 1];
+    for i in 1..=n {
+        cur[0] = i;
+        for j in 1..=m {
+            let cost = if a[i - 1] == b[j - 1] { 0 } else { 1 };
+            cur[j] = (prev[j] + 1).min(cur[j - 1] + 1).min(prev[j - 1] + cost);
+        }
+        std::mem::swap(&mut prev, &mut cur);
+    }
+    prev[m]
+}
+
+/// Standard 4-letter soundex code.
+fn soundex(s: &str) -> String {
+    let chars: Vec<char> = s.chars().filter(|c| c.is_ascii_alphabetic()).collect();
+    if chars.is_empty() {
+        return String::new();
+    }
+    let code = |c: char| -> Option<char> {
+        match c.to_ascii_uppercase() {
+            'B' | 'F' | 'P' | 'V' => Some('1'),
+            'C' | 'G' | 'J' | 'K' | 'Q' | 'S' | 'X' | 'Z' => Some('2'),
+            'D' | 'T' => Some('3'),
+            'L' => Some('4'),
+            'M' | 'N' => Some('5'),
+            'R' => Some('6'),
+            _ => None, // A E I O U H W Y
+        }
+    };
+    let mut out = String::new();
+    out.push(chars[0].to_ascii_uppercase());
+    let mut prev = code(chars[0]);
+    for &c in chars.iter().skip(1) {
+        if out.len() == 4 {
+            break;
+        }
+        if let Some(d) = code(c) {
+            if Some(d) != prev {
+                out.push(d);
+            }
+            prev = Some(d);
+        } else if matches!(c.to_ascii_uppercase(), 'H' | 'W') {
+            // keep previous code (don't reset)
+        } else {
+            prev = None;
+        }
+    }
+    while out.len() < 4 {
+        out.push('0');
+    }
+    out
+}
+
+/// Simplified metaphone approximation (not full Lawrence-Philips). Uppercases,
+/// drops duplicate adjacent consonants, removes most vowels except the first.
+fn simplified_metaphone(s: &str) -> String {
+    let up: Vec<char> = s
+        .chars()
+        .filter(|c| c.is_ascii_alphabetic())
+        .map(|c| c.to_ascii_uppercase())
+        .collect();
+    let vowels = |c: char| matches!(c, 'A' | 'E' | 'I' | 'O' | 'U');
+    let mut out = String::new();
+    let mut last = '\0';
+    for (i, &c) in up.iter().enumerate() {
+        if c == last {
+            continue;
+        }
+        if vowels(c) && i != 0 {
+            continue;
+        }
+        if c == 'H' || c == 'W' {
+            continue;
+        }
+        out.push(c);
+        last = c;
+    }
+    if out.is_empty() {
+        out = up.iter().collect();
+    }
+    out
+}
+
 /// Helper to check a type predicate on first arg
 fn type_check(args: &[Val], predicate: impl FnOnce(PhpType) -> bool) -> Val {
     bool_val(!args.is_empty() && predicate(args[0].get_type()))
@@ -125,7 +355,7 @@ pub(crate) fn is_builtin_function(name: &str) -> bool {
         | "array_diff" | "array_intersect" | "array_count_values" | "array_fill"
         | "array_pad" | "range" | "ucfirst" | "substr_count" | "substr_replace" | "strpbrk"
         | "substr_compare" | "intdiv" | "fmod" | "hypot" | "is_nan" | "is_infinite"
-        | "is_finite" | "is_callable" | "boolval"
+        | "is_finite" | "is_callable" | "boolval" | "serialize" | "unserialize"
     )
 }
 
@@ -240,17 +470,7 @@ pub(crate) fn execute_builtin_function(
                 return Err("sprintf() expects at least 1 argument".into());
             }
             let fmt = crate::engine::operators::zval_get_string(&args[0]);
-            let mut result = fmt.as_str().to_string();
-            for arg in &args[1..] {
-                let s = crate::engine::operators::zval_get_string(arg);
-                if let Some(pos) = result.find("%s") {
-                    result.replace_range(pos..pos + 2, s.as_str());
-                } else if let Some(pos) = result.find("%d") {
-                    let v = crate::engine::operators::zval_get_long(arg);
-                    result.replace_range(pos..pos + 2, &v.to_string());
-                }
-            }
-            Ok(Some(string_val(&result)))
+            Ok(Some(string_val(&php_sprintf(&fmt, &args[1..]))))
         }
 
         // --- Type conversion ---
@@ -2012,6 +2232,479 @@ pub(crate) fn execute_builtin_function(
         "mb_substr_count" => crate::php::mbstring::mb_substr_count(args).map(Some),
         "mb_strwidth" => crate::php::mbstring::mb_strwidth(args).map(Some),
         "mb_strimwidth" => crate::php::mbstring::mb_strimwidth(args).map(Some),
+
+        // --- Serialization ---
+        "serialize" => crate::php::serialize::php_serialize(args).map(Some),
+        "unserialize" => crate::php::serialize::php_unserialize(args).map(Some),
+
+        // --- phprs: previously-listed string helpers (now implemented) ---
+        "str_repeat" => {
+            if args.len() < 2 {
+                return Err("str_repeat() expects 2 arguments".into());
+            }
+            let s = crate::engine::operators::zval_get_string(&args[0]);
+            let n = crate::engine::operators::zval_get_long(&args[1]).max(0) as usize;
+            Ok(Some(string_val(&s.as_str().repeat(n))))
+        }
+        "ucwords" => {
+            let s = require_string_arg(args, "ucwords")?;
+            let mut out = String::with_capacity(s.len());
+            let mut prev_alpha = false;
+            for c in s.chars() {
+                if c.is_alphabetic() {
+                    out.push(if prev_alpha { c } else { c.to_ascii_uppercase() });
+                    prev_alpha = true;
+                } else {
+                    out.push(c);
+                    prev_alpha = false;
+                }
+            }
+            Ok(Some(string_val(&out)))
+        }
+        "lcfirst" => {
+            let s = require_string_arg(args, "lcfirst")?;
+            let mut chars = s.chars();
+            match chars.next() {
+                Some(first) => {
+                    let rest: String = chars.collect();
+                    Ok(Some(string_val(&(first.to_lowercase().to_string() + &rest))))
+                }
+                None => Ok(Some(string_val(""))),
+            }
+        }
+        "str_split" => {
+            let s = require_string_arg(args, "str_split")?;
+            let chunk = args
+                .get(1)
+                .map(|a| crate::engine::operators::zval_get_long(a).max(1) as usize)
+                .unwrap_or(1);
+            let mut result = crate::engine::types::PhpArray::new();
+            let mut idx: u64 = 0;
+            let mut buf = String::new();
+            for c in s.chars() {
+                buf.push(c);
+                if buf.chars().count() >= chunk {
+                    let _ = crate::engine::hash::hash_add_or_update(
+                        &mut result,
+                        None,
+                        idx,
+                        string_val(&buf),
+                        0,
+                    );
+                    idx += 1;
+                    buf.clear();
+                }
+            }
+            if !buf.is_empty() {
+                let _ = crate::engine::hash::hash_add_or_update(
+                    &mut result,
+                    None,
+                    idx,
+                    string_val(&buf),
+                    0,
+                );
+            }
+            Ok(Some(Val::new(
+                PhpValue::Array(Box::new(result)),
+                PhpType::Array,
+            )))
+        }
+        "strrev" => {
+            let s = require_string_arg(args, "strrev")?;
+            // PHP reverses bytes; for ASCII/UTF-8 we reverse by char for readability.
+            Ok(Some(string_val(&s.chars().rev().collect::<String>())))
+        }
+        "str_contains" => {
+            if args.len() < 2 {
+                return Err("str_contains() expects 2 arguments".into());
+            }
+            let h = crate::engine::operators::zval_get_string(&args[0]);
+            let n = crate::engine::operators::zval_get_string(&args[1]);
+            Ok(Some(bool_val(h.as_str().contains(n.as_str()))))
+        }
+        "str_starts_with" => {
+            if args.len() < 2 {
+                return Err("str_starts_with() expects 2 arguments".into());
+            }
+            let h = crate::engine::operators::zval_get_string(&args[0]);
+            let n = crate::engine::operators::zval_get_string(&args[1]);
+            Ok(Some(bool_val(h.as_str().starts_with(n.as_str()))))
+        }
+        "str_ends_with" => {
+            if args.len() < 2 {
+                return Err("str_ends_with() expects 2 arguments".into());
+            }
+            let h = crate::engine::operators::zval_get_string(&args[0]);
+            let n = crate::engine::operators::zval_get_string(&args[1]);
+            Ok(Some(bool_val(h.as_str().ends_with(n.as_str()))))
+        }
+        "strtr" => {
+            if args.len() < 2 {
+                return Err("strtr() expects at least 2 arguments".into());
+            }
+            let s = crate::engine::operators::zval_get_string(&args[0]);
+            // Two forms: strtr(str, from, to) char-map, or strtr(str, replace_assoc).
+            if args.len() >= 3 {
+                let from = crate::engine::operators::zval_get_string(&args[1]);
+                let to = crate::engine::operators::zval_get_string(&args[2]);
+                let out: String = s
+                    .as_str()
+                    .chars()
+                    .map(|c| {
+                        if let Some(pos) = from.as_str().find(c) {
+                            to.as_str().chars().nth(pos).unwrap_or(c)
+                        } else {
+                            c
+                        }
+                    })
+                    .collect();
+                Ok(Some(string_val(&out)))
+            } else if let PhpValue::Array(arr) = &args[1].value {
+                let mut out = s.as_str().to_string();
+                // Longest-key-first so longer substrings win.
+                let mut pairs: Vec<(String, String)> = arr
+                    .ar_data
+                    .iter()
+                    .filter_map(|b| {
+                        b.key.as_ref().map(|k| {
+                            (k.as_str().to_string(), crate::engine::operators::zval_get_string(&b.val).as_str().to_string())
+                        })
+                    })
+                    .collect();
+                pairs.sort_by(|a, b| b.0.len().cmp(&a.0.len()));
+                for (from, to) in pairs {
+                    if !from.is_empty() {
+                        out = out.replace(&from, &to);
+                    }
+                }
+                Ok(Some(string_val(&out)))
+            } else {
+                Ok(Some(string_val(s.as_str())))
+            }
+        }
+        "str_ireplace" => {
+            if args.len() < 3 {
+                return Err("str_ireplace() expects 3 arguments".into());
+            }
+            let search = crate::engine::operators::zval_get_string(&args[0]);
+            let replace = crate::engine::operators::zval_get_string(&args[1]);
+            let subject = crate::engine::operators::zval_get_string(&args[2]);
+            let s_low = subject.as_str().to_lowercase();
+            let needle_low = search.as_str().to_lowercase();
+            let mut out = String::with_capacity(subject.as_str().len());
+            let bytes = subject.as_str();
+            let mut i = 0;
+            while i < bytes.len() {
+                if let Some(pos) = s_low[i..].find(&needle_low) {
+                    out.push_str(&bytes[i..i + pos]);
+                    out.push_str(replace.as_str());
+                    i += pos + needle_low.len();
+                } else {
+                    out.push_str(&bytes[i..]);
+                    break;
+                }
+            }
+            Ok(Some(string_val(&out)))
+        }
+        "nl2br" => {
+            let s = require_string_arg(args, "nl2br")?;
+            let out = s.replace("\r\n", "<br />\r\n").replace('\n', "<br />\n").replace('\r', "<br />\r");
+            Ok(Some(string_val(&out)))
+        }
+        "chunk_split" => {
+            let s = require_string_arg(args, "chunk_split")?;
+            let chunklen = args
+                .get(1)
+                .map(|a| crate::engine::operators::zval_get_long(a).max(1) as usize)
+                .unwrap_or(76);
+            let end = args
+                .get(2)
+                .map(|a| crate::engine::operators::zval_get_string(a).as_str().to_string())
+                .unwrap_or_else(|| "\r\n".to_string());
+            let mut out = String::new();
+            let bytes = s.as_bytes();
+            let mut i = 0;
+            while i < bytes.len() {
+                let take = chunklen.min(bytes.len() - i);
+                out.push_str(std::str::from_utf8(&bytes[i..i + take]).unwrap_or(""));
+                out.push_str(&end);
+                i += take;
+            }
+            Ok(Some(string_val(&out)))
+        }
+        "addslashes" => {
+            let s = require_string_arg(args, "addslashes")?;
+            let mut out = String::with_capacity(s.len());
+            for c in s.chars() {
+                match c {
+                    '\'' | '"' | '\\' => {
+                        out.push('\\');
+                        out.push(c);
+                    }
+                    '\0' => out.push_str("\\0"),
+                    _ => out.push(c),
+                }
+            }
+            Ok(Some(string_val(&out)))
+        }
+        "stripslashes" => {
+            let s = require_string_arg(args, "stripslashes")?;
+            let mut out = String::with_capacity(s.len());
+            let mut chars = s.chars();
+            while let Some(c) = chars.next() {
+                if c == '\\' {
+                    match chars.next() {
+                        Some('0') => out.push('\0'),
+                        Some(next) => out.push(next),
+                        None => out.push('\\'),
+                    }
+                } else {
+                    out.push(c);
+                }
+            }
+            Ok(Some(string_val(&out)))
+        }
+        "quotemeta" => {
+            let s = require_string_arg(args, "quotemeta")?;
+            let mut out = String::with_capacity(s.len());
+            for c in s.chars() {
+                if matches!(c, '.' | '\\' | '+' | '*' | '?' | '[' | '^' | ']' | '(' | ')' | '$') {
+                    out.push('\\');
+                }
+                out.push(c);
+            }
+            Ok(Some(string_val(&out)))
+        }
+        "strip_tags" => {
+            let s = require_string_arg(args, "strip_tags")?;
+            let mut out = String::new();
+            let mut in_tag = false;
+            for c in s.chars() {
+                if c == '<' {
+                    in_tag = true;
+                } else if c == '>' {
+                    in_tag = false;
+                } else if !in_tag {
+                    out.push(c);
+                }
+            }
+            Ok(Some(string_val(&out)))
+        }
+        "htmlspecialchars_decode" => {
+            let s = require_string_arg(args, "htmlspecialchars_decode")?;
+            let out = s
+                .replace("&lt;", "<")
+                .replace("&gt;", ">")
+                .replace("&quot;", "\"")
+                .replace("&#039;", "'")
+                .replace("&#39;", "'")
+                .replace("&amp;", "&");
+            Ok(Some(string_val(&out)))
+        }
+        "wordwrap" => {
+            let s = require_string_arg(args, "wordwrap")?;
+            let width = args
+                .get(1)
+                .map(|a| crate::engine::operators::zval_get_long(a).max(1) as usize)
+                .unwrap_or(75);
+            let brk = args
+                .get(2)
+                .map(|a| crate::engine::operators::zval_get_string(a).as_str().to_string())
+                .unwrap_or_else(|| "\n".to_string());
+            let cut = args.get(3).map(|a| crate::engine::operators::zval_get_bool(a)).unwrap_or(false);
+            let mut out = String::new();
+            for (i, line) in s.split('\n').enumerate() {
+                if i > 0 {
+                    out.push('\n');
+                }
+                let mut line_len = 0usize;
+                let words: Vec<&str> = line.split(' ').collect();
+                for (w_i, word) in words.iter().enumerate() {
+                    if w_i > 0 {
+                        if line_len + 1 + word.chars().count() > width {
+                            out.push_str(&brk);
+                            line_len = 0;
+                        } else {
+                            out.push(' ');
+                            line_len += 1;
+                        }
+                    }
+                    if cut && word.chars().count() > width {
+                        let mut count = 0;
+                        for c in word.chars() {
+                            if count == width {
+                                out.push_str(&brk);
+                                count = 0;
+                            }
+                            out.push(c);
+                            count += 1;
+                            line_len = count;
+                        }
+                    } else {
+                        out.push_str(word);
+                        line_len += word.chars().count();
+                    }
+                }
+            }
+            Ok(Some(string_val(&out)))
+        }
+        "number_format" => {
+            let num = args
+                .first()
+                .map(crate::engine::operators::zval_get_double)
+                .unwrap_or(0.0);
+            let decimals = args
+                .get(1)
+                .map(crate::engine::operators::zval_get_long)
+                .unwrap_or(0)
+                .max(0) as usize;
+            let dec_sep = args
+                .get(2)
+                .map(|a| crate::engine::operators::zval_get_string(a).as_str().to_string())
+                .unwrap_or_else(|| ".".to_string());
+            let thou_sep = args
+                .get(3)
+                .map(|a| crate::engine::operators::zval_get_string(a).as_str().to_string())
+                .unwrap_or_else(|| ",".to_string());
+            let factor = 10f64.powi(decimals as i32);
+            let rounded = (num * factor).round() / factor;
+            let neg = rounded < 0.0;
+            let abs = rounded.abs();
+            let scaled = (abs * factor).round() as u64;
+            let int_part = scaled / factor as u64;
+            let frac_part = scaled % factor as u64;
+            let int_str = int_part.to_string();
+            let grouped = {
+                let bytes = int_str.as_bytes();
+                let mut out = String::new();
+                for (i, b) in bytes.iter().enumerate() {
+                    if i > 0 && (bytes.len() - i) % 3 == 0 {
+                        out.push_str(&thou_sep);
+                    }
+                    out.push(*b as char);
+                }
+                out
+            };
+            let mut result = grouped;
+            if decimals > 0 {
+                result.push_str(&dec_sep);
+                let frac_str = format!("{:0width$}", frac_part, width = decimals);
+                result.push_str(&frac_str);
+            }
+            if neg {
+                result.insert(0, '-');
+            }
+            Ok(Some(string_val(&result)))
+        }
+        "money_format" => {
+            // money_format() is locale-dependent and deprecated as of PHP 8.4.
+            // Best-effort: format the number with 2 decimals. Not locale-aware.
+            let num = args
+                .get(1)
+                .map(crate::engine::operators::zval_get_double)
+                .unwrap_or_else(|| {
+                    args.first()
+                        .map(crate::engine::operators::zval_get_double)
+                        .unwrap_or(0.0)
+                });
+            Ok(Some(string_val(&format!("{:.2}", num))))
+        }
+        "vsprintf" => {
+            if args.len() < 2 {
+                return Err("vsprintf() expects 2 arguments".into());
+            }
+            let mut collected: Vec<Val> = Vec::new();
+            if let PhpValue::Array(arr) = &args[1].value {
+                for b in &arr.ar_data {
+                    collected.push(clone_val(&b.val));
+                }
+            }
+            Ok(Some(string_val(&php_sprintf(
+                &crate::engine::operators::zval_get_string(&args[0]),
+                &collected,
+            ))))
+        }
+
+        // --- phprs: base-conversion / trig helpers ---
+        "decbin" => {
+            let n = crate::engine::operators::zval_get_long(args.first().unwrap_or(&null_val()));
+            Ok(Some(string_val(&format!("{:b}", n))))
+        }
+        "decoct" => {
+            let n = crate::engine::operators::zval_get_long(args.first().unwrap_or(&null_val()));
+            Ok(Some(string_val(&format!("{:o}", n))))
+        }
+        "dechex" => {
+            let n = crate::engine::operators::zval_get_long(args.first().unwrap_or(&null_val()));
+            Ok(Some(string_val(&format!("{:x}", n))))
+        }
+        "bindec" => {
+            let s = require_string_arg(args, "bindec")?;
+            let n = i64::from_str_radix(s.trim().trim_start_matches("0b"), 2).unwrap_or(0);
+            Ok(Some(Val::new(PhpValue::Long(n), PhpType::Long)))
+        }
+        "octdec" => {
+            let s = require_string_arg(args, "octdec")?;
+            let n = i64::from_str_radix(s.trim(), 8).unwrap_or(0);
+            Ok(Some(Val::new(PhpValue::Long(n), PhpType::Long)))
+        }
+        "hexdec" => {
+            let s = require_string_arg(args, "hexdec")?;
+            let n = i64::from_str_radix(s.trim().trim_start_matches("0x"), 16).unwrap_or(0);
+            Ok(Some(Val::new(PhpValue::Long(n), PhpType::Long)))
+        }
+        "base_convert" => {
+            if args.len() < 3 {
+                return Err("base_convert() expects 3 arguments".into());
+            }
+            let s = crate::engine::operators::zval_get_string(&args[0]);
+            let from = crate::engine::operators::zval_get_long(&args[1]).clamp(2, 36) as u32;
+            let to = crate::engine::operators::zval_get_long(&args[2]).clamp(2, 36) as u32;
+            let n = u64::from_str_radix(s.as_str().trim(), from).map_err(|_| "base_convert(): invalid".to_string())?;
+            Ok(Some(string_val(&to_base(n, to))))
+        }
+        "deg2rad" => Ok(Some(Val::new(
+            PhpValue::Double(
+                crate::engine::operators::zval_get_double(args.first().unwrap_or(&null_val())).to_radians(),
+            ),
+            PhpType::Double,
+        ))),
+        "rad2deg" => Ok(Some(Val::new(
+            PhpValue::Double(
+                crate::engine::operators::zval_get_double(args.first().unwrap_or(&null_val())).to_degrees(),
+            ),
+            PhpType::Double,
+        ))),
+
+        // --- phprs: fuzzy string comparison ---
+        "similar_text" => {
+            if args.len() < 2 {
+                return Err("similar_text() expects at least 2 arguments".into());
+            }
+            let a = crate::engine::operators::zval_get_string(&args[0]);
+            let b = crate::engine::operators::zval_get_string(&args[1]);
+            let sim = similar_text(a.as_str(), b.as_str());
+            Ok(Some(Val::new(PhpValue::Long(sim as i64), PhpType::Long)))
+        }
+        "levenshtein" => {
+            if args.len() < 2 {
+                return Err("levenshtein() expects 2 arguments".into());
+            }
+            let a = crate::engine::operators::zval_get_string(&args[0]);
+            let b = crate::engine::operators::zval_get_string(&args[1]);
+            let dist = levenshtein(a.as_str(), b.as_str());
+            Ok(Some(Val::new(PhpValue::Long(dist as i64), PhpType::Long)))
+        }
+        "soundex" => {
+            let s = require_string_arg(args, "soundex")?;
+            Ok(Some(string_val(&soundex(&s))))
+        }
+        "metaphone" => {
+            // Simplified metaphone: uppercase, collapse duplicate consonants,
+            // drop silent leading patterns. Not a full Lawrence-Philips metaphone.
+            let s = require_string_arg(args, "metaphone")?;
+            Ok(Some(string_val(&simplified_metaphone(&s))))
+        }
 
         _ => Ok(None), // Unknown function — return None to signal not found
     }
