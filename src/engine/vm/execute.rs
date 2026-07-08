@@ -72,6 +72,15 @@ fn init_dispatch_table() {
         table[Opcode::DoStaticCall as usize] = execute_do_static_call;
         table[Opcode::CloneObj as usize] = execute_clone_obj;
 
+        // Exception handling
+        table[Opcode::TryCatchBegin as usize] = execute_try_catch_begin;
+        table[Opcode::TryCatchEnd as usize] = execute_try_catch_end;
+        table[Opcode::CatchBegin as usize] = execute_catch_marker;
+        table[Opcode::CatchEnd as usize] = execute_catch_marker;
+        table[Opcode::FinallyBegin as usize] = execute_catch_marker;
+        table[Opcode::FinallyEnd as usize] = execute_catch_marker;
+        table[Opcode::Throw as usize] = execute_throw;
+
         table
     });
 }

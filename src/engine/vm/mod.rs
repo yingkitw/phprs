@@ -23,6 +23,7 @@ mod builtin_capability_tests;
 mod builtins;
 pub mod callable;
 pub mod dispatch_handlers;
+pub mod exception_dispatch;
 pub mod execute;
 pub mod execute_data;
 mod format;

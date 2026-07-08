@@ -936,6 +936,53 @@ pub fn execute_send_var_ref(op: &Op, execute_data: &mut ExecuteData) -> Result<E
     Ok(ExecResult::Continue)
 }
 
+// --- Exception handling ---
+
+#[inline]
+pub fn execute_try_catch_begin(op: &Op, execute_data: &mut ExecuteData) -> Result<ExecResult, String> {
+    let _ = op;
+    execute_data.try_stack.push(execute_data.current_op);
+    Ok(ExecResult::Continue)
+}
+
+#[inline]
+pub fn execute_try_catch_end(_op: &Op, execute_data: &mut ExecuteData) -> Result<ExecResult, String> {
+    // Normal exit from the try body: drop the matching frame if it is on top.
+    if execute_data.try_stack.last() == Some(&execute_data.current_op) {
+        execute_data.try_stack.pop();
+    }
+    Ok(ExecResult::Continue)
+}
+
+#[inline]
+pub fn execute_throw(op: &Op, execute_data: &mut ExecuteData) -> Result<ExecResult, String> {
+    let thrown = resolve_operand(&op.op1, execute_data);
+    let (class, message) = crate::engine::vm::exception_dispatch::thrown_class_and_message(&thrown);
+    execute_data.pending_exception = Some(clone_val(&thrown));
+
+    match crate::engine::vm::exception_dispatch::dispatch_exception(execute_data, &class) {
+        crate::engine::vm::exception_dispatch::ExceptionOutcome::Caught { body_start, var } => {
+            execute_data.pending_exception = None;
+            execute_data.set_var(&var, thrown);
+            Ok(ExecResult::Jump(body_start))
+        }
+        crate::engine::vm::exception_dispatch::ExceptionOutcome::Uncaught => {
+            // Print a PHP-style fatal and stop the script.
+            eprintln!("PHP Fatal error:  Uncaught {}: {}", class, message);
+            execute_data.pending_exception = None;
+            Err(format!("Uncaught {}: {}", class, message))
+        }
+    }
+}
+
+#[inline]
+pub fn execute_catch_marker(_op: &Op, _execute_data: &mut ExecuteData) -> Result<ExecResult, String> {
+    // CatchBegin / CatchEnd / FinallyBegin / FinallyEnd are structural markers
+    // that are no-ops during normal linear execution. Catch dispatch happens in
+    // the Throw handler; finally currently runs only on the normal path.
+    Ok(ExecResult::Continue)
+}
+
 #[inline]
 pub fn execute_send_val_named(op: &Op, execute_data: &mut ExecuteData) -> Result<ExecResult, String> {
     let val = resolve_operand(&op.op1, execute_data);
@@ -1197,6 +1244,33 @@ pub fn execute_new_obj(op: &Op, execute_data: &mut ExecuteData) -> Result<ExecRe
         for (prop_name, prop_val) in &ce.default_properties {
             obj.properties
                 .insert(prop_name.clone(), clone_val(prop_val));
+        }
+    }
+    // Built-in Throwable constructors: new Exception("msg", $code) stores
+    // message/code/file/line so $e->getMessage()/getCode() work. Constructor
+    // args are stashed on the call stack (SendVal before NewObj result is set).
+    if crate::engine::vm::exception_dispatch::is_standard_throwable(cn) {
+        let msg = execute_data
+            .call_args
+            .first()
+            .map(|v| crate::engine::operators::zval_get_string(v).as_str().to_string())
+            .unwrap_or_default();
+        let code = execute_data
+            .call_args
+            .get(1)
+            .map(crate::engine::operators::zval_get_long)
+            .unwrap_or(0);
+        obj.properties.insert(
+            "message".to_string(),
+            Val::new(
+                PhpValue::String(Box::new(crate::engine::string::string_init(&msg, false))),
+                PhpType::String,
+            ),
+        );
+        obj.properties
+            .insert("code".to_string(), Val::new(PhpValue::Long(code), PhpType::Long));
+        if let Some(file) = execute_data.constants.get("__FILE__") {
+            obj.properties.insert("file".to_string(), clone_val(file));
         }
     }
 

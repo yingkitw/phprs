@@ -411,6 +411,7 @@ pub fn compile_try_catch(lexer: &mut Lexer, context: &mut CompileContext) -> Res
 
     // Parse catch blocks (one or more)
     let mut next_token = lexer.next_token()?;
+    let mut pending_catch_jmps: Vec<usize> = Vec::new();
     while next_token.token_type == TokenType::T_CATCH {
         // Expect '('
         let paren_token = lexer.next_token()?;
@@ -436,6 +437,18 @@ pub fn compile_try_catch(lexer: &mut Lexer, context: &mut CompileContext) -> Res
         if var_token.token_type != TokenType::T_VARIABLE {
             return Err("Expected variable after exception class in catch".to_string());
         }
+        let var_name = var_token
+            .value
+            .as_ref()
+            .map(|s| {
+                let n = s.as_str();
+                if let Some(rest) = n.strip_prefix('$') {
+                    rest.to_string()
+                } else {
+                    n.to_string()
+                }
+            })
+            .unwrap_or_default();
 
         // Expect ')'
         let close_paren = lexer.next_token()?;
@@ -453,24 +466,39 @@ pub fn compile_try_catch(lexer: &mut Lexer, context: &mut CompileContext) -> Res
             return Err("Expected '{' after catch clause".to_string());
         }
 
-        // Emit CatchBegin opcode with exception class name
+        // Emit CatchBegin opcode with exception class name (op1) and variable name (op2).
         let class_str = crate::engine::string::string_init(&class_name, false);
         let class_zval = Val::new(
             crate::engine::types::PhpValue::String(Box::new(class_str)),
             crate::engine::types::PhpType::String,
         );
-        let catch_z2 = zero_val();
+        let var_zval = Val::new(
+            crate::engine::types::PhpValue::String(Box::new(
+                crate::engine::string::string_init(&var_name, false),
+            )),
+            crate::engine::types::PhpType::String,
+        );
         let catch_r = zero_val();
-        context.emit_opcode(Opcode::CatchBegin, class_zval, catch_z2, catch_r);
+        context.emit_opcode(Opcode::CatchBegin, class_zval, var_zval, catch_r);
 
         // Parse catch body
         parse_statement_block(lexer, context)?;
+
+        // Jump past remaining catches/finally after a matched catch runs.
+        let catch_jmp_z1 = zero_val();
+        let catch_jmp_z2 = zero_val();
+        let catch_jmp_r = zero_val();
+        let catch_jmp_index =
+            context.emit_opcode_with_index(Opcode::Jmp, catch_jmp_z1, catch_jmp_z2, catch_jmp_r);
 
         // Emit CatchEnd
         let catch_end_z1 = zero_val();
         let catch_end_z2 = zero_val();
         let catch_end_r = zero_val();
         context.emit_opcode(Opcode::CatchEnd, catch_end_z1, catch_end_z2, catch_end_r);
+
+        // The post-catch jump shares the same skip target as the try-exit jump.
+        pending_catch_jmps.push(catch_jmp_index);
 
         // Get next token to check for more catch blocks or finally
         next_token = lexer.next_token()?;
@@ -505,7 +533,11 @@ pub fn compile_try_catch(lexer: &mut Lexer, context: &mut CompileContext) -> Res
     }
 
     // Update the skip jump to point past all catch/finally blocks
-    context.update_jump_target(skip_jmp_index, context.current_op_index() as u32);
+    let skip_target = context.current_op_index() as u32;
+    context.update_jump_target(skip_jmp_index, skip_target);
+    for &cj in &pending_catch_jmps {
+        context.update_jump_target(cj, skip_target);
+    }
 
     // Update TryCatchBegin extended_value to point to first catch block
     context.update_jump_target(try_begin_index, (try_end_index + 2) as u32);

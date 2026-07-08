@@ -139,6 +139,13 @@ pub struct ExecuteData {
     pub session_id: String,
     /// Session cookie/name (default PHPSESSID).
     pub session_name: String,
+    /// Stack of active `try` regions: opcode indices of `TryCatchBegin` ops.
+    /// Pushed by TryCatchBegin, popped by TryCatchEnd (normal exit) or by Throw
+    /// while searching for a matching catch.
+    pub try_stack: Vec<usize>,
+    /// The currently in-flight uncaught exception object (set by Throw until a
+    /// catch claims it).
+    pub pending_exception: Option<Val>,
 }
 
 impl ExecuteData {
@@ -171,6 +178,8 @@ impl ExecuteData {
             session_active: false,
             session_id: String::new(),
             session_name: String::new(),
+            try_stack: Vec::new(),
+            pending_exception: None,
         };
         ed.register_reflection_classes();
         ed
