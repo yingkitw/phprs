@@ -160,9 +160,9 @@
 - **PHP runtime**: modules under `src/php/` (regex, http_stream, pdo stub, math, hash, datetime, mbstring, …)
 - **Framework examples**: WordPress-shaped (partial), CodeIgniter 4 demo (CI-tested), Drupal demo (CI-tested)
 - **73 opcodes** (dispatch table)
-- **130+ built-in functions** — see `builtin_capability_tests.rs` for exercised surface
-- **385+ workspace tests** (`cargo test --workspace`)
-- **21 root PHP examples** — all run via `examples_root_php_scripts_all_run`
+- **160+ built-in functions** — see `builtin_capability_tests.rs` for exercised surface
+- **472+ workspace tests** (`cargo test --workspace`)
+- **22 root PHP examples** — all run via `examples_root_php_scripts_all_run`
 - **Known gaps**: (none tracked — see brainstorming for future work)
 
 ### Standard library (honest)
@@ -176,6 +176,12 @@
 - FTP stream wrapper (stub)
 
 - WordPress-shaped demo: hooks/filters stubs, wpdb in-memory — **not** full core
+
+### Standard library additions (recent)
+- **Callback-driven builtins** (`src/engine/vm/callable.rs`): `array_map`, `array_filter`, `array_reduce`, `array_walk`, `call_user_func`, `call_user_func_array` invoke builtins **and** user functions (safe VM re-entry mirroring `DoFCall`)
+- **Array helpers**: `array_combine`, `array_flip`, `array_search`, `array_unique`, `array_column`, `array_sum`, `array_product`, `array_chunk`, `array_diff`, `array_intersect`, `array_count_values`, `array_fill`, `array_pad`, `range`
+- **String helpers**: `substr_count`, `substr_replace`, `strpbrk`, `substr_compare`
+- **Math/type helpers**: `intdiv`, `fmod`, `hypot`, `is_nan`, `is_infinite`, `is_finite`, improved `is_numeric` (numeric strings), `is_callable`, `boolval`
 
 ## Rust host advantages (engineering, not product guarantees)
 
@@ -261,7 +267,8 @@ Rust is used for the **interpreter implementation** because of memory safety in 
 
 ### Advanced Features
 - [x] **Reflection API** (basic) - `ReflectionClass`, `ReflectionMethod`, `ReflectionProperty` with `getName()`, `getMethods()`, `getProperties()`, `hasMethod()`, `hasProperty()`, `getParentClass()`, `getDeclaringClass()`
-- [ ] **Reflection API** (full) - `ReflectionParameter`, `ReflectionFunction`, `ReflectionExtension`, etc.
+- [x] **Reflection API** (extended) - `ReflectionFunction` (`getName`, `getParameters`, `getNumberOfParameters`, `isBuiltin`, `isUserDefined`), `ReflectionParameter` (`getName`, `getPosition`, `getDeclaringFunction`), and `ReflectionMethod::getParameters()` / `getNumberOfParameters()`
+- [ ] **Reflection API** (remaining) - `ReflectionExtension`, typed-parameter reflection, full attribute reflection
 - [ ] **SPL (Standard PHP Library)**
   - [ ] Iterators (ArrayIterator, DirectoryIterator, RecursiveDirectoryIterator)
   - [ ] Data structures (SplStack, SplQueue, SplHeap, SplPriorityQueue)
@@ -285,7 +292,7 @@ Rust is used for the **interpreter implementation** because of memory safety in 
   - [ ] Loop unrolling
   - [ ] Tail call optimization
 - [ ] **Memory pool improvements** - Better allocation strategies
-- [ ] **String interning** - Reduce memory for duplicate strings
+- [x] **String interning** - `src/engine/string_intern.rs` (`StringInterner` / global `intern()`); dedup-by-content with pointer-equality handles. Building block; not yet forced into every hot path
 - [ ] **Copy-on-write arrays** - Optimize array copying
 - [ ] **Lazy evaluation** - Defer computation until needed
 - [ ] **Parallel execution** - Multi-threaded script execution

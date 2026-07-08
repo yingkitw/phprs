@@ -5,7 +5,7 @@
 [![Rust](https://img.shields.io/badge/rust-2024-orange.svg)](https://www.rust-lang.org/)
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
 [![Build Status](https://img.shields.io/badge/build-passing-brightgreen.svg)]()
-[![Tests](https://img.shields.io/badge/tests-376%2B%20passing-brightgreen.svg)]()
+[![Tests](https://img.shields.io/badge/tests-472%2B%20passing-brightgreen.svg)]()
 
 ## Why phprs? The Rust Advantage
 
@@ -14,7 +14,7 @@ PHP powers much of the web; many production runtimes are implemented in C and C+
 - **Safer by construction (Rust)**: Memory errors that plague C/C++ code are largely ruled out in safe Rust; the interpreter still has correctness and parity work ahead.
 - **A performance-minded design**: Opcode dispatch, JIT hooks, and LLVM for the host binary — without promising a given speedup over Zend until we publish reproducible benchmarks.
 - **Concurrency-friendly host code**: Rust’s type system helps avoid data races in the engine itself; PHP’s shared mutable runtime model is still evolving in phprs.
-- **Test-backed**: 376+ workspace tests; every root `examples/*.php` runs in `tests/examples_runtime.rs`; Rust demos compile via `build_rust_examples`.
+- **Test-backed**: 472+ workspace tests; every root `examples/*.php` runs in `tests/examples_runtime.rs`; Rust demos compile via `build_rust_examples`.
 
 **phprs** brings PHP into the future by:
 
@@ -233,6 +233,7 @@ add_action('init', function() {
 See `examples/integration-test.php` for a short runnable script that exercises PDO stubs, regex, password helpers, and JSON under phprs.
 
 **More Examples** (all root `examples/*.php` covered by `cargo test --test examples_runtime`):
+- `examples/stdlib_callbacks.php` - Callback builtins (`array_map`/`array_filter`/`call_user_func`), new array/string/math helpers, and the Reflection API
 - `examples/control_flow.php` - if/switch, **for**, **while**, **foreach** (see `tests/examples_runtime.rs`)
 - `examples/mbstring.php` - Multibyte string helpers (`mb_*` subset)
 - `examples/match_expression.php` - `match` expressions
@@ -333,14 +334,19 @@ cargo run -p phprs-cli -- run examples/wordpress/index.php
 - **Anonymous Classes**: `new class { ... }` with optional extends/implements
 - **Enums**: Pure enums and backed enums (`enum Color: string { case Red = 'red'; }`)
 - **Union / Intersection Types**: `int|string`, `Countable&ArrayAccess` parsing in params and return types
+- **Reflection API**: `ReflectionClass`, `ReflectionMethod`, `ReflectionProperty`, `ReflectionFunction`, `ReflectionParameter` (getName/getParameters/getNumberOfParameters/isBuiltin/hasMethod/hasProperty)
 - **Error Handling**: try/catch/finally, exceptions
 
-### ✅ Standard Library (70+ functions, expanding)
-**String Functions**: `strlen`, `substr`, `str_replace`, `trim`, `strtolower`, `strtoupper`, `ucfirst`, and a growing **mbstring** subset (`mb_strlen`, `mb_substr`, … — see `src/php/mbstring.rs`, `examples/mbstring.php`)
+### ✅ Standard Library (160+ functions, expanding)
+**String Functions**: `strlen`, `substr`, `str_replace`, `trim`, `strtolower`, `strtoupper`, `ucfirst`, `substr_count`, `substr_replace`, `strpbrk`, `substr_compare`, and a growing **mbstring** subset (`mb_strlen`, `mb_substr`, … — see `src/php/mbstring.rs`, `examples/mbstring.php`)
+
+**Callback helpers**: `call_user_func`, `call_user_func_array` (invoke builtins **and** user functions; see `src/engine/vm/callable.rs`)
+
+**Math / type helpers**: `abs`, `ceil`, `floor`, `round`, `sqrt`, `pow`, `max`, `min`, `intdiv`, `fmod`, `hypot`, `is_nan`, `is_infinite`, `is_finite`, `is_numeric`, `is_callable`, `boolval`
 
 **URL / query**: `parse_url`, `http_build_query`, and related helpers (`src/php/url.rs`)
 
-**Array Functions**: `array_map`, `array_filter`, `array_merge`, `count`, `in_array`, `array_key_exists`
+**Array Functions**: `array_map`, `array_filter`, `array_reduce`, `array_walk`, `array_merge`, `array_keys`, `array_values`, `array_combine`, `array_flip`, `array_search`, `array_unique`, `array_column`, `array_sum`, `array_product`, `array_chunk`, `array_diff`, `array_intersect`, `array_count_values`, `array_fill`, `array_pad`, `range`, `count`, `in_array`, `array_key_exists`
 
 **Regular Expressions**: `preg_match`, `preg_match_all`, `preg_replace`, `preg_split` (Rust `regex` + `fancy-regex` for look-around; not full PCRE)
 
@@ -469,7 +475,7 @@ The workspace runs **clean** (no warnings) on `cargo test --workspace` and `carg
 ### Core Documentation
 - **[SPEC.md](SPEC.md)** - Project specification and scope
 - **[ARCHITECTURE.md](ARCHITECTURE.md)** - Module structure and execution flow
-- **[TODO.md](TODO.md)** - Migration roadmap and statistics (70+ built-in functions, 15 PHP runtime modules)
+- **[TODO.md](TODO.md)** - Migration roadmap and statistics (160+ built-in functions, 15 PHP runtime modules)
 - **[PERFORMANCE.md](PERFORMANCE.md)** - Evidence policy and VM optimization notes (not benchmark marketing)
 
 ### Feature Documentation
@@ -486,8 +492,8 @@ The workspace runs **clean** (no warnings) on `cargo test --workspace` and `carg
 ## Roadmap
 
 ### ✅ Completed (v0.1.x)
-- Core PHP engine with 67 opcodes (added FetchStaticProp, DoStaticCall, CloneObj, SendValNamed)
-- 70+ built-in functions
+- Core PHP engine with 73 opcodes (added FetchStaticProp, DoStaticCall, CloneObj, SendValNamed, BindGlobal, SendVarRef)
+- 160+ built-in functions (string, array, math, regex, hash, datetime, URL, mbstring, callbacks)
 - Regular expressions (`preg_*` via Rust `regex`)
 - HTTP/HTTPS stream wrappers
 - PDO database abstraction

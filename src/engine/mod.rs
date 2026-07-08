@@ -20,6 +20,7 @@ pub mod operators;
 pub mod perf;
 pub mod perf_alloc;
 pub mod string;
+pub mod string_intern;
 pub mod types;
 pub mod vm;
 

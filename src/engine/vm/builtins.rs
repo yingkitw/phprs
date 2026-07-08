@@ -35,6 +35,31 @@ fn null_val() -> Val {
     Val::new(PhpValue::Long(0), PhpType::Null)
 }
 
+/// Coerce an f64 into a PHP Long when integral, otherwise a Double — matches
+/// PHP's numeric result shaping (e.g. `array_sum` of integers stays int).
+fn numeric_val(n: f64) -> Val {
+    if n.fract() == 0.0 && n.abs() < 9_007_199_254_740_992.0 {
+        Val::new(PhpValue::Long(n as i64), PhpType::Long)
+    } else {
+        Val::new(PhpValue::Double(n), PhpType::Double)
+    }
+}
+
+/// PHP-style numeric string check: optional leading sign, digits, optional
+/// fractional part, optional exponent. Whitespace-only padding is allowed.
+fn is_numeric_string(s: &str) -> bool {
+    let trimmed = s.trim();
+    if trimmed.is_empty() {
+        return false;
+    }
+    trimmed.parse::<f64>().is_ok()
+        && trimmed
+            .chars()
+            .next()
+            .map(|c| c.is_ascii_digit() || c == '+' || c == '-' || c == '.')
+            .unwrap_or(false)
+}
+
 /// Helper to check a type predicate on first arg
 fn type_check(args: &[Val], predicate: impl FnOnce(PhpType) -> bool) -> Val {
     bool_val(!args.is_empty() && predicate(args[0].get_type()))
@@ -93,6 +118,14 @@ pub(crate) fn is_builtin_function(name: &str) -> bool {
         | "strtr" | "similar_text" | "levenshtein" | "metaphone" | "soundex"
         | "number_format" | "money_format" | "decbin" | "bindec" | "decoct" | "octdec"
         | "dechex" | "hexdec" | "base_convert" | "deg2rad" | "rad2deg"
+        // phprs additions: callbacks, array/string/math/type helpers
+        | "call_user_func" | "call_user_func_array" | "array_map" | "array_filter"
+        | "array_reduce" | "array_walk" | "array_combine" | "array_flip" | "array_search"
+        | "array_unique" | "array_column" | "array_sum" | "array_product" | "array_chunk"
+        | "array_diff" | "array_intersect" | "array_count_values" | "array_fill"
+        | "array_pad" | "range" | "ucfirst" | "substr_count" | "substr_replace" | "strpbrk"
+        | "substr_compare" | "intdiv" | "fmod" | "hypot" | "is_nan" | "is_infinite"
+        | "is_finite" | "is_callable" | "boolval"
     )
 }
 
@@ -289,10 +322,51 @@ pub(crate) fn execute_builtin_function(
             t == PhpType::True || t == PhpType::False
         }))),
         "is_null" => Ok(Some(type_check(args, |t| t == PhpType::Null))),
-        "is_numeric" => Ok(Some(type_check(args, |t| {
-            t == PhpType::Long || t == PhpType::Double
-        }))),
+        "is_numeric" => {
+            if args.is_empty() {
+                return Ok(Some(bool_val(false)));
+            }
+            // PHP: numeric strings (including hex is NOT numeric since PHP 7,
+            // leading-sign + decimals + exponent) count as numeric.
+            let is_num = match &args[0].value {
+                PhpValue::Long(_) | PhpValue::Double(_) => true,
+                PhpValue::String(s) => is_numeric_string(s.as_str()),
+                _ => false,
+            };
+            Ok(Some(bool_val(is_num)))
+        }
         "is_object" => Ok(Some(type_check(args, |t| t == PhpType::Object))),
+        "is_callable" => {
+            // Only string callables are resolvable here; treat known function
+            // names (builtins or user functions) as callable.
+            let callable = if args.is_empty() {
+                return Ok(Some(bool_val(false)));
+            } else {
+                &args[0]
+            };
+            let is_cb = match &callable.value {
+                PhpValue::String(s) => {
+                    let n = s.as_str();
+                    is_builtin_function(n)
+                        || _execute_data
+                            .function_table
+                            .as_ref()
+                            .and_then(|ft| {
+                                ft.downcast_ref::<crate::engine::compile::function_table::FunctionTable>()
+                            })
+                            .map(|ft| ft.has_function(n))
+                            .unwrap_or(false)
+                }
+                _ => false,
+            };
+            Ok(Some(bool_val(is_cb)))
+        }
+        "boolval" => {
+            if args.is_empty() {
+                return Ok(Some(bool_val(false)));
+            }
+            Ok(Some(bool_val(crate::engine::operators::zval_get_bool(&args[0]))))
+        }
 
         // --- Array functions ---
         "array_key_exists" => {
@@ -494,6 +568,605 @@ pub(crate) fn execute_builtin_function(
             }
             Ok(Some(Val::new(
                 PhpValue::Array(Box::new(merged)),
+                PhpType::Array,
+            )))
+        }
+
+        // --- Callback-driven functions ---
+        "call_user_func" => {
+            if args.is_empty() {
+                return Err("call_user_func() expects at least 1 argument".into());
+            }
+            let (cb, rest) = args.split_first().unwrap();
+            super::callable::invoke_callable(_execute_data, cb, rest)
+        }
+        "call_user_func_array" => {
+            if args.len() < 2 {
+                return Err("call_user_func_array() expects 2 arguments".into());
+            }
+            let mut call_args: Vec<Val> = Vec::new();
+            if let PhpValue::Array(ref arr) = args[1].value {
+                for bucket in &arr.ar_data {
+                    call_args.push(clone_val(&bucket.val));
+                }
+            }
+            super::callable::invoke_callable(_execute_data, &args[0], &call_args)
+        }
+        "array_map" => {
+            if args.len() < 2 {
+                return Err("array_map() expects at least 2 arguments".into());
+            }
+            let mut result = crate::engine::types::PhpArray::new();
+            if let PhpValue::Array(ref arr) = args[1].value {
+                for (i, bucket) in arr.ar_data.iter().enumerate() {
+                    let mapped = super::callable::invoke_callable(
+                        _execute_data,
+                        &args[0],
+                        &[clone_val(&bucket.val)],
+                    )?;
+                    let val = mapped.unwrap_or_else(null_val);
+                    if let Some(ref k) = bucket.key {
+                        let key = crate::engine::string::string_init(k.as_str(), false);
+                        let _ = crate::engine::hash::hash_add_or_update(
+                            &mut result,
+                            Some(&key),
+                            0,
+                            val,
+                            0,
+                        );
+                    } else {
+                        let _ =
+                            crate::engine::hash::hash_add_or_update(&mut result, None, i as u64, val, 0);
+                    }
+                }
+            }
+            Ok(Some(Val::new(
+                PhpValue::Array(Box::new(result)),
+                PhpType::Array,
+            )))
+        }
+        "array_filter" => {
+            if args.is_empty() {
+                return Err("array_filter() expects at least 1 argument".into());
+            }
+            let use_callback = args.len() > 1;
+            let mut result = crate::engine::types::PhpArray::new();
+            if let PhpValue::Array(ref arr) = args[0].value {
+                for bucket in &arr.ar_data {
+                    let keep = if use_callback {
+                        let r = super::callable::invoke_callable(
+                            _execute_data,
+                            &args[1],
+                            &[clone_val(&bucket.val)],
+                        )?;
+                        crate::engine::operators::zval_get_bool(&r.unwrap_or_else(null_val))
+                    } else {
+                        // No callback: keep truthy values (PHP default behavior).
+                        crate::engine::operators::zval_get_bool(&bucket.val)
+                    };
+                    if keep {
+                        let val = clone_val(&bucket.val);
+                        if let Some(ref k) = bucket.key {
+                            let key = crate::engine::string::string_init(k.as_str(), false);
+                            let _ = crate::engine::hash::hash_add_or_update(
+                                &mut result,
+                                Some(&key),
+                                0,
+                                val,
+                                0,
+                            );
+                        } else {
+                            let _ = crate::engine::hash::hash_add_or_update(
+                                &mut result,
+                                None,
+                                bucket.h,
+                                val,
+                                0,
+                            );
+                        }
+                    }
+                }
+            }
+            Ok(Some(Val::new(
+                PhpValue::Array(Box::new(result)),
+                PhpType::Array,
+            )))
+        }
+        "array_reduce" => {
+            if args.len() < 2 {
+                return Err("array_reduce() expects at least 2 arguments".into());
+            }
+            let mut acc = if args.len() > 2 { clone_val(&args[2]) } else { null_val() };
+            if let PhpValue::Array(ref arr) = args[0].value {
+                for bucket in &arr.ar_data {
+                    let r = super::callable::invoke_callable(
+                        _execute_data,
+                        &args[1],
+                        &[acc.clone(), clone_val(&bucket.val)],
+                    )?;
+                    acc = r.unwrap_or_else(null_val);
+                }
+            }
+            Ok(Some(acc))
+        }
+        "array_walk" => {
+            if args.len() < 2 {
+                return Err("array_walk() expects at least 2 arguments".into());
+            }
+            if let PhpValue::Array(ref arr) = args[0].value {
+                for bucket in &arr.ar_data {
+                    let key_arg = if let Some(ref k) = bucket.key {
+                        string_val(k.as_str())
+                    } else {
+                        Val::new(PhpValue::Long(bucket.h as i64), PhpType::Long)
+                    };
+                    let _ = super::callable::invoke_callable(
+                        _execute_data,
+                        &args[1],
+                        &[clone_val(&bucket.val), key_arg],
+                    )?;
+                }
+            }
+            Ok(Some(bool_val(true)))
+        }
+
+        // --- Additional array functions ---
+        "array_combine" => {
+            if args.len() < 2 {
+                return Err("array_combine() expects 2 arguments".into());
+            }
+            let mut result = crate::engine::types::PhpArray::new();
+            if let (PhpValue::Array(keys), PhpValue::Array(vals)) =
+                (&args[0].value, &args[1].value)
+            {
+                for (k, v) in keys.ar_data.iter().zip(vals.ar_data.iter()) {
+                    let key_str = crate::engine::operators::zval_get_string(&k.val);
+                    let key = crate::engine::string::string_init(key_str.as_str(), false);
+                    let _ = crate::engine::hash::hash_add_or_update(
+                        &mut result,
+                        Some(&key),
+                        0,
+                        clone_val(&v.val),
+                        0,
+                    );
+                }
+            }
+            Ok(Some(Val::new(
+                PhpValue::Array(Box::new(result)),
+                PhpType::Array,
+            )))
+        }
+        "array_flip" => {
+            if args.is_empty() {
+                return Ok(Some(Val::new(
+                    PhpValue::Array(Box::new(crate::engine::types::PhpArray::new())),
+                    PhpType::Array,
+                )));
+            }
+            let mut result = crate::engine::types::PhpArray::new();
+            if let PhpValue::Array(ref arr) = args[0].value {
+                for bucket in &arr.ar_data {
+                    let val_str = crate::engine::operators::zval_get_string(&bucket.val);
+                    let key = crate::engine::string::string_init(val_str.as_str(), false);
+                    let new_val = if let Some(ref k) = bucket.key {
+                        string_val(k.as_str())
+                    } else {
+                        Val::new(PhpValue::Long(bucket.h as i64), PhpType::Long)
+                    };
+                    let _ = crate::engine::hash::hash_add_or_update(
+                        &mut result,
+                        Some(&key),
+                        0,
+                        new_val,
+                        0,
+                    );
+                }
+            }
+            Ok(Some(Val::new(
+                PhpValue::Array(Box::new(result)),
+                PhpType::Array,
+            )))
+        }
+        "array_search" => {
+            if args.len() < 2 {
+                return Err("array_search() expects at least 2 arguments".into());
+            }
+            let needle = crate::engine::operators::zval_get_string(&args[0]);
+            if let PhpValue::Array(ref arr) = args[1].value {
+                for bucket in &arr.ar_data {
+                    let v = crate::engine::operators::zval_get_string(&bucket.val);
+                    if v.as_str() == needle.as_str() {
+                        if let Some(ref k) = bucket.key {
+                            return Ok(Some(string_val(k.as_str())));
+                        }
+                        return Ok(Some(Val::new(
+                            PhpValue::Long(bucket.h as i64),
+                            PhpType::Long,
+                        )));
+                    }
+                }
+            }
+            Ok(Some(bool_val(false)))
+        }
+        "array_unique" => {
+            if args.is_empty() {
+                return Ok(Some(Val::new(
+                    PhpValue::Array(Box::new(crate::engine::types::PhpArray::new())),
+                    PhpType::Array,
+                )));
+            }
+            let mut result = crate::engine::types::PhpArray::new();
+            let mut seen: Vec<String> = Vec::new();
+            if let PhpValue::Array(ref arr) = args[0].value {
+                for bucket in &arr.ar_data {
+                    let v = crate::engine::operators::zval_get_string(&bucket.val);
+                    if seen.iter().any(|s| s.as_str() == v.as_str()) {
+                        continue;
+                    }
+                    seen.push(v.as_str().to_string());
+                    let val = clone_val(&bucket.val);
+                    if let Some(ref k) = bucket.key {
+                        let key = crate::engine::string::string_init(k.as_str(), false);
+                        let _ = crate::engine::hash::hash_add_or_update(
+                            &mut result,
+                            Some(&key),
+                            0,
+                            val,
+                            0,
+                        );
+                    } else {
+                        let _ = crate::engine::hash::hash_add_or_update(
+                            &mut result,
+                            None,
+                            bucket.h,
+                            val,
+                            0,
+                        );
+                    }
+                }
+            }
+            Ok(Some(Val::new(
+                PhpValue::Array(Box::new(result)),
+                PhpType::Array,
+            )))
+        }
+        "array_column" => {
+            if args.len() < 2 {
+                return Err("array_column() expects at least 2 arguments".into());
+            }
+            let col = crate::engine::operators::zval_get_string(&args[1]);
+            let mut result = crate::engine::types::PhpArray::new();
+            let mut idx: u64 = 0;
+            if let PhpValue::Array(ref arr) = args[0].value {
+                for bucket in &arr.ar_data {
+                    if let PhpValue::Array(ref row) = bucket.val.value {
+                        if let Some(target) = row.ar_data.iter().find(|b| {
+                            b.key
+                                .as_ref()
+                                .map(|k| k.as_str() == col.as_str())
+                                .unwrap_or(false)
+                        }) {
+                            let _ = crate::engine::hash::hash_add_or_update(
+                                &mut result,
+                                None,
+                                idx,
+                                clone_val(&target.val),
+                                0,
+                            );
+                            idx += 1;
+                        }
+                    }
+                }
+            }
+            Ok(Some(Val::new(
+                PhpValue::Array(Box::new(result)),
+                PhpType::Array,
+            )))
+        }
+        "array_sum" => {
+            let mut sum: f64 = 0.0;
+            if !args.is_empty() {
+                if let PhpValue::Array(ref arr) = args[0].value {
+                    for bucket in &arr.ar_data {
+                        sum += crate::engine::operators::zval_get_double(&bucket.val);
+                    }
+                }
+            }
+            Ok(Some(numeric_val(sum)))
+        }
+        "array_product" => {
+            let mut product: f64 = 1.0;
+            if !args.is_empty() {
+                if let PhpValue::Array(ref arr) = args[0].value {
+                    for bucket in &arr.ar_data {
+                        product *= crate::engine::operators::zval_get_double(&bucket.val);
+                    }
+                }
+            }
+            Ok(Some(numeric_val(product)))
+        }
+        "array_chunk" => {
+            if args.len() < 2 {
+                return Err("array_chunk() expects at least 2 arguments".into());
+            }
+            let size = crate::engine::operators::zval_get_long(&args[1]).max(1) as usize;
+            let mut result = crate::engine::types::PhpArray::new();
+            let mut chunk_idx: u64 = 0;
+            if let PhpValue::Array(ref arr) = args[0].value {
+                for batch in arr.ar_data.chunks(size) {
+                    let mut chunk = crate::engine::types::PhpArray::new();
+                    let mut inner: u64 = 0;
+                    for bucket in batch {
+                        let val = clone_val(&bucket.val);
+                        if let Some(ref k) = bucket.key {
+                            let key = crate::engine::string::string_init(k.as_str(), false);
+                            let _ = crate::engine::hash::hash_add_or_update(
+                                &mut chunk,
+                                Some(&key),
+                                0,
+                                val,
+                                0,
+                            );
+                        } else {
+                            let _ = crate::engine::hash::hash_add_or_update(
+                                &mut chunk,
+                                None,
+                                inner,
+                                val,
+                                0,
+                            );
+                            inner += 1;
+                        }
+                    }
+                    let _ = crate::engine::hash::hash_add_or_update(
+                        &mut result,
+                        None,
+                        chunk_idx,
+                        Val::new(PhpValue::Array(Box::new(chunk)), PhpType::Array),
+                        0,
+                    );
+                    chunk_idx += 1;
+                }
+            }
+            Ok(Some(Val::new(
+                PhpValue::Array(Box::new(result)),
+                PhpType::Array,
+            )))
+        }
+        "array_diff" => {
+            if args.is_empty() {
+                return Ok(Some(Val::new(
+                    PhpValue::Array(Box::new(crate::engine::types::PhpArray::new())),
+                    PhpType::Array,
+                )));
+            }
+            let other_vals: Vec<String> = args[1..]
+                .iter()
+                .filter_map(|a| match &a.value {
+                    PhpValue::Array(arr) => Some(
+                        arr.ar_data
+                            .iter()
+                            .map(|b| crate::engine::operators::zval_get_string(&b.val).as_str().to_string())
+                            .collect::<Vec<_>>(),
+                    ),
+                    _ => None,
+                })
+                .flatten()
+                .collect();
+            let mut result = crate::engine::types::PhpArray::new();
+            if let PhpValue::Array(ref arr) = args[0].value {
+                for bucket in &arr.ar_data {
+                    let v = crate::engine::operators::zval_get_string(&bucket.val);
+                    if other_vals.iter().any(|s| s.as_str() == v.as_str()) {
+                        continue;
+                    }
+                    let val = clone_val(&bucket.val);
+                    if let Some(ref k) = bucket.key {
+                        let key = crate::engine::string::string_init(k.as_str(), false);
+                        let _ = crate::engine::hash::hash_add_or_update(
+                            &mut result,
+                            Some(&key),
+                            0,
+                            val,
+                            0,
+                        );
+                    } else {
+                        let _ = crate::engine::hash::hash_add_or_update(
+                            &mut result,
+                            None,
+                            bucket.h,
+                            val,
+                            0,
+                        );
+                    }
+                }
+            }
+            Ok(Some(Val::new(
+                PhpValue::Array(Box::new(result)),
+                PhpType::Array,
+            )))
+        }
+        "array_intersect" => {
+            if args.is_empty() {
+                return Ok(Some(Val::new(
+                    PhpValue::Array(Box::new(crate::engine::types::PhpArray::new())),
+                    PhpType::Array,
+                )));
+            }
+            let other_vals: Vec<String> = args[1..]
+                .iter()
+                .filter_map(|a| match &a.value {
+                    PhpValue::Array(arr) => Some(
+                        arr.ar_data
+                            .iter()
+                            .map(|b| crate::engine::operators::zval_get_string(&b.val).as_str().to_string())
+                            .collect::<Vec<_>>(),
+                    ),
+                    _ => None,
+                })
+                .flatten()
+                .collect();
+            let mut result = crate::engine::types::PhpArray::new();
+            if let PhpValue::Array(ref arr) = args[0].value {
+                for bucket in &arr.ar_data {
+                    let v = crate::engine::operators::zval_get_string(&bucket.val);
+                    if !other_vals.iter().any(|s| s.as_str() == v.as_str()) {
+                        continue;
+                    }
+                    let val = clone_val(&bucket.val);
+                    if let Some(ref k) = bucket.key {
+                        let key = crate::engine::string::string_init(k.as_str(), false);
+                        let _ = crate::engine::hash::hash_add_or_update(
+                            &mut result,
+                            Some(&key),
+                            0,
+                            val,
+                            0,
+                        );
+                    } else {
+                        let _ = crate::engine::hash::hash_add_or_update(
+                            &mut result,
+                            None,
+                            bucket.h,
+                            val,
+                            0,
+                        );
+                    }
+                }
+            }
+            Ok(Some(Val::new(
+                PhpValue::Array(Box::new(result)),
+                PhpType::Array,
+            )))
+        }
+        "array_count_values" => {
+            if args.is_empty() {
+                return Ok(Some(Val::new(
+                    PhpValue::Array(Box::new(crate::engine::types::PhpArray::new())),
+                    PhpType::Array,
+                )));
+            }
+            let mut result = crate::engine::types::PhpArray::new();
+            if let PhpValue::Array(ref arr) = args[0].value {
+                for bucket in &arr.ar_data {
+                    let v = crate::engine::operators::zval_get_string(&bucket.val);
+                    let key = crate::engine::string::string_init(v.as_str(), false);
+                    let existing = crate::engine::hash::hash_find(&result, &key)
+                        .map(|x| crate::engine::operators::zval_get_long(x))
+                        .unwrap_or(0);
+                    let _ = crate::engine::hash::hash_add_or_update(
+                        &mut result,
+                        Some(&key),
+                        0,
+                        Val::new(PhpValue::Long(existing + 1), PhpType::Long),
+                        0,
+                    );
+                }
+            }
+            Ok(Some(Val::new(
+                PhpValue::Array(Box::new(result)),
+                PhpType::Array,
+            )))
+        }
+        "array_fill" => {
+            if args.len() < 3 {
+                return Err("array_fill() expects 3 arguments".into());
+            }
+            let start = crate::engine::operators::zval_get_long(&args[0]);
+            let count = crate::engine::operators::zval_get_long(&args[1]).max(0) as u64;
+            let mut result = crate::engine::types::PhpArray::new();
+            for i in 0..count {
+                let _ = crate::engine::hash::hash_add_or_update(
+                    &mut result,
+                    None,
+                    (start as u64) + i,
+                    clone_val(&args[2]),
+                    0,
+                );
+            }
+            Ok(Some(Val::new(
+                PhpValue::Array(Box::new(result)),
+                PhpType::Array,
+            )))
+        }
+        "array_pad" => {
+            if args.len() < 3 {
+                return Err("array_pad() expects 3 arguments".into());
+            }
+            let size = crate::engine::operators::zval_get_long(&args[1]);
+            let pad_val = clone_val(&args[2]);
+            let mut result = crate::engine::types::PhpArray::new();
+            let entries: Vec<Val> = if let PhpValue::Array(ref arr) = args[0].value {
+                arr.ar_data.iter().map(|b| clone_val(&b.val)).collect()
+            } else {
+                Vec::new()
+            };
+            let current = entries.len() as i64;
+            let target = size.abs();
+            let pad_count = (target - current).max(0);
+            let mut idx: u64 = 0;
+            let emit = |result: &mut crate::engine::types::PhpArray, idx: &mut u64, v: Val| {
+                let _ = crate::engine::hash::hash_add_or_update(result, None, *idx, v, 0);
+                *idx += 1;
+            };
+            if size < 0 {
+                for _ in 0..pad_count {
+                    emit(&mut result, &mut idx, clone_val(&pad_val));
+                }
+                for v in entries {
+                    emit(&mut result, &mut idx, v);
+                }
+            } else {
+                for v in entries {
+                    emit(&mut result, &mut idx, v);
+                }
+                for _ in 0..pad_count {
+                    emit(&mut result, &mut idx, clone_val(&pad_val));
+                }
+            }
+            Ok(Some(Val::new(
+                PhpValue::Array(Box::new(result)),
+                PhpType::Array,
+            )))
+        }
+        "range" => {
+            if args.len() < 2 {
+                return Err("range() expects at least 2 arguments".into());
+            }
+            let start = crate::engine::operators::zval_get_double(&args[0]);
+            let end = crate::engine::operators::zval_get_double(&args[1]);
+            let step = if args.len() > 2 {
+                crate::engine::operators::zval_get_double(&args[2]).abs().max(1.0)
+            } else {
+                1.0
+            };
+            let mut result = crate::engine::types::PhpArray::new();
+            let mut idx: u64 = 0;
+            let push_val = |result: &mut crate::engine::types::PhpArray, idx: &mut u64, v: f64| {
+                let _ = crate::engine::hash::hash_add_or_update(
+                    result,
+                    None,
+                    *idx,
+                    numeric_val(v),
+                    0,
+                );
+                *idx += 1;
+            };
+            if start <= end {
+                let mut x = start;
+                while x <= end + 1e-9 {
+                    push_val(&mut result, &mut idx, x);
+                    x += step;
+                }
+            } else {
+                let mut x = start;
+                while x >= end - 1e-9 {
+                    push_val(&mut result, &mut idx, x);
+                    x -= step;
+                }
+            }
+            Ok(Some(Val::new(
+                PhpValue::Array(Box::new(result)),
                 PhpType::Array,
             )))
         }
@@ -795,6 +1468,99 @@ pub(crate) fn execute_builtin_function(
             let first = chars.next().unwrap().to_uppercase().to_string();
             let rest: String = chars.collect();
             Ok(Some(string_val(&(first + &rest))))
+        }
+        "substr_count" => {
+            if args.len() < 2 {
+                return Err("substr_count() expects at least 2 arguments".into());
+            }
+            let haystack = crate::engine::operators::zval_get_string(&args[0]);
+            let needle = crate::engine::operators::zval_get_string(&args[1]);
+            if needle.as_str().is_empty() {
+                return Ok(Some(Val::new(PhpValue::Long(0), PhpType::Long)));
+            }
+            let count = haystack.as_str().matches(needle.as_str()).count();
+            Ok(Some(Val::new(PhpValue::Long(count as i64), PhpType::Long)))
+        }
+        "substr_replace" => {
+            if args.len() < 3 {
+                return Err("substr_replace() expects at least 3 arguments".into());
+            }
+            let s = crate::engine::operators::zval_get_string(&args[0]);
+            let replacement = crate::engine::operators::zval_get_string(&args[1]);
+            let src = s.as_str();
+            let src_len = src.len() as i64;
+            let mut start = crate::engine::operators::zval_get_long(&args[2]);
+            if start < 0 {
+                start = (src_len + start).max(0);
+            }
+            let start = (start.min(src_len)).max(0) as usize;
+            let length = if args.len() > 3 {
+                let l = crate::engine::operators::zval_get_long(&args[3]);
+                if l < 0 {
+                    (src_len + l - start as i64).max(0) as usize
+                } else {
+                    l as usize
+                }
+            } else {
+                src_len as usize - start
+            };
+            let end = (start + length).min(src.len());
+            let mut out = String::with_capacity(src.len() + replacement.as_str().len());
+            out.push_str(&src[..start]);
+            out.push_str(replacement.as_str());
+            if end < src.len() {
+                out.push_str(&src[end..]);
+            }
+            Ok(Some(string_val(&out)))
+        }
+        "strpbrk" => {
+            if args.len() < 2 {
+                return Err("strpbrk() expects 2 arguments".into());
+            }
+            let s = crate::engine::operators::zval_get_string(&args[0]);
+            let chars = crate::engine::operators::zval_get_string(&args[1]);
+            let src = s.as_str();
+            let char_set: std::collections::HashSet<char> = chars.as_str().chars().collect();
+            match src.find(|c: char| char_set.contains(&c)) {
+                Some(pos) => Ok(Some(string_val(&src[pos..]))),
+                None => Ok(Some(bool_val(false))),
+            }
+        }
+        "substr_compare" => {
+            if args.len() < 3 {
+                return Err("substr_compare() expects at least 3 arguments".into());
+            }
+            let main = crate::engine::operators::zval_get_string(&args[0]);
+            let other = crate::engine::operators::zval_get_string(&args[1]);
+            let offset = crate::engine::operators::zval_get_long(&args[2]);
+            let main_str = main.as_str();
+            let main_len = main_str.len() as i64;
+            let start = if offset < 0 {
+                (main_len + offset).max(0) as usize
+            } else {
+                (offset as usize).min(main_len as usize)
+            };
+            let slice = if let Some(len_arg) = args.get(3) {
+                let l = crate::engine::operators::zval_get_long(len_arg) as usize;
+                &main_str[start..(start + l).min(main_str.len())]
+            } else {
+                &main_str[start..]
+            };
+            let case_insensitive = args.get(4).map(|a| crate::engine::operators::zval_get_bool(a)).unwrap_or(false);
+            let (a, b): (String, String) = if case_insensitive {
+                (slice.to_lowercase(), other.as_str().to_lowercase())
+            } else {
+                (slice.to_string(), other.as_str().to_string())
+            };
+            let cmp = a.as_str().cmp(b.as_str());
+            Ok(Some(Val::new(
+                PhpValue::Long(match cmp {
+                    std::cmp::Ordering::Less => -1,
+                    std::cmp::Ordering::Equal => 0,
+                    std::cmp::Ordering::Greater => 1,
+                }),
+                PhpType::Long,
+            )))
         }
 
         // --- Info ---
@@ -1116,6 +1882,59 @@ pub(crate) fn execute_builtin_function(
         "max" => crate::php::math::math_max(args).map(Some),
         "min" => crate::php::math::math_min(args).map(Some),
         "rand" => crate::php::math::math_rand(args).map(Some),
+
+        // --- Additional math functions ---
+        "intdiv" => {
+            if args.len() < 2 {
+                return Err("intdiv() expects 2 arguments".into());
+            }
+            let a = crate::engine::operators::zval_get_long(&args[0]);
+            let b = crate::engine::operators::zval_get_long(&args[1]);
+            if b == 0 {
+                return Err("Division by zero in intdiv()".into());
+            }
+            Ok(Some(Val::new(PhpValue::Long(a / b), PhpType::Long)))
+        }
+        "fmod" => {
+            if args.len() < 2 {
+                return Err("fmod() expects 2 arguments".into());
+            }
+            let a = crate::engine::operators::zval_get_double(&args[0]);
+            let b = crate::engine::operators::zval_get_double(&args[1]);
+            Ok(Some(numeric_val(a % b)))
+        }
+        "hypot" => {
+            if args.len() < 2 {
+                return Err("hypot() expects 2 arguments".into());
+            }
+            let a = crate::engine::operators::zval_get_double(&args[0]);
+            let b = crate::engine::operators::zval_get_double(&args[1]);
+            Ok(Some(Val::new(PhpValue::Double(a.hypot(b)), PhpType::Double)))
+        }
+        "is_nan" => {
+            if args.is_empty() {
+                return Ok(Some(bool_val(false)));
+            }
+            Ok(Some(bool_val(
+                crate::engine::operators::zval_get_double(&args[0]).is_nan(),
+            )))
+        }
+        "is_infinite" => {
+            if args.is_empty() {
+                return Ok(Some(bool_val(false)));
+            }
+            Ok(Some(bool_val(
+                crate::engine::operators::zval_get_double(&args[0]).is_infinite(),
+            )))
+        }
+        "is_finite" => {
+            if args.is_empty() {
+                return Ok(Some(bool_val(false)));
+            }
+            Ok(Some(bool_val(
+                crate::engine::operators::zval_get_double(&args[0]).is_finite(),
+            )))
+        }
 
         // --- Hash functions ---
         "md5" => crate::php::hash::hash_md5(args).map(Some),

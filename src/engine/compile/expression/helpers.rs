@@ -88,6 +88,16 @@ pub(crate) fn emit_binary_op(
     temp_var_ref(slot)
 }
 
+/// Emit a unary/binary logical opcode and return the result temp ref
+pub(crate) fn emit_logical_op(
+    context: &mut CompileContext,
+    opcode: Opcode,
+    left: Val,
+    right: Val,
+) -> Val {
+    emit_binary_op(context, opcode, left, right)
+}
+
 pub(crate) fn parse_match_expression(
     lexer: &mut Lexer,
     context: &mut CompileContext,

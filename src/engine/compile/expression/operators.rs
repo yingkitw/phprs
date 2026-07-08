@@ -2,7 +2,7 @@
 
 use super::helpers::*;
 use crate::engine::compile::context::CompileContext;
-use crate::engine::facade::{self, result_val};
+use crate::engine::facade;
 use crate::engine::lexer::{Lexer, Token, TokenType};
 use crate::engine::types::Val;
 use crate::engine::vm::Opcode;
@@ -197,10 +197,7 @@ fn parse_logical_or_tail(
 ) -> Result<(Val, Token), String> {
     while token.token_type == TokenType::T_BOOLEAN_OR {
         let (right, next_token) = parse_logical_and_expr(lexer, context)?;
-        let or_result = result_val(crate::engine::types::PhpType::Bool);
-        let or_result_dup = result_val(crate::engine::types::PhpType::Bool);
-        context.emit_opcode(Opcode::BoolOr, left, right, or_result);
-        left = or_result_dup;
+        left = emit_logical_op(context, Opcode::BoolOr, left, right);
         token = next_token;
     }
 
@@ -233,10 +230,7 @@ fn parse_logical_and_tail(
 ) -> Result<(Val, Token), String> {
     while token.token_type == TokenType::T_BOOLEAN_AND {
         let (right, next_token) = parse_logical_not_expr(lexer, context)?;
-        let and_result = result_val(crate::engine::types::PhpType::Bool);
-        let and_result_dup = result_val(crate::engine::types::PhpType::Bool);
-        context.emit_opcode(Opcode::BoolAnd, left, right, and_result);
-        left = and_result_dup;
+        left = emit_logical_op(context, Opcode::BoolAnd, left, right);
         token = next_token;
     }
 
@@ -259,11 +253,9 @@ fn parse_logical_not_expr_with_initial(
 ) -> Result<(Val, Token), String> {
     if token.token_type == TokenType::T_BOOLEAN_NOT {
         let (expr, next_token) = parse_logical_not_expr(lexer, context)?;
-        let bool_result = result_val(crate::engine::types::PhpType::Bool);
-        let bool_result_dup = result_val(crate::engine::types::PhpType::Bool);
         let zero = facade::zero_val();
-        context.emit_opcode(Opcode::BoolNot, expr, zero, bool_result);
-        return Ok((bool_result_dup, next_token));
+        let result = emit_logical_op(context, Opcode::BoolNot, expr, zero);
+        return Ok((result, next_token));
     }
 
     // Not a logical NOT — parse comparison with pre-consumed token

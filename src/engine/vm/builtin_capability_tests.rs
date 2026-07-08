@@ -46,6 +46,37 @@ fn array_from_str_keys(pairs: &[(&str, &str)]) -> Val {
     Val::new(PhpValue::Array(Box::new(arr)), PhpType::Array)
 }
 
+fn array_from_longs(items: &[i64]) -> Val {
+    let mut arr = PhpArray::new();
+    hash_init(&mut arr, 8);
+    for (i, v) in items.iter().enumerate() {
+        hash_add_or_update(&mut arr, None, i as u64, long_val(*v), 0);
+    }
+    Val::new(PhpValue::Array(Box::new(arr)), PhpType::Array)
+}
+
+fn array_from_vals(vals: &[Val]) -> Val {
+    let mut arr = PhpArray::new();
+    hash_init(&mut arr, 8);
+    for (i, v) in vals.iter().enumerate() {
+        let cloned = crate::engine::vm::execute_data::clone_val(v);
+        hash_add_or_update(&mut arr, None, i as u64, cloned, 0);
+    }
+    Val::new(PhpValue::Array(Box::new(arr)), PhpType::Array)
+}
+
+/// Borrow the value stored at a numeric index of a returned array.
+fn array_index<'a>(arr: &'a Val, idx: u64) -> Option<&'a Val> {
+    if let PhpValue::Array(a) = &arr.value {
+        a.ar_data
+            .iter()
+            .find(|b| b.key.is_none() && b.h == idx)
+            .map(|b| &b.val)
+    } else {
+        None
+    }
+}
+
 fn run(
     name: &'static str,
     args: &[Val],
@@ -923,3 +954,396 @@ fn reflection_class_methods() {
     assert!(has_m.is_some());
     assert!(!zval_get_bool(&has_m.unwrap()));
 }
+
+#[test]
+fn reflection_function_and_parameter_and_method_params() {
+    use crate::engine::compile::compile_string_with_functions;
+    use std::sync::Arc;
+
+    // Compile a script that defines a user function and a class with a method.
+    let (_op_array, ft) = compile_string_with_functions(
+        "<?php function greet($name, $greeting) { return $greeting; }",
+        "reflect.php",
+    )
+    .expect("compile");
+    let mut ed = ExecuteData::new();
+    ed.function_table = Some(Arc::new(ft));
+
+    // ReflectionFunction pointing at the user function `greet`.
+    let mut rf_obj = PhpObject::new("ReflectionFunction");
+    rf_obj.properties.insert("name".to_string(), str_val("greet"));
+    ed.set_var("this", Val::new(PhpValue::Object(Box::new(rf_obj)), PhpType::Object));
+
+    let n = crate::engine::vm::reflection::execute_reflection_function(
+        "getNumberOfParameters", &[], &mut ed,
+    )
+    .unwrap();
+    assert_eq!(zval_get_long(&n), 2);
+
+    let is_builtin =
+        crate::engine::vm::reflection::execute_reflection_function("isBuiltin", &[], &mut ed)
+            .unwrap();
+    assert!(!zval_get_bool(&is_builtin));
+
+    let params =
+        crate::engine::vm::reflection::execute_reflection_function("getParameters", &[], &mut ed)
+            .unwrap();
+    if let PhpValue::Array(p) = &params.value {
+        assert_eq!(p.ar_data.len(), 2);
+        assert_eq!(zval_get_string(&p.ar_data[0].val).as_str(), "name");
+        assert_eq!(zval_get_string(&p.ar_data[1].val).as_str(), "greeting");
+    } else {
+        panic!("getParameters should return an array");
+    }
+
+    // ReflectionParameter for greet's second param.
+    let mut rp_obj = PhpObject::new("ReflectionParameter");
+    rp_obj.properties.insert("function".to_string(), str_val("greet"));
+    rp_obj.properties.insert("name".to_string(), str_val("greeting"));
+    rp_obj.properties.insert("position".to_string(), long_val(1));
+    ed.set_var("this", Val::new(PhpValue::Object(Box::new(rp_obj)), PhpType::Object));
+
+    let pname =
+        crate::engine::vm::reflection::execute_reflection_parameter("getName", &[], &mut ed)
+            .unwrap();
+    assert_eq!(zval_get_string(&pname).as_str(), "greeting");
+    let pos =
+        crate::engine::vm::reflection::execute_reflection_parameter("getPosition", &[], &mut ed)
+            .unwrap();
+    assert_eq!(zval_get_long(&pos), 1);
+}
+
+// --- phprs stdlib additions (array/string/math/type/callbacks) ---
+
+#[test]
+fn array_combine_flip_search_unique() {
+    let mut ed = ExecuteData::new();
+    let keys = array_from_vals(&[str_val("a"), str_val("b")]);
+    let vals = array_from_vals(&[str_val("1"), str_val("2")]);
+
+    let combined = run("array_combine", &[keys, vals], &mut ed).unwrap().unwrap();
+    if let PhpValue::Array(c) = &combined.value {
+        assert_eq!(c.ar_data.len(), 2);
+        assert_eq!(c.ar_data[0].key.as_ref().unwrap().as_str(), "a");
+    } else {
+        panic!("array_combine");
+    }
+
+    let src = array_from_str_keys(&[("x", "1"), ("y", "2")]);
+    let flipped = run("array_flip", &[src], &mut ed).unwrap().unwrap();
+    if let PhpValue::Array(f) = &flipped.value {
+        assert_eq!(f.ar_data[0].key.as_ref().unwrap().as_str(), "1");
+    } else {
+        panic!("array_flip");
+    }
+
+    let hay = || array_from_vals(&[str_val("red"), str_val("green"), str_val("blue")]);
+    let found = run("array_search", &[str_val("green"), hay()], &mut ed)
+        .unwrap()
+        .unwrap();
+    assert_eq!(zval_get_long(&found), 1);
+    let miss = run("array_search", &[str_val("purple"), hay()], &mut ed)
+        .unwrap()
+        .unwrap();
+    assert!(!zval_get_bool(&miss));
+
+    let dupes = array_from_vals(&[str_val("a"), str_val("b"), str_val("a"), str_val("c")]);
+    let uniq = run("array_unique", &[dupes], &mut ed).unwrap().unwrap();
+    if let PhpValue::Array(u) = &uniq.value {
+        assert_eq!(u.ar_data.len(), 3);
+    } else {
+        panic!("array_unique");
+    }
+}
+
+#[test]
+fn array_column_sum_product_chunk_count_fill_pad_range() {
+    let mut ed = ExecuteData::new();
+
+    // array_column over list-of-rows
+    let row1 = array_from_str_keys(&[("id", "10"), ("name", "alice")]);
+    let row2 = array_from_str_keys(&[("id", "20"), ("name", "bob")]);
+    let rows = array_from_vals(&[row1, row2]);
+    let col = run("array_column", &[rows, str_val("name")], &mut ed)
+        .unwrap()
+        .unwrap();
+    if let PhpValue::Array(c) = &col.value {
+        assert_eq!(c.ar_data.len(), 2);
+        assert_eq!(zval_get_string(&c.ar_data[0].val).as_str(), "alice");
+    } else {
+        panic!("array_column");
+    }
+
+    assert_eq!(
+        zval_get_long(&run("array_sum", &[array_from_longs(&[1, 2, 3, 4])], &mut ed).unwrap().unwrap()),
+        10
+    );
+    assert_eq!(
+        zval_get_long(&run(
+            "array_product",
+            &[array_from_longs(&[1, 2, 3, 4])],
+            &mut ed
+        )
+        .unwrap()
+        .unwrap()),
+        24
+    );
+
+    let chunked = run(
+        "array_chunk",
+        &[array_from_longs(&[1, 2, 3, 4, 5]), long_val(2)],
+        &mut ed,
+    )
+    .unwrap()
+    .unwrap();
+    if let PhpValue::Array(c) = &chunked.value {
+        assert_eq!(c.ar_data.len(), 3); // [1,2],[3,4],[5]
+    } else {
+        panic!("array_chunk");
+    }
+
+    let counts = run(
+        "array_count_values",
+        &[array_from_vals(&[str_val("a"), str_val("b"), str_val("a")])],
+        &mut ed,
+    )
+    .unwrap()
+    .unwrap();
+    if let PhpValue::Array(c) = &counts.value {
+        let a_count = c
+            .ar_data
+            .iter()
+            .find(|b| b.key.as_deref().map(|k| k.as_str() == "a").unwrap_or(false))
+            .map(|b| zval_get_long(&b.val))
+            .unwrap_or(0);
+        assert_eq!(a_count, 2);
+    } else {
+        panic!("array_count_values");
+    }
+
+    let filled = run(
+        "array_fill",
+        &[long_val(5), long_val(3), str_val("x")],
+        &mut ed,
+    )
+    .unwrap()
+    .unwrap();
+    if let PhpValue::Array(f) = &filled.value {
+        assert_eq!(f.ar_data.len(), 3);
+        assert_eq!(f.ar_data[0].h, 5);
+    } else {
+        panic!("array_fill");
+    }
+
+    let padded = run(
+        "array_pad",
+        &[array_from_longs(&[1, 2]), long_val(4), long_val(0)],
+        &mut ed,
+    )
+    .unwrap()
+    .unwrap();
+    if let PhpValue::Array(p) = &padded.value {
+        assert_eq!(p.ar_data.len(), 4);
+    } else {
+        panic!("array_pad");
+    }
+
+    let r = run("range", &[long_val(1), long_val(4)], &mut ed).unwrap().unwrap();
+    if let PhpValue::Array(a) = &r.value {
+        assert_eq!(a.ar_data.len(), 4);
+        assert_eq!(zval_get_long(&a.ar_data[0].val), 1);
+        assert_eq!(zval_get_long(&a.ar_data[3].val), 4);
+    } else {
+        panic!("range");
+    }
+}
+
+#[test]
+fn array_diff_intersect() {
+    let mut ed = ExecuteData::new();
+    let a = || array_from_vals(&[str_val("a"), str_val("b"), str_val("c")]);
+    let b = || array_from_vals(&[str_val("b")]);
+    let diff = run("array_diff", &[a(), b()], &mut ed).unwrap().unwrap();
+    if let PhpValue::Array(d) = &diff.value {
+        assert_eq!(d.ar_data.len(), 2);
+    } else {
+        panic!("array_diff");
+    }
+    let inter = run("array_intersect", &[a(), b()], &mut ed).unwrap().unwrap();
+    if let PhpValue::Array(i) = &inter.value {
+        assert_eq!(i.ar_data.len(), 1);
+        assert_eq!(zval_get_string(&i.ar_data[0].val).as_str(), "b");
+    } else {
+        panic!("array_intersect");
+    }
+}
+
+#[test]
+fn array_map_with_builtin_callback() {
+    let mut ed = ExecuteData::new();
+    let src = array_from_vals(&[str_val("foo"), str_val("bar")]);
+    let mapped = run("array_map", &[str_val("strtoupper"), src], &mut ed)
+        .unwrap()
+        .unwrap();
+    if let PhpValue::Array(m) = &mapped.value {
+        assert_eq!(zval_get_string(&m.ar_data[0].val).as_str(), "FOO");
+        assert_eq!(zval_get_string(&m.ar_data[1].val).as_str(), "BAR");
+    } else {
+        panic!("array_map");
+    }
+}
+
+#[test]
+fn array_filter_default_and_callback() {
+    let mut ed = ExecuteData::new();
+    // Default: drop falsy (0 and "")
+    let src = array_from_longs(&[0, 1, 2, 0, 3]);
+    let filtered = run("array_filter", &[src], &mut ed).unwrap().unwrap();
+    if let PhpValue::Array(f) = &filtered.value {
+        assert_eq!(f.ar_data.len(), 3); // 1,2,3
+    } else {
+        panic!("array_filter");
+    }
+
+    // Callback-based: keep elements where intval() is truthy.
+    // intval("0")=0 falsy, intval("5")=5 truthy, intval("9")=9 truthy.
+    let strs = || array_from_vals(&[str_val("0"), str_val("5"), str_val("0"), str_val("9")]);
+    let f2 = run("array_filter", &[strs(), str_val("intval")], &mut ed)
+        .unwrap()
+        .unwrap();
+    if let PhpValue::Array(f) = &f2.value {
+        assert_eq!(f.ar_data.len(), 2); // 5 and 9 kept
+    } else {
+        panic!("array_filter callback");
+    }
+}
+
+#[test]
+fn call_user_func_and_array_invoke_builtin() {
+    let mut ed = ExecuteData::new();
+    let r = run(
+        "call_user_func",
+        &[str_val("strtoupper"), str_val("abc")],
+        &mut ed,
+    )
+    .unwrap()
+    .unwrap();
+    assert_eq!(zval_get_string(&r).as_str(), "ABC");
+
+    let args = array_from_vals(&[str_val("ab"), str_val("cd")]);
+    let r2 = run(
+        "call_user_func_array",
+        &[str_val("implode"), array_from_vals(&[str_val("-"), args])],
+        &mut ed,
+    )
+    .unwrap()
+    .unwrap();
+    assert_eq!(zval_get_string(&r2).as_str(), "ab-cd");
+}
+
+#[test]
+fn string_substr_count_replace_strpbrk_compare() {
+    let mut ed = ExecuteData::new();
+    assert_eq!(
+        zval_get_long(
+            &run("substr_count", &[str_val("ababab"), str_val("ab")], &mut ed)
+                .unwrap()
+                .unwrap()
+        ),
+        3
+    );
+
+    let rep = run(
+        "substr_replace",
+        &[str_val("Hello World"), str_val("PHP"), long_val(0), long_val(5)],
+        &mut ed,
+    )
+    .unwrap()
+    .unwrap();
+    assert_eq!(zval_get_string(&rep).as_str(), "PHP World");
+
+    let hit = run("strpbrk", &[str_val("hello"), str_val("oe")], &mut ed)
+        .unwrap()
+        .unwrap();
+    assert_eq!(zval_get_string(&hit).as_str(), "ello");
+    let miss = run("strpbrk", &[str_val("hello"), str_val("xyz")], &mut ed)
+        .unwrap()
+        .unwrap();
+    assert!(!zval_get_bool(&miss));
+
+    let cmp = run(
+        "substr_compare",
+        &[str_val("hello world"), str_val("world"), long_val(6)],
+        &mut ed,
+    )
+    .unwrap()
+    .unwrap();
+    assert_eq!(zval_get_long(&cmp), 0);
+}
+
+#[test]
+fn math_intdiv_fmod_hypot() {
+    let mut ed = ExecuteData::new();
+    assert_eq!(
+        zval_get_long(&run("intdiv", &[long_val(7), long_val(2)], &mut ed).unwrap().unwrap()),
+        3
+    );
+    let fm = run("fmod", &[double_val(5.7), double_val(1.6)], &mut ed)
+        .unwrap()
+        .unwrap();
+    assert!((zval_get_double(&fm) - 0.9).abs() < 1e-9);
+    let h = run("hypot", &[double_val(3.0), double_val(4.0)], &mut ed)
+        .unwrap()
+        .unwrap();
+    assert!((zval_get_double(&h) - 5.0).abs() < 1e-9);
+}
+
+#[test]
+fn is_nan_infinite_finite() {
+    let mut ed = ExecuteData::new();
+    assert!(!zval_get_bool(
+        &run("is_nan", &[long_val(1)], &mut ed).unwrap().unwrap()
+    ));
+    let nan = run(
+        "fmod",
+        &[double_val(f64::NAN), double_val(1.0)],
+        &mut ed,
+    )
+    .unwrap()
+    .unwrap();
+    assert!(zval_get_bool(
+        &run("is_nan", &[nan.clone()], &mut ed).unwrap().unwrap()
+    ));
+    assert!(!zval_get_bool(
+        &run("is_finite", &[nan], &mut ed).unwrap().unwrap()
+    ));
+}
+
+#[test]
+fn is_numeric_and_is_callable_boolval() {
+    let mut ed = ExecuteData::new();
+    assert!(zval_get_bool(
+        &run("is_numeric", &[str_val("123")], &mut ed).unwrap().unwrap()
+    ));
+    assert!(zval_get_bool(
+        &run("is_numeric", &[str_val("1.5e3")], &mut ed).unwrap().unwrap()
+    ));
+    assert!(!zval_get_bool(
+        &run("is_numeric", &[str_val("abc")], &mut ed).unwrap().unwrap()
+    ));
+
+    assert!(zval_get_bool(
+        &run("is_callable", &[str_val("strlen")], &mut ed).unwrap().unwrap()
+    ));
+    assert!(!zval_get_bool(
+        &run("is_callable", &[str_val("no_such_fn_xyz")], &mut ed).unwrap().unwrap()
+    ));
+
+    assert!(zval_get_bool(
+        &run("boolval", &[long_val(1)], &mut ed).unwrap().unwrap()
+    ));
+    assert!(!zval_get_bool(
+        &run("boolval", &[long_val(0)], &mut ed).unwrap().unwrap()
+    ));
+}
+

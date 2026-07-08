@@ -263,3 +263,19 @@ echo $inc(9);
     assert!(out.contains("8"), "static FCC output: {out:?}");
     assert!(out.contains("10"), "method FCC output: {out:?}");
 }
+
+#[test]
+fn test_logical_and_combined_comparisons() {
+    let code = r#"<?php
+$a = 'Home';
+$b = 'index';
+if ($a == 'Home' && $b == 'index') {
+    echo "ok\n";
+} else {
+    echo "fail\n";
+}
+"#;
+    let (r, out) = run_php(code).expect("run");
+    assert!(matches!(r, PhpResult::Success), "vm result: {r:?}, output: {out:?}");
+    assert!(out.contains("ok"), "combined && output: {out:?}");
+}

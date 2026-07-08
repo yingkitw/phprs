@@ -1578,7 +1578,12 @@ pub fn execute_do_method_call(
         let class_name = obj.class_name.clone();
 
         // Handle built-in reflection classes
-        if class_name == "ReflectionClass" || class_name == "ReflectionMethod" || class_name == "ReflectionProperty" {
+        if class_name == "ReflectionClass"
+            || class_name == "ReflectionMethod"
+            || class_name == "ReflectionProperty"
+            || class_name == "ReflectionFunction"
+            || class_name == "ReflectionParameter"
+        {
             let (base, _names_base) = execute_data.call_arg_stack.pop().unwrap_or((0, 0));
             let args: Vec<Val> = execute_data.call_args.drain(base..).collect();
             execute_data.called_class = Some(class_name.clone());
@@ -1588,6 +1593,8 @@ pub fn execute_do_method_call(
                 "ReflectionClass" => crate::engine::vm::reflection::execute_reflection_class_method(method_name.as_str(), &args, execute_data),
                 "ReflectionMethod" => crate::engine::vm::reflection::execute_reflection_method(method_name.as_str(), &args, execute_data),
                 "ReflectionProperty" => crate::engine::vm::reflection::execute_reflection_property(method_name.as_str(), &args, execute_data),
+                "ReflectionFunction" => crate::engine::vm::reflection::execute_reflection_function(method_name.as_str(), &args, execute_data),
+                "ReflectionParameter" => crate::engine::vm::reflection::execute_reflection_parameter(method_name.as_str(), &args, execute_data),
                 _ => None,
             };
 
