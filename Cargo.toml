@@ -3,13 +3,15 @@ name = "phprs"
 version = "0.1.15"
 authors = ["Ying kit WONG"]
 license = "Apache-2.0"
-description = "A PHP interpreter with build/package manager written in Rust"
+description = "PHP interpreter, compiler, runtime VM and package manager written in Rust. Memory-safe host code for running PHP scripts and popular PHP frameworks."
+readme = "README.md"
 edition = "2024"
+rust-version = "1.85.0"
 repository = "https://github.com/yingkitw/phprs"
 homepage = "https://github.com/yingkitw/phprs"
 documentation = "https://docs.rs/phprs"
-keywords = ["php", "interpreter", "build", "package-manager"]
-categories = ["command-line-utilities", "development-tools"]
+keywords = ["php", "interpreter", "runtime", "compiler", "package-manager"]
+categories = ["command-line-utilities", "development-tools", "web-programming"]
 
 # Note: The binary is in the bin/phprs workspace member
 

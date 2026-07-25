@@ -1,11 +1,58 @@
-# phprs
+# phprs — PHP Interpreter, Compiler, Runtime VM & Package Manager in Rust
 
-**Modernizing PHP with Rust** — a memory-safe PHP interpreter and toolchain written in Rust. Performance is a goal; rigorous, published comparisons against PHP are not claimed here yet.
+**phprs** is an open-source **PHP interpreter, compiler, runtime VM, package manager and development server written in Rust**. It runs PHP scripts directly, compiles PHP source to an internal opcode format, and ships with tooling for CLI execution, local web serving and Composer-compatible package management — all backed by memory-safe Rust host code.
+
+Use phprs to run PHP CLI scripts, serve PHP pages locally, or experiment with running PHP frameworks such as **WordPress, CodeIgniter, Laravel, Drupal and Symfony** on a Rust-based runtime.
 
 [![Rust](https://img.shields.io/badge/rust-2024-orange.svg)](https://www.rust-lang.org/)
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
 [![Build Status](https://img.shields.io/badge/build-passing-brightgreen.svg)]()
 [![Tests](https://img.shields.io/badge/tests-485%2B%20passing-brightgreen.svg)]()
+
+---
+
+## Table of Contents
+
+1. [What is phprs?](#what-is-phprs)
+2. [Features](#features)
+3. [Why phprs? The Rust Advantage](#why-phprs-the-rust-advantage)
+   - [Framework Support](#framework-support)
+4. [Quick Start](#quick-start)
+   - [Installation](#installation)
+   - [Run a PHP script](#run-a-php-script)
+   - [Start the PHP dev server](#start-the-php-dev-server)
+   - [Package management](#package-management)
+5. [Examples](#examples)
+6. [Project Structure](#project-structure)
+7. [API Usage](#api-usage)
+8. [Framework Compatibility](#framework-compatibility)
+9. [Documentation](#documentation)
+10. [Contributing](#contributing)
+11. [License](#license)
+
+## What is phprs?
+
+phprs is a from-scratch **PHP runtime written in Rust**. It includes:
+
+- **PHP lexer and parser** — tokenizes PHP 7/8-style source into an abstract syntax tree.
+- **Compiler** — lowers PHP expressions, statements and functions into a typed opcode array.
+- **Virtual Machine (VM)** — executes opcodes via a direct dispatch table with 73 opcodes.
+- **Built-in PHP functions** — 195+ standard library functions covering math, strings, arrays, files, streams, sessions, regex, hashing and more.
+- **Package manager** — Composer-compatible install/update workflows powered by `semver`.
+- **Development server** — `phprs serve` runs PHP pages locally.
+- **Rust library API** — embed a PHP runtime in your Rust application or call PHP builtins from Rust code.
+
+The project is primarily a research and engineering playground: it proves PHP semantics can be hosted safely in Rust while remaining useful for real scripts, demos and framework bootstraps.
+
+## Features
+
+- 🛡️ **Memory-safe PHP runtime** — host code in Rust eliminates whole classes of C/C++ interpreter bugs.
+- ⚡ **Opcode VM with JIT hooks** — direct dispatch plus optimization and tracing infrastructure.
+- 🧩 **Standard PHP library** — `echo`, `array`, `function`, `class`, `try`/`catch`, `foreach`, closures, null coalescing, match expressions and more.
+- 🌐 **Web server for PHP** — `phprs serve` for local development.
+- 📦 **PHP package manager** — install packages from Packagist / private Composer repositories.
+- 🧪 **Extensive test suite** — 485+ workspace tests plus CI for root PHP examples and Rust demos.
+- 🔌 **Embeddable library** — use `phprs` as a crate in Rust projects.
 
 ## Why phprs? The Rust Advantage
 
@@ -97,9 +144,9 @@ cargo build --release
 # CLI binary: target/release/phprs (from `phprs-cli` workspace member)
 ```
 
-### Usage - It's That Simple!
+### Run a PHP script
 
-**Run any PHP file** - Zero configuration needed:
+Run any PHP file with zero configuration:
 ```bash
 # Run a PHP script
 phprs run script.php
@@ -108,7 +155,8 @@ phprs run script.php
 cargo run -p phprs-cli -- run script.php
 ```
 
-**Start development server**:
+### Start the PHP dev server
+
 ```bash
 # Built-in web server on port 3080
 phprs serve
@@ -117,7 +165,8 @@ phprs serve
 phprs serve --port 8080
 ```
 
-**Package management**:
+### Package management
+
 ```bash
 # Initialize composer.json
 phprs pkg init
