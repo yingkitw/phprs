@@ -2,11 +2,9 @@
 //!
 //! Tests for error conditions and error handling
 
-use phprs::errors::{
-    php_error, error_at_line, set_error_handler, PhpError, ErrorType,
-};
-use std::sync::atomic::{AtomicU32, Ordering};
+use phprs::errors::{ErrorType, PhpError, error_at_line, php_error, set_error_handler};
 use std::sync::Mutex;
+use std::sync::atomic::{AtomicU32, Ordering};
 
 static ERROR_COUNT: AtomicU32 = AtomicU32::new(0);
 /// Serialize tests that touch the process-wide error handler (otherwise parallel `cargo test` races).

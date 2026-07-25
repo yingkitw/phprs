@@ -124,7 +124,7 @@ pub enum TokenType {
     T_COALESCE = 308,                 // ??
     T_AMPERSAND_FOLLOWED_BY_VAR_OR_VARARG = 309,
     T_AMPERSAND_NOT_FOLLOWED_BY_VAR_OR_VARARG = 310,
-    T_PAAMAYIM_NEKUDOTAYIM = 400,     // :: (double colon / scope resolution)
+    T_PAAMAYIM_NEKUDOTAYIM = 400, // :: (double colon / scope resolution)
 
     // Literals
     T_LNUMBER = 311,
@@ -179,12 +179,7 @@ mod tests {
 
     #[test]
     fn test_token_creation() {
-        let token = Token::new(
-            TokenType::T_ECHO,
-            Some(string_init("echo", false)),
-            1,
-            0,
-        );
+        let token = Token::new(TokenType::T_ECHO, Some(string_init("echo", false)), 1, 0);
         assert_eq!(token.token_type, TokenType::T_ECHO);
         assert_eq!(token.lineno, 1);
         assert_eq!(token.offset, 0);

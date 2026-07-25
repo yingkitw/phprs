@@ -12,7 +12,13 @@ pub fn zval_get_long(zval: &Val) -> i64 {
     match &zval.value {
         PhpValue::Long(l) => *l,
         PhpValue::Double(d) => *d as i64,
-        PhpValue::Bool(b) => if *b { 1 } else { 0 },
+        PhpValue::Bool(b) => {
+            if *b {
+                1
+            } else {
+                0
+            }
+        }
         PhpValue::String(s) => {
             // Try to parse string as integer
             s.as_str().parse().unwrap_or(0)
@@ -28,7 +34,13 @@ pub fn zval_get_double(zval: &Val) -> f64 {
     match &zval.value {
         PhpValue::Long(l) => *l as f64,
         PhpValue::Double(d) => *d,
-        PhpValue::Bool(b) => if *b { 1.0 } else { 0.0 },
+        PhpValue::Bool(b) => {
+            if *b {
+                1.0
+            } else {
+                0.0
+            }
+        }
         PhpValue::String(s) => {
             // Try to parse string as float
             s.as_str().parse().unwrap_or(0.0)
@@ -195,7 +207,7 @@ mod tests {
         let z = Val::new(PhpValue::Long(42), PhpType::Long);
         assert_eq!(zval_get_long(&z), 42);
 
-        let z = Val::new(PhpValue::Double(3.14), PhpType::Double);
+        let z = Val::new(PhpValue::Double(std::f64::consts::PI), PhpType::Double);
         assert_eq!(zval_get_long(&z), 3);
     }
 

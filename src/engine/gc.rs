@@ -152,11 +152,7 @@ impl Gc {
             };
             (*ref_).gc.type_info.store(type_info, Ordering::Release);
 
-            if is_black {
-                1
-            } else {
-                0
-            }
+            if is_black { 1 } else { 0 }
         }
     }
 

@@ -27,7 +27,7 @@ fn main() {
 
     // Add numeric keys
     let key3 = string_init("pi", false);
-    let val3 = Val::new(PhpValue::Double(3.14), PhpType::Double);
+    let val3 = Val::new(PhpValue::Double(std::f64::consts::PI), PhpType::Double);
     hash_add_or_update(&mut ht, Some(&key3), 0, val3, 0);
 
     println!("Hash table size: {}", ht.n_num_of_elements);

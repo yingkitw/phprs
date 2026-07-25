@@ -24,15 +24,25 @@ fn standard_parent(class: &str) -> Option<&'static str> {
         "Throwable" => None,
         "Exception" | "Error" => Some("Throwable"),
         "RuntimeException" | "LogicException" | "RuntimeExceptionBase" => Some("Exception"),
-        "InvalidArgumentException" | "BadMethodCallException" | "BadFunctionCallException"
+        "InvalidArgumentException"
+        | "BadMethodCallException"
+        | "BadFunctionCallException"
         | "OutOfBoundsException" => Some("LogicException"),
-        "OverflowException" | "UnderflowException" | "OutOfRangeException"
-        | "UnexpectedValueException" | "RangeException" | "DomainException"
+        "OverflowException"
+        | "UnderflowException"
+        | "OutOfRangeException"
+        | "UnexpectedValueException"
+        | "RangeException"
+        | "DomainException"
         | "LengthException" => Some("RuntimeException"),
-        "TypeError" | "ValueError" | "ArgumentCountError" | "ArithmeticError"
-        | "DivisionByZeroError" | "ParseError" | "AssertionError" | "UnhandledMatchError" => {
-            Some("Error")
-        }
+        "TypeError"
+        | "ValueError"
+        | "ArgumentCountError"
+        | "ArithmeticError"
+        | "DivisionByZeroError"
+        | "ParseError"
+        | "AssertionError"
+        | "UnhandledMatchError" => Some("Error"),
         "PDOException" => Some("RuntimeException"),
         _ => None,
     }
@@ -61,7 +71,10 @@ pub fn exception_is_a(
         if current == catch_class {
             return true;
         }
-        match class_table.get(current).and_then(|ce| ce.parent_name.as_deref()) {
+        match class_table
+            .get(current)
+            .and_then(|ce| ce.parent_name.as_deref())
+        {
             Some(parent) => {
                 current = parent;
                 hops += 1;
@@ -91,10 +104,7 @@ pub fn exception_is_a(
 /// Outcome of searching for a handler for a pending exception.
 pub enum ExceptionOutcome {
     /// A catch matched: jump to `body_start` and bind `exception` to `var`.
-    Caught {
-        body_start: u32,
-        var: String,
-    },
+    Caught { body_start: u32, var: String },
     /// No enclosing catch matched.
     Uncaught,
 }
@@ -106,11 +116,20 @@ pub fn thrown_class_and_message(val: &Val) -> (String, String) {
             let msg = obj
                 .properties
                 .get("message")
-                .map(|v| crate::engine::operators::zval_get_string(v).as_str().to_string())
+                .map(|v| {
+                    crate::engine::operators::zval_get_string(v)
+                        .as_str()
+                        .to_string()
+                })
                 .unwrap_or_default();
             (obj.class_name.clone(), msg)
         }
-        _ => ("Throwable".to_string(), crate::engine::operators::zval_get_string(val).as_str().to_string()),
+        _ => (
+            "Throwable".to_string(),
+            crate::engine::operators::zval_get_string(val)
+                .as_str()
+                .to_string(),
+        ),
     }
 }
 
@@ -196,10 +215,7 @@ pub fn dispatch_exception(execute_data: &mut ExecuteData, thrown_class: &str) ->
             .unwrap_or_default();
         for (catch_class, var, body_start) in catches {
             if exception_is_a(thrown_class, &catch_class, &execute_data.class_table) {
-                return ExceptionOutcome::Caught {
-                    body_start,
-                    var,
-                };
+                return ExceptionOutcome::Caught { body_start, var };
             }
         }
         // This try didn't catch it; keep popping to propagate outward.

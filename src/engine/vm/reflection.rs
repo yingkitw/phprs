@@ -4,7 +4,7 @@
 //! as builtin classes registered in the VM class table.
 
 use crate::engine::types::{ClassEntry, PhpArray, PhpType, PhpValue, Val};
-use crate::engine::vm::execute_data::{clone_val, ExecuteData};
+use crate::engine::vm::execute_data::{ExecuteData, clone_val};
 
 /// Register built-in reflection classes into the execute_data class table
 pub fn register_reflection_classes(execute_data: &mut ExecuteData) {
@@ -17,28 +17,52 @@ pub fn register_reflection_classes(execute_data: &mut ExecuteData) {
 
 fn register_reflection_class(execute_data: &mut ExecuteData) {
     let mut ce = ClassEntry::new("ReflectionClass");
-    ce.default_properties.insert("name".to_string(), Val::new(PhpValue::Long(0), PhpType::Null));
+    ce.default_properties.insert(
+        "name".to_string(),
+        Val::new(PhpValue::Long(0), PhpType::Null),
+    );
     // Methods are handled specially in execute_do_method_call
-    execute_data.class_table.insert("ReflectionClass".to_string(), ce);
+    execute_data
+        .class_table
+        .insert("ReflectionClass".to_string(), ce);
 }
 
 fn register_reflection_method(execute_data: &mut ExecuteData) {
     let mut ce = ClassEntry::new("ReflectionMethod");
-    ce.default_properties.insert("class".to_string(), Val::new(PhpValue::Long(0), PhpType::Null));
-    ce.default_properties.insert("name".to_string(), Val::new(PhpValue::Long(0), PhpType::Null));
-    execute_data.class_table.insert("ReflectionMethod".to_string(), ce);
+    ce.default_properties.insert(
+        "class".to_string(),
+        Val::new(PhpValue::Long(0), PhpType::Null),
+    );
+    ce.default_properties.insert(
+        "name".to_string(),
+        Val::new(PhpValue::Long(0), PhpType::Null),
+    );
+    execute_data
+        .class_table
+        .insert("ReflectionMethod".to_string(), ce);
 }
 
 fn register_reflection_property(execute_data: &mut ExecuteData) {
     let mut ce = ClassEntry::new("ReflectionProperty");
-    ce.default_properties.insert("class".to_string(), Val::new(PhpValue::Long(0), PhpType::Null));
-    ce.default_properties.insert("name".to_string(), Val::new(PhpValue::Long(0), PhpType::Null));
-    execute_data.class_table.insert("ReflectionProperty".to_string(), ce);
+    ce.default_properties.insert(
+        "class".to_string(),
+        Val::new(PhpValue::Long(0), PhpType::Null),
+    );
+    ce.default_properties.insert(
+        "name".to_string(),
+        Val::new(PhpValue::Long(0), PhpType::Null),
+    );
+    execute_data
+        .class_table
+        .insert("ReflectionProperty".to_string(), ce);
 }
 
 fn register_reflection_function(execute_data: &mut ExecuteData) {
     let mut ce = ClassEntry::new("ReflectionFunction");
-    ce.default_properties.insert("name".to_string(), Val::new(PhpValue::Long(0), PhpType::Null));
+    ce.default_properties.insert(
+        "name".to_string(),
+        Val::new(PhpValue::Long(0), PhpType::Null),
+    );
     execute_data
         .class_table
         .insert("ReflectionFunction".to_string(), ce);
@@ -46,12 +70,18 @@ fn register_reflection_function(execute_data: &mut ExecuteData) {
 
 fn register_reflection_parameter(execute_data: &mut ExecuteData) {
     let mut ce = ClassEntry::new("ReflectionParameter");
-    ce.default_properties
-        .insert("function".to_string(), Val::new(PhpValue::Long(0), PhpType::Null));
-    ce.default_properties
-        .insert("name".to_string(), Val::new(PhpValue::Long(0), PhpType::Null));
-    ce.default_properties
-        .insert("position".to_string(), Val::new(PhpValue::Long(0), PhpType::Long));
+    ce.default_properties.insert(
+        "function".to_string(),
+        Val::new(PhpValue::Long(0), PhpType::Null),
+    );
+    ce.default_properties.insert(
+        "name".to_string(),
+        Val::new(PhpValue::Long(0), PhpType::Null),
+    );
+    ce.default_properties.insert(
+        "position".to_string(),
+        Val::new(PhpValue::Long(0), PhpType::Long),
+    );
     execute_data
         .class_table
         .insert("ReflectionParameter".to_string(), ce);
@@ -60,8 +90,7 @@ fn register_reflection_parameter(execute_data: &mut ExecuteData) {
 /// Return the parameter names of a free function (builtins expose none).
 fn function_param_names(execute_data: &ExecuteData, name: &str) -> Option<Vec<String>> {
     let ft = execute_data.function_table.as_ref()?;
-    let ft = ft
-        .downcast_ref::<crate::engine::compile::function_table::FunctionTable>()?;
+    let ft = ft.downcast_ref::<crate::engine::compile::function_table::FunctionTable>()?;
     let op_array = ft.lookup_function(name)?;
     let names: Vec<String> = op_array
         .vars
@@ -95,7 +124,9 @@ pub fn execute_reflection_class_method(
     let this_val = execute_data.get_var("this");
     let reflected_name = if let PhpValue::Object(ref obj) = this_val.value {
         obj.properties.get("name").map(|v| {
-            crate::engine::operators::zval_get_string(v).as_str().to_string()
+            crate::engine::operators::zval_get_string(v)
+                .as_str()
+                .to_string()
         })
     } else {
         None
@@ -104,84 +135,131 @@ pub fn execute_reflection_class_method(
     match method_name {
         "__construct" => {
             if let Some(class_name) = args.first() {
-                let name = crate::engine::operators::zval_get_string(class_name).as_str().to_string();
+                let name = crate::engine::operators::zval_get_string(class_name)
+                    .as_str()
+                    .to_string();
                 let mut updated = clone_val(&this_val);
                 if let PhpValue::Object(ref mut obj_mut) = updated.value {
-                    obj_mut.properties.insert("name".to_string(), Val::new(
-                        PhpValue::String(Box::new(crate::engine::string::string_init(&name, false))),
-                        PhpType::String,
-                    ));
+                    obj_mut.properties.insert(
+                        "name".to_string(),
+                        Val::new(
+                            PhpValue::String(Box::new(crate::engine::string::string_init(
+                                &name, false,
+                            ))),
+                            PhpType::String,
+                        ),
+                    );
                 }
                 execute_data.set_var("this", updated);
             }
             None
         }
-        "getName" => {
-            reflected_name.map(|n| Val::new(
+        "getName" => reflected_name.map(|n| {
+            Val::new(
                 PhpValue::String(Box::new(crate::engine::string::string_init(&n, false))),
                 PhpType::String,
-            ))
-        }
+            )
+        }),
         "getMethods" => {
             let mut result = PhpArray::new();
-            if let Some(ref cn) = reflected_name {
-                if let Some(reflected_ce) = execute_data.class_table.get(cn) {
-                    let mut idx: u64 = 0;
-                    for (method_name, _method) in &reflected_ce.methods {
-                        let val = Val::new(
-                            PhpValue::String(Box::new(crate::engine::string::string_init(method_name, false))),
-                            PhpType::String,
-                        );
-                        let _ = crate::engine::hash::hash_add_or_update(&mut result, None, idx, val, 0);
-                        idx += 1;
-                    }
+            if let Some(ref cn) = reflected_name
+                && let Some(reflected_ce) = execute_data.class_table.get(cn)
+            {
+                let mut idx: u64 = 0;
+                for method_name in reflected_ce.methods.keys() {
+                    let val = Val::new(
+                        PhpValue::String(Box::new(crate::engine::string::string_init(
+                            method_name,
+                            false,
+                        ))),
+                        PhpType::String,
+                    );
+                    let _ = crate::engine::hash::hash_add_or_update(&mut result, None, idx, val, 0);
+                    idx += 1;
                 }
             }
             Some(Val::new(PhpValue::Array(Box::new(result)), PhpType::Array))
         }
         "getProperties" => {
             let mut result = PhpArray::new();
-            if let Some(ref cn) = reflected_name {
-                if let Some(reflected_ce) = execute_data.class_table.get(cn) {
-                    let mut idx: u64 = 0;
-                    for prop_name in reflected_ce.default_properties.keys() {
-                        let val = Val::new(
-                            PhpValue::String(Box::new(crate::engine::string::string_init(prop_name, false))),
-                            PhpType::String,
-                        );
-                        let _ = crate::engine::hash::hash_add_or_update(&mut result, None, idx, val, 0);
-                        idx += 1;
-                    }
+            if let Some(ref cn) = reflected_name
+                && let Some(reflected_ce) = execute_data.class_table.get(cn)
+            {
+                let mut idx: u64 = 0;
+                for prop_name in reflected_ce.default_properties.keys() {
+                    let val = Val::new(
+                        PhpValue::String(Box::new(crate::engine::string::string_init(
+                            prop_name, false,
+                        ))),
+                        PhpType::String,
+                    );
+                    let _ = crate::engine::hash::hash_add_or_update(&mut result, None, idx, val, 0);
+                    idx += 1;
                 }
             }
             Some(Val::new(PhpValue::Array(Box::new(result)), PhpType::Array))
         }
         "hasMethod" => {
-            let exists = if let (Some(ref cn), Some(ref arg)) = (reflected_name, args.first()) {
-                let method_name = crate::engine::operators::zval_get_string(arg).as_str().to_string();
-                execute_data.class_table.get(cn).map(|ce| ce.methods.contains_key(&method_name)).unwrap_or(false)
+            let exists = if let (Some(ref cn), Some(arg)) = (reflected_name, args.first()) {
+                let method_name = crate::engine::operators::zval_get_string(arg)
+                    .as_str()
+                    .to_string();
+                execute_data
+                    .class_table
+                    .get(cn)
+                    .map(|ce| ce.methods.contains_key(&method_name))
+                    .unwrap_or(false)
             } else {
                 false
             };
-            Some(Val::new(PhpValue::Long(if exists { 1 } else { 0 }), if exists { PhpType::True } else { PhpType::False }))
+            Some(Val::new(
+                PhpValue::Long(if exists { 1 } else { 0 }),
+                if exists {
+                    PhpType::True
+                } else {
+                    PhpType::False
+                },
+            ))
         }
         "hasProperty" => {
-            let exists = if let (Some(ref cn), Some(ref arg)) = (reflected_name, args.first()) {
-                let prop_name = crate::engine::operators::zval_get_string(arg).as_str().to_string();
-                execute_data.class_table.get(cn).map(|ce| {
-                    ce.default_properties.contains_key(&prop_name)
-                        || ce.static_properties.contains_key(&prop_name)
-                }).unwrap_or(false)
+            let exists = if let (Some(ref cn), Some(arg)) = (reflected_name, args.first()) {
+                let prop_name = crate::engine::operators::zval_get_string(arg)
+                    .as_str()
+                    .to_string();
+                execute_data
+                    .class_table
+                    .get(cn)
+                    .map(|ce| {
+                        ce.default_properties.contains_key(&prop_name)
+                            || ce.static_properties.contains_key(&prop_name)
+                    })
+                    .unwrap_or(false)
             } else {
                 false
             };
-            Some(Val::new(PhpValue::Long(if exists { 1 } else { 0 }), if exists { PhpType::True } else { PhpType::False }))
+            Some(Val::new(
+                PhpValue::Long(if exists { 1 } else { 0 }),
+                if exists {
+                    PhpType::True
+                } else {
+                    PhpType::False
+                },
+            ))
         }
         "getParentClass" => {
             if let Some(ref cn) = reflected_name {
-                execute_data.class_table.get(cn).and_then(|ce| ce.parent_name.clone()).map(|p| {
-                    Val::new(PhpValue::String(Box::new(crate::engine::string::string_init(&p, false))), PhpType::String)
-                })
+                execute_data
+                    .class_table
+                    .get(cn)
+                    .and_then(|ce| ce.parent_name.clone())
+                    .map(|p| {
+                        Val::new(
+                            PhpValue::String(Box::new(crate::engine::string::string_init(
+                                &p, false,
+                            ))),
+                            PhpType::String,
+                        )
+                    })
             } else {
                 None
             }
@@ -199,8 +277,16 @@ pub fn execute_reflection_method(
     let this_val = execute_data.get_var("this");
     let (reflected_class, reflected_method) = if let PhpValue::Object(ref obj) = this_val.value {
         (
-            obj.properties.get("class").map(|v| crate::engine::operators::zval_get_string(v).as_str().to_string()),
-            obj.properties.get("name").map(|v| crate::engine::operators::zval_get_string(v).as_str().to_string()),
+            obj.properties.get("class").map(|v| {
+                crate::engine::operators::zval_get_string(v)
+                    .as_str()
+                    .to_string()
+            }),
+            obj.properties.get("name").map(|v| {
+                crate::engine::operators::zval_get_string(v)
+                    .as_str()
+                    .to_string()
+            }),
         )
     } else {
         (None, None)
@@ -208,52 +294,67 @@ pub fn execute_reflection_method(
 
     match method_name {
         "__construct" => {
-            if let (Some(class_val), Some(name_val)) = (_args.get(0), _args.get(1)) {
-                let class_name = crate::engine::operators::zval_get_string(class_val).as_str().to_string();
-                let method_name = crate::engine::operators::zval_get_string(name_val).as_str().to_string();
+            if let (Some(class_val), Some(name_val)) = (_args.first(), _args.get(1)) {
+                let class_name = crate::engine::operators::zval_get_string(class_val)
+                    .as_str()
+                    .to_string();
+                let method_name = crate::engine::operators::zval_get_string(name_val)
+                    .as_str()
+                    .to_string();
                 let mut updated = clone_val(&this_val);
                 if let PhpValue::Object(ref mut obj_mut) = updated.value {
-                    obj_mut.properties.insert("class".to_string(), Val::new(
-                        PhpValue::String(Box::new(crate::engine::string::string_init(&class_name, false))),
-                        PhpType::String,
-                    ));
-                    obj_mut.properties.insert("name".to_string(), Val::new(
-                        PhpValue::String(Box::new(crate::engine::string::string_init(&method_name, false))),
-                        PhpType::String,
-                    ));
+                    obj_mut.properties.insert(
+                        "class".to_string(),
+                        Val::new(
+                            PhpValue::String(Box::new(crate::engine::string::string_init(
+                                &class_name,
+                                false,
+                            ))),
+                            PhpType::String,
+                        ),
+                    );
+                    obj_mut.properties.insert(
+                        "name".to_string(),
+                        Val::new(
+                            PhpValue::String(Box::new(crate::engine::string::string_init(
+                                &method_name,
+                                false,
+                            ))),
+                            PhpType::String,
+                        ),
+                    );
                 }
                 execute_data.set_var("this", updated);
             }
             None
         }
-        "getName" => {
-            reflected_method.map(|n| Val::new(
+        "getName" => reflected_method.map(|n| {
+            Val::new(
                 PhpValue::String(Box::new(crate::engine::string::string_init(&n, false))),
                 PhpType::String,
-            ))
-        }
+            )
+        }),
         "getParameters" => {
             let mut result = PhpArray::new();
-            if let (Some(ref cn), Some(ref mn)) = (reflected_class, reflected_method) {
-                if let Some(ce) = execute_data.class_table.get(cn) {
-                    if let Some(method) = ce.methods.get(mn) {
-                        let mut idx: u64 = 0;
-                        for p in &method.params {
-                            let _ = crate::engine::hash::hash_add_or_update(
-                                &mut result,
-                                None,
-                                idx,
-                                Val::new(
-                                    PhpValue::String(Box::new(
-                                        crate::engine::string::string_init(p, false),
-                                    )),
-                                    PhpType::String,
-                                ),
-                                0,
-                            );
-                            idx += 1;
-                        }
-                    }
+            if let (Some(ref cn), Some(ref mn)) = (reflected_class, reflected_method)
+                && let Some(ce) = execute_data.class_table.get(cn)
+                && let Some(method) = ce.methods.get(mn)
+            {
+                let mut idx: u64 = 0;
+                for p in &method.params {
+                    let _ = crate::engine::hash::hash_add_or_update(
+                        &mut result,
+                        None,
+                        idx,
+                        Val::new(
+                            PhpValue::String(Box::new(crate::engine::string::string_init(
+                                p, false,
+                            ))),
+                            PhpType::String,
+                        ),
+                        0,
+                    );
+                    idx += 1;
                 }
             }
             Some(Val::new(PhpValue::Array(Box::new(result)), PhpType::Array))
@@ -271,12 +372,12 @@ pub fn execute_reflection_method(
             };
             Some(Val::new(PhpValue::Long(count), PhpType::Long))
         }
-        "getDeclaringClass" => {
-            reflected_class.map(|n| Val::new(
+        "getDeclaringClass" => reflected_class.map(|n| {
+            Val::new(
                 PhpValue::String(Box::new(crate::engine::string::string_init(&n, false))),
                 PhpType::String,
-            ))
-        }
+            )
+        }),
         _ => None,
     }
 }
@@ -290,8 +391,16 @@ pub fn execute_reflection_property(
     let this_val = execute_data.get_var("this");
     let (reflected_class, reflected_prop) = if let PhpValue::Object(ref obj) = this_val.value {
         (
-            obj.properties.get("class").map(|v| crate::engine::operators::zval_get_string(v).as_str().to_string()),
-            obj.properties.get("name").map(|v| crate::engine::operators::zval_get_string(v).as_str().to_string()),
+            obj.properties.get("class").map(|v| {
+                crate::engine::operators::zval_get_string(v)
+                    .as_str()
+                    .to_string()
+            }),
+            obj.properties.get("name").map(|v| {
+                crate::engine::operators::zval_get_string(v)
+                    .as_str()
+                    .to_string()
+            }),
         )
     } else {
         (None, None)
@@ -299,36 +408,51 @@ pub fn execute_reflection_property(
 
     match method_name {
         "__construct" => {
-            if let (Some(class_val), Some(name_val)) = (_args.get(0), _args.get(1)) {
-                let class_name = crate::engine::operators::zval_get_string(class_val).as_str().to_string();
-                let prop_name = crate::engine::operators::zval_get_string(name_val).as_str().to_string();
+            if let (Some(class_val), Some(name_val)) = (_args.first(), _args.get(1)) {
+                let class_name = crate::engine::operators::zval_get_string(class_val)
+                    .as_str()
+                    .to_string();
+                let prop_name = crate::engine::operators::zval_get_string(name_val)
+                    .as_str()
+                    .to_string();
                 let mut updated = clone_val(&this_val);
                 if let PhpValue::Object(ref mut obj_mut) = updated.value {
-                    obj_mut.properties.insert("class".to_string(), Val::new(
-                        PhpValue::String(Box::new(crate::engine::string::string_init(&class_name, false))),
-                        PhpType::String,
-                    ));
-                    obj_mut.properties.insert("name".to_string(), Val::new(
-                        PhpValue::String(Box::new(crate::engine::string::string_init(&prop_name, false))),
-                        PhpType::String,
-                    ));
+                    obj_mut.properties.insert(
+                        "class".to_string(),
+                        Val::new(
+                            PhpValue::String(Box::new(crate::engine::string::string_init(
+                                &class_name,
+                                false,
+                            ))),
+                            PhpType::String,
+                        ),
+                    );
+                    obj_mut.properties.insert(
+                        "name".to_string(),
+                        Val::new(
+                            PhpValue::String(Box::new(crate::engine::string::string_init(
+                                &prop_name, false,
+                            ))),
+                            PhpType::String,
+                        ),
+                    );
                 }
                 execute_data.set_var("this", updated);
             }
             None
         }
-        "getName" => {
-            reflected_prop.map(|n| Val::new(
+        "getName" => reflected_prop.map(|n| {
+            Val::new(
                 PhpValue::String(Box::new(crate::engine::string::string_init(&n, false))),
                 PhpType::String,
-            ))
-        }
-        "getDeclaringClass" => {
-            reflected_class.map(|n| Val::new(
+            )
+        }),
+        "getDeclaringClass" => reflected_class.map(|n| {
+            Val::new(
                 PhpValue::String(Box::new(crate::engine::string::string_init(&n, false))),
                 PhpType::String,
-            ))
-        }
+            )
+        }),
         _ => None,
     }
 }
@@ -341,9 +465,11 @@ pub fn execute_reflection_function(
 ) -> Option<Val> {
     let this_val = execute_data.get_var("this");
     let reflected_name = if let PhpValue::Object(ref obj) = this_val.value {
-        obj.properties
-            .get("name")
-            .map(|v| crate::engine::operators::zval_get_string(v).as_str().to_string())
+        obj.properties.get("name").map(|v| {
+            crate::engine::operators::zval_get_string(v)
+                .as_str()
+                .to_string()
+        })
     } else {
         None
     };
@@ -359,9 +485,9 @@ pub fn execute_reflection_function(
                     obj_mut.properties.insert(
                         "name".to_string(),
                         Val::new(
-                            PhpValue::String(Box::new(
-                                crate::engine::string::string_init(&name, false),
-                            )),
+                            PhpValue::String(Box::new(crate::engine::string::string_init(
+                                &name, false,
+                            ))),
                             PhpType::String,
                         ),
                     );
@@ -374,11 +500,15 @@ pub fn execute_reflection_function(
         "isBuiltin" => {
             let is_builtin = reflected_name
                 .as_deref()
-                .map(|n| crate::engine::vm::builtins::is_builtin_function(n))
+                .map(crate::engine::vm::builtins::is_builtin_function)
                 .unwrap_or(false);
             Some(Val::new(
                 PhpValue::Long(if is_builtin { 1 } else { 0 }),
-                if is_builtin { PhpType::True } else { PhpType::False },
+                if is_builtin {
+                    PhpType::True
+                } else {
+                    PhpType::False
+                },
             ))
         }
         "isUserDefined" => {
@@ -388,7 +518,11 @@ pub fn execute_reflection_function(
                 .unwrap_or(false);
             Some(Val::new(
                 PhpValue::Long(if is_user { 1 } else { 0 }),
-                if is_user { PhpType::True } else { PhpType::False },
+                if is_user {
+                    PhpType::True
+                } else {
+                    PhpType::False
+                },
             ))
         }
         "getNumberOfParameters" => {
@@ -401,24 +535,24 @@ pub fn execute_reflection_function(
         }
         "getParameters" => {
             let mut result = PhpArray::new();
-            if let Some(ref name) = reflected_name {
-                if let Some(params) = function_param_names(execute_data, name) {
-                    let mut idx: u64 = 0;
-                    for p in params {
-                        let _ = crate::engine::hash::hash_add_or_update(
-                            &mut result,
-                            None,
-                            idx,
-                            Val::new(
-                                PhpValue::String(Box::new(
-                                    crate::engine::string::string_init(&p, false),
-                                )),
-                                PhpType::String,
-                            ),
-                            0,
-                        );
-                        idx += 1;
-                    }
+            if let Some(ref name) = reflected_name
+                && let Some(params) = function_param_names(execute_data, name)
+            {
+                let mut idx: u64 = 0;
+                for p in params {
+                    let _ = crate::engine::hash::hash_add_or_update(
+                        &mut result,
+                        None,
+                        idx,
+                        Val::new(
+                            PhpValue::String(Box::new(crate::engine::string::string_init(
+                                &p, false,
+                            ))),
+                            PhpType::String,
+                        ),
+                        0,
+                    );
+                    idx += 1;
                 }
             }
             Some(Val::new(PhpValue::Array(Box::new(result)), PhpType::Array))
@@ -436,9 +570,11 @@ pub fn execute_reflection_parameter(
     let this_val = execute_data.get_var("this");
     let read_prop = |key: &str| -> Option<String> {
         if let PhpValue::Object(ref obj) = this_val.value {
-            obj.properties
-                .get(key)
-                .map(|v| crate::engine::operators::zval_get_string(v).as_str().to_string())
+            obj.properties.get(key).map(|v| {
+                crate::engine::operators::zval_get_string(v)
+                    .as_str()
+                    .to_string()
+            })
         } else {
             None
         }
@@ -446,7 +582,7 @@ pub fn execute_reflection_parameter(
 
     match method_name {
         "__construct" => {
-            if let (Some(fn_val), Some(param_val)) = (args.get(0), args.get(1)) {
+            if let (Some(fn_val), Some(param_val)) = (args.first(), args.get(1)) {
                 let fn_name = crate::engine::operators::zval_get_string(fn_val)
                     .as_str()
                     .to_string();
@@ -467,18 +603,19 @@ pub fn execute_reflection_parameter(
                     obj_mut.properties.insert(
                         "function".to_string(),
                         Val::new(
-                            PhpValue::String(Box::new(
-                                crate::engine::string::string_init(&fn_name, false),
-                            )),
+                            PhpValue::String(Box::new(crate::engine::string::string_init(
+                                &fn_name, false,
+                            ))),
                             PhpType::String,
                         ),
                     );
                     obj_mut.properties.insert(
                         "name".to_string(),
                         Val::new(
-                            PhpValue::String(Box::new(
-                                crate::engine::string::string_init(&param_name, false),
-                            )),
+                            PhpValue::String(Box::new(crate::engine::string::string_init(
+                                &param_name,
+                                false,
+                            ))),
                             PhpType::String,
                         ),
                     );

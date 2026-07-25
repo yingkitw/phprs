@@ -11,25 +11,22 @@ fn session_start_binds_session_superglobal() {
 
     let mut ed = ExecuteData::new();
     assert!(session_start(&mut ed).unwrap());
-    ed.set_var(
-        "_SESSION",
-        {
-            let mut arr = crate::engine::types::PhpArray::new();
-            hash_init(&mut arr, 8);
-            let key = string_init("user", false);
-            let _ = hash_add_or_update(
-                &mut arr,
-                Some(&key),
-                0,
-                Val::new(
-                    PhpValue::String(Box::new(string_init("alice", false))),
-                    PhpType::String,
-                ),
-                0,
-            );
-            Val::new(PhpValue::Array(Box::new(arr)), PhpType::Array)
-        },
-    );
+    ed.set_var("_SESSION", {
+        let mut arr = crate::engine::types::PhpArray::new();
+        hash_init(&mut arr, 8);
+        let key = string_init("user", false);
+        let _ = hash_add_or_update(
+            &mut arr,
+            Some(&key),
+            0,
+            Val::new(
+                PhpValue::String(Box::new(string_init("alice", false))),
+                PhpType::String,
+            ),
+            0,
+        );
+        Val::new(PhpValue::Array(Box::new(arr)), PhpType::Array)
+    });
 
     session_write_close(&ed).unwrap();
     assert!(!ed.session_id.is_empty());

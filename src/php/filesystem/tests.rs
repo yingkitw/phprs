@@ -154,7 +154,10 @@ fn test_php_dirname() {
 #[test]
 fn test_php_pathinfo_extension() {
     assert_eq!(php_pathinfo_extension("file.txt"), Some("txt".to_string()));
-    assert_eq!(php_pathinfo_extension("file.tar.gz"), Some("gz".to_string()));
+    assert_eq!(
+        php_pathinfo_extension("file.tar.gz"),
+        Some("gz".to_string())
+    );
     assert_eq!(php_pathinfo_extension("noext"), None);
 }
 

@@ -342,14 +342,14 @@ fn parse_multiplicative_expr_with_initial(
     initial_token: Token,
 ) -> Result<(Val, Token), String> {
     // Handle interpolated strings
-    if initial_token.token_type == TokenType::T_CONSTANT_ENCAPSED_STRING {
-        if let Some(ref val) = initial_token.value {
-            let s = val.as_str();
-            if s.contains('$') {
-                let result = compile_interpolated_string(s, context)?;
-                let next = lexer.next_token()?;
-                return multiplicative_loop(lexer, context, result, next);
-            }
+    if initial_token.token_type == TokenType::T_CONSTANT_ENCAPSED_STRING
+        && let Some(ref val) = initial_token.value
+    {
+        let s = val.as_str();
+        if s.contains('$') {
+            let result = compile_interpolated_string(s, context)?;
+            let next = lexer.next_token()?;
+            return multiplicative_loop(lexer, context, result, next);
         }
     }
 
@@ -408,18 +408,21 @@ fn parse_multiplicative_expr_with_initial(
         if val == "(" {
             let (inner, close_token) = super::parse_expression(lexer, context)?;
             if token_is_punct(&close_token, ")") {
-                (inner, lexer.next_token()?)
+                let next = lexer.next_token()?;
+                parse_access_chain(lexer, context, inner, next)?
             } else {
                 return Err("Expected ')' after parenthesized expression".to_string());
             }
         } else if val == "[" {
             let result = parse_array_literal(lexer, context)?;
-            (result, lexer.next_token()?)
+            let next = lexer.next_token()?;
+            parse_access_chain(lexer, context, result, next)?
         } else {
             let next = lexer.next_token()?;
             if token_is_punct(&next, "(") {
                 let fname = initial_token.value.as_ref().unwrap().as_str();
-                parse_function_call(lexer, context, fname)?
+                let (call_result, call_next) = parse_function_call(lexer, context, fname)?;
+                parse_access_chain(lexer, context, call_result, call_next)?
             } else if next.token_type == TokenType::T_PAAMAYIM_NEKUDOTAYIM {
                 let class_val = crate::engine::facade::string_val(val);
                 let (result, next_token) = parse_access_chain(lexer, context, class_val, next)?;

@@ -63,10 +63,10 @@ fn test_lexer_comparison() {
         TokenType::T_IS_NOT_EQUAL,
         TokenType::T_IS_IDENTICAL,
         TokenType::T_IS_NOT_IDENTICAL,
-        TokenType::T_STRING,          // <
-        TokenType::T_STRING,          // >
-        TokenType::T_IS_SMALLER_OR_EQUAL,  // <=
-        TokenType::T_IS_GREATER_OR_EQUAL,  // >=
+        TokenType::T_STRING,              // <
+        TokenType::T_STRING,              // >
+        TokenType::T_IS_SMALLER_OR_EQUAL, // <=
+        TokenType::T_IS_GREATER_OR_EQUAL, // >=
     ];
 
     for expected in comparisons {

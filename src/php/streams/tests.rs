@@ -1,8 +1,8 @@
 //! Unit tests for PHP Streams
 
 use crate::php::streams::{
-    create_filter, php_stream_open, FileStream, FilterChain, StreamFilter, StreamMode,
-    StringRot13Filter, StringToLowerFilter, StringToUpperFilter,
+    FileStream, FilterChain, StreamFilter, StreamMode, StringRot13Filter, StringToLowerFilter,
+    StringToUpperFilter, create_filter, php_stream_open,
 };
 
 #[test]

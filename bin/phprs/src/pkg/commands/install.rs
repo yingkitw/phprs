@@ -28,7 +28,9 @@ pub struct Install {
 
 impl Install {
     pub async fn execute(&self) -> anyhow::Result<()> {
-        let project_dir = self.path.as_ref()
+        let project_dir = self
+            .path
+            .as_ref()
             .unwrap_or(&PathBuf::from("."))
             .canonicalize()?;
 
@@ -61,7 +63,8 @@ impl Install {
 
         // Resolve and install packages (with transitive dependencies)
         if let Some(ref require) = composer.require {
-            let client = super::super::registry::PackagistClient::new(Some(config.registry_url.clone()));
+            let client =
+                super::super::registry::PackagistClient::new(Some(config.registry_url.clone()));
             let resolver = super::super::resolver::DependencyResolver::new(client);
             let resolved = resolver.resolve(require, !self.no_dev).await?;
 
@@ -69,13 +72,16 @@ impl Install {
 
             for package in &resolved.packages {
                 log::info!("Installing {} ({})...", package.name, package.version);
-                match self.install_package(
-                    &package.name,
-                    &package.version,
-                    &package.metadata,
-                    &vendor_dir,
-                    &config,
-                ).await {
+                match self
+                    .install_package(
+                        &package.name,
+                        &package.version,
+                        &package.metadata,
+                        &vendor_dir,
+                        &config,
+                    )
+                    .await
+                {
                     Ok(_) => log::info!("Installed {}", package.name),
                     Err(e) => log::error!("Failed to install {}: {}", package.name, e),
                 }
@@ -103,24 +109,25 @@ impl Install {
         config: &super::super::config::Config,
     ) -> anyhow::Result<()> {
         // Check if dist is available
-        let dist = metadata.dist.as_ref()
+        let dist = metadata
+            .dist
+            .as_ref()
             .ok_or_else(|| anyhow::anyhow!("No dist available for {} {}", package_name, version))?;
 
         // Download and extract package
-        let client = super::super::registry::PackagistClient::new(Some(config.registry_url.clone()));
-        let package_dir = client.download_package(
-            package_name,
-            version,
-            dist,
-            &config.packages_cache_dir(),
-        ).await?;
+        let client =
+            super::super::registry::PackagistClient::new(Some(config.registry_url.clone()));
+        let package_dir = client
+            .download_package(package_name, version, dist, &config.packages_cache_dir())
+            .await?;
 
         // Copy to vendor directory
         let target_dir = vendor_dir.join(package_name.replace('/', "/"));
         if !target_dir.exists() {
             // For zip files, the extracted content is usually in a subdirectory
             // We need to find it and copy to vendor
-            let entries: Vec<_> = std::fs::read_dir(&package_dir)?.collect::<Result<Vec<_>, _>>()?;
+            let entries: Vec<_> =
+                std::fs::read_dir(&package_dir)?.collect::<Result<Vec<_>, _>>()?;
             if entries.len() == 1 {
                 // Single directory (typical for GitHub archives)
                 let extracted_dir = entries[0].path();
@@ -146,15 +153,15 @@ impl Install {
             std::collections::HashMap::new();
 
         // Add project autoloading
-        if let Some(ref autoload) = composer.autoload {
-            if let Some(ref psr4) = autoload.psr_4 {
-                for (namespace, path) in psr4 {
-                    let paths = match path {
-                        super::super::composer::StringOrArray::Single(p) => vec![p.clone()],
-                        super::super::composer::StringOrArray::Multiple(paths) => paths.clone(),
-                    };
-                    autoload_mappings.insert(namespace.clone(), paths);
-                }
+        if let Some(ref autoload) = composer.autoload
+            && let Some(ref psr4) = autoload.psr_4
+        {
+            for (namespace, path) in psr4 {
+                let paths = match path {
+                    super::super::composer::StringOrArray::Single(p) => vec![p.clone()],
+                    super::super::composer::StringOrArray::Multiple(paths) => paths.clone(),
+                };
+                autoload_mappings.insert(namespace.clone(), paths);
             }
         }
 
@@ -174,26 +181,28 @@ impl Install {
             std::collections::HashMap::new();
 
         for package in packages {
-            if let Some(autoload) = package.metadata.autoload.as_ref() {
-                if let Some(psr4) = autoload.psr_4.as_ref() {
-                    for (namespace, path) in psr4 {
-                        let paths = match path {
-                            super::super::composer::StringOrArray::Single(p) => vec![p.clone()],
-                            super::super::composer::StringOrArray::Multiple(paths) => paths.clone(),
-                        };
-                        let base_paths = paths
-                            .into_iter()
-                            .map(|p| vendor_dir
+            if let Some(autoload) = package.metadata.autoload.as_ref()
+                && let Some(psr4) = autoload.psr_4.as_ref()
+            {
+                for (namespace, path) in psr4 {
+                    let paths = match path {
+                        super::super::composer::StringOrArray::Single(p) => vec![p.clone()],
+                        super::super::composer::StringOrArray::Multiple(paths) => paths.clone(),
+                    };
+                    let base_paths = paths
+                        .into_iter()
+                        .map(|p| {
+                            vendor_dir
                                 .join(package.name.replace('/', "/"))
                                 .join(p)
                                 .to_string_lossy()
-                                .to_string())
-                            .collect::<Vec<_>>();
-                        autoload_mappings
-                            .entry(namespace.clone())
-                            .or_insert_with(Vec::new)
-                            .extend(base_paths);
-                    }
+                                .to_string()
+                        })
+                        .collect::<Vec<_>>();
+                    autoload_mappings
+                        .entry(namespace.clone())
+                        .or_default()
+                        .extend(base_paths);
                 }
             }
         }

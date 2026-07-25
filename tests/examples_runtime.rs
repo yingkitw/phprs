@@ -3,7 +3,7 @@
 
 use phprs::engine::compile::compile_string_with_functions;
 use phprs::engine::types::PhpResult;
-use phprs::engine::vm::{execute_ex, ExecuteData};
+use phprs::engine::vm::{ExecuteData, execute_ex};
 use std::path::PathBuf;
 use std::sync::Arc;
 
@@ -18,8 +18,8 @@ fn run_example_phprs(rel: &str) -> Result<(PhpResult, String), String> {
     if !path.is_file() {
         return Err(format!("missing example file {}", path.display()));
     }
-    let code = std::fs::read_to_string(&path)
-        .map_err(|e| format!("read {}: {e}", path.display()))?;
+    let code =
+        std::fs::read_to_string(&path).map_err(|e| format!("read {}: {e}", path.display()))?;
     let script_path = std::fs::canonicalize(&path)
         .map(|p| p.to_string_lossy().into_owned())
         .unwrap_or_else(|_| path.to_string_lossy().into_owned());
@@ -35,7 +35,10 @@ fn run_example_phprs(rel: &str) -> Result<(PhpResult, String), String> {
 #[test]
 fn example_01_hello_world_runs() {
     let (r, out) = run_example_phprs("01_hello_world.php").expect("run");
-    assert!(matches!(r, PhpResult::Success), "vm result: {r:?}, output: {out:?}");
+    assert!(
+        matches!(r, PhpResult::Success),
+        "vm result: {r:?}, output: {out:?}"
+    );
     assert!(
         out.contains("Hello, World!") && out.contains("Welcome to PHP-RS!"),
         "unexpected output: {out:?}"
@@ -45,7 +48,10 @@ fn example_01_hello_world_runs() {
 #[test]
 fn example_operators_runs() {
     let (r, out) = run_example_phprs("operators.php").expect("run");
-    assert!(matches!(r, PhpResult::Success), "vm result: {r:?}, output: {out:?}");
+    assert!(
+        matches!(r, PhpResult::Success),
+        "vm result: {r:?}, output: {out:?}"
+    );
     assert!(out.contains("a + b = 13"), "output: {out:?}");
     assert!(
         out.contains("OPERATORS WORK") || out.contains("operators work"),
@@ -56,7 +62,10 @@ fn example_operators_runs() {
 #[test]
 fn example_match_expression_runs() {
     let (r, out) = run_example_phprs("match_expression.php").expect("run");
-    assert!(matches!(r, PhpResult::Success), "vm result: {r:?}, output: {out:?}");
+    assert!(
+        matches!(r, PhpResult::Success),
+        "vm result: {r:?}, output: {out:?}"
+    );
     assert!(out.contains("OK"), "output: {out:?}");
     assert!(out.contains("six"), "output: {out:?}");
 }
@@ -65,7 +74,10 @@ fn example_match_expression_runs() {
 fn example_classes_compiles_and_runs() {
     // Full string interpolation / __construct parity with PHP is still evolving; require compile + non-fatal run.
     let (r, out) = run_example_phprs("classes.php").expect("run");
-    assert!(matches!(r, PhpResult::Success), "vm result: {r:?}, output: {out:?}");
+    assert!(
+        matches!(r, PhpResult::Success),
+        "vm result: {r:?}, output: {out:?}"
+    );
     assert!(
         out.contains("Hello, I'm") || out.contains("parent"),
         "expected some class method output: {out:?}"
@@ -75,7 +87,10 @@ fn example_classes_compiles_and_runs() {
 #[test]
 fn example_control_flow_runs() {
     let (r, out) = run_example_phprs("control_flow.php").expect("run");
-    assert!(matches!(r, PhpResult::Success), "vm result: {r:?}, output: {out:?}");
+    assert!(
+        matches!(r, PhpResult::Success),
+        "vm result: {r:?}, output: {out:?}"
+    );
     assert!(out.contains("Value is greater than 5"), "output: {out:?}");
     assert!(out.contains("Start of the week"), "output: {out:?}");
     assert!(out.contains("For loop:"), "output: {out:?}");
@@ -89,7 +104,10 @@ fn example_control_flow_runs() {
 #[test]
 fn example_codeigniter_public_index_runs() {
     let (r, out) = run_example_phprs("codeigniter/public/index.php").expect("run");
-    assert!(matches!(r, PhpResult::Success), "vm result: {r:?}, output: {out:?}");
+    assert!(
+        matches!(r, PhpResult::Success),
+        "vm result: {r:?}, output: {out:?}"
+    );
     assert!(
         out.contains("CodeIgniter 4 bootstrap loaded"),
         "output: {out:?}"
@@ -103,7 +121,10 @@ fn example_codeigniter_public_index_runs() {
 #[test]
 fn example_drupal_index_runs() {
     let (r, out) = run_example_phprs("drupal/index.php").expect("run");
-    assert!(matches!(r, PhpResult::Success), "vm result: {r:?}, output: {out:?}");
+    assert!(
+        matches!(r, PhpResult::Success),
+        "vm result: {r:?}, output: {out:?}"
+    );
     assert!(out.contains("Drupal bootstrap complete"), "output: {out:?}");
     assert!(out.contains("DrupalKernel::boot()"), "output: {out:?}");
 }
@@ -111,14 +132,20 @@ fn example_drupal_index_runs() {
 #[test]
 fn example_mbstring_runs() {
     let (r, out) = run_example_phprs("mbstring.php").expect("run");
-    assert!(matches!(r, PhpResult::Success), "vm result: {r:?}, output: {out:?}");
+    assert!(
+        matches!(r, PhpResult::Success),
+        "vm result: {r:?}, output: {out:?}"
+    );
     assert!(!out.trim().is_empty(), "expected mbstring example output");
 }
 
 #[test]
 fn example_basic_types_runs() {
     let (r, out) = run_example_phprs("basic_types.php").expect("run");
-    assert!(matches!(r, PhpResult::Success), "vm result: {r:?}, output: {out:?}");
+    assert!(
+        matches!(r, PhpResult::Success),
+        "vm result: {r:?}, output: {out:?}"
+    );
     assert!(out.contains("Long value: 42"), "output: {out:?}");
     assert!(out.contains("Hello, phprs!"), "output: {out:?}");
     assert!(out.contains("Null is null: yes"), "output: {out:?}");
@@ -127,15 +154,24 @@ fn example_basic_types_runs() {
 #[test]
 fn example_string_operations_runs() {
     let (r, out) = run_example_phprs("string_operations.php").expect("run");
-    assert!(matches!(r, PhpResult::Success), "vm result: {r:?}, output: {out:?}");
-    assert!(out.contains("Concatenation (2 strings): HelloWorld"), "output: {out:?}");
+    assert!(
+        matches!(r, PhpResult::Success),
+        "vm result: {r:?}, output: {out:?}"
+    );
+    assert!(
+        out.contains("Concatenation (2 strings): HelloWorld"),
+        "output: {out:?}"
+    );
     assert!(out.contains("Length of 'Hello': 5"), "output: {out:?}");
 }
 
 #[test]
 fn example_array_operations_runs() {
     let (r, out) = run_example_phprs("array_operations.php").expect("run");
-    assert!(matches!(r, PhpResult::Success), "vm result: {r:?}, output: {out:?}");
+    assert!(
+        matches!(r, PhpResult::Success),
+        "vm result: {r:?}, output: {out:?}"
+    );
     assert!(out.contains("Array size:"), "output: {out:?}");
     assert!(out.contains("Name: PHP-RS"), "output: {out:?}");
     assert!(out.contains("Index 0: first"), "output: {out:?}");
@@ -146,7 +182,10 @@ fn example_array_operations_runs() {
 #[test]
 fn example_variables_runs() {
     let (r, out) = run_example_phprs("variables.php").expect("run");
-    assert!(matches!(r, PhpResult::Success), "vm result: {r:?}, output: {out:?}");
+    assert!(
+        matches!(r, PhpResult::Success),
+        "vm result: {r:?}, output: {out:?}"
+    );
     assert!(out.contains("Counter: 42"), "output: {out:?}");
     assert!(out.contains("pi is float: yes"), "output: {out:?}");
     assert!(out.contains("active is bool: yes"), "output: {out:?}");
@@ -155,7 +194,10 @@ fn example_variables_runs() {
 #[test]
 fn example_filesystem_runs() {
     let (r, out) = run_example_phprs("filesystem.php").expect("run");
-    assert!(matches!(r, PhpResult::Success), "vm result: {r:?}, output: {out:?}");
+    assert!(
+        matches!(r, PhpResult::Success),
+        "vm result: {r:?}, output: {out:?}"
+    );
     assert!(out.contains("Does '.' exist? yes"), "output: {out:?}");
     assert!(out.contains("Contents length:"), "output: {out:?}");
 }
@@ -163,8 +205,14 @@ fn example_filesystem_runs() {
 #[test]
 fn example_wordpress_index_runs() {
     let (r, out) = run_example_phprs("wordpress/index.php").expect("run");
-    assert!(matches!(r, PhpResult::Success), "vm result: {r:?}, output: {out:?}");
-    assert!(out.contains("Hello from WordPress (phprs)!"), "output: {out:?}");
+    assert!(
+        matches!(r, PhpResult::Success),
+        "vm result: {r:?}, output: {out:?}"
+    );
+    assert!(
+        out.contains("Hello from WordPress (phprs)!"),
+        "output: {out:?}"
+    );
     assert!(out.contains("Blog name = WordPress"), "output: {out:?}");
 }
 

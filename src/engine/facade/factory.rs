@@ -52,11 +52,7 @@ impl ValFactory for StdValFactory {
         // True and False are the actual runtime types (values 2 and 3)
         Val::new(
             PhpValue::Long(if value { 1 } else { 0 }),
-            if value {
-                PhpType::True
-            } else {
-                PhpType::False
-            },
+            if value { PhpType::True } else { PhpType::False },
         )
     }
 
@@ -78,10 +74,7 @@ impl ValFactory for StdValFactory {
     }
 
     fn array_val() -> Val {
-        Val::new(
-            PhpValue::Array(Box::new(crate::engine::types::PhpArray::new())),
-            PhpType::Array,
-        )
+        Val::new(PhpValue::Array(Box::default()), PhpType::Array)
     }
 
     fn zero_val() -> Val {
@@ -105,7 +98,10 @@ impl ValFactory for StdValFactory {
                 let mut new_arr = crate::engine::types::PhpArray::new();
                 for bucket in &arr.ar_data {
                     let cloned_val = Self::clone_val(&bucket.val);
-                    let cloned_key = bucket.key.as_ref().map(|k| Box::new(string_init(k.as_str(), false)));
+                    let cloned_key = bucket
+                        .key
+                        .as_ref()
+                        .map(|k| Box::new(string_init(k.as_str(), false)));
                     new_arr.ar_data.push(crate::engine::types::Bucket {
                         val: cloned_val,
                         h: bucket.h,
@@ -215,10 +211,10 @@ mod tests {
 
     #[test]
     fn test_double_val() {
-        let zval = double_val(3.14);
+        let zval = double_val(std::f64::consts::PI);
         assert_eq!(zval.get_type(), PhpType::Double);
         match zval.value {
-            PhpValue::Double(d) => assert!((d - 3.14).abs() < f64::EPSILON),
+            PhpValue::Double(d) => assert!((d - std::f64::consts::PI).abs() < f64::EPSILON),
             _ => panic!("Expected Double"),
         }
     }

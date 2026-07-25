@@ -155,14 +155,14 @@ fn scan_directory_recursive(
 
         if path.is_dir() {
             scan_directory_recursive(root, &path, classmap)?;
-        } else if path.extension().and_then(|s| s.to_str()) == Some("php") {
-            if let Ok(classes) = extract_classes_from_file(&path) {
-                for class in classes {
-                    let relative_path = path
-                        .strip_prefix(root)
-                        .map_err(|e| format!("Failed to get relative path: {}", e))?;
-                    classmap.insert(class, relative_path.to_string_lossy().to_string());
-                }
+        } else if path.extension().and_then(|s| s.to_str()) == Some("php")
+            && let Ok(classes) = extract_classes_from_file(&path)
+        {
+            for class in classes {
+                let relative_path = path
+                    .strip_prefix(root)
+                    .map_err(|e| format!("Failed to get relative path: {}", e))?;
+                classmap.insert(class, relative_path.to_string_lossy().to_string());
             }
         }
     }

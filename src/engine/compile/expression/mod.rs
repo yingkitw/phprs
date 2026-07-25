@@ -12,7 +12,7 @@ pub(crate) mod operators;
 pub(crate) mod primary;
 
 use crate::engine::compile::context::CompileContext;
-use crate::engine::lexer::{Token, Lexer};
+use crate::engine::lexer::{Lexer, Token};
 use crate::engine::types::Val;
 
 /// Parse a simple expression (logical, comparison, arithmetic operations)

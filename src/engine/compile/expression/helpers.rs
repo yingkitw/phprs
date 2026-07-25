@@ -5,7 +5,7 @@ use crate::engine::facade::{self, StdValFactory, ValFactory};
 use crate::engine::lexer::{Lexer, Token, TokenType};
 use crate::engine::string::string_init;
 use crate::engine::types::{PhpType, PhpValue, Val};
-use crate::engine::vm::{temp_var_ref, var_ref, Opcode};
+use crate::engine::vm::{Opcode, temp_var_ref, var_ref};
 
 /// Check if token matches a specific punctuation string
 pub(crate) fn token_is_punct(token: &Token, ch: &str) -> bool {
@@ -243,12 +243,7 @@ pub(crate) fn parse_access_chain(
                 temp_var_ref(old_slot),
             );
             let one = facade::long_val(1);
-            let new_val = emit_binary_op(
-                context,
-                Opcode::Add,
-                facade::clone_val(&result),
-                one,
-            );
+            let new_val = emit_binary_op(context, Opcode::Add, facade::clone_val(&result), one);
             let var_name_zval = facade::string_val(&name);
             let new_val_op2 = StdValFactory::clone_val(&new_val);
             context.emit_opcode(Opcode::Assign, var_name_zval, new_val, new_val_op2);
@@ -265,12 +260,7 @@ pub(crate) fn parse_access_chain(
                 temp_var_ref(old_slot),
             );
             let one = facade::long_val(1);
-            let new_val = emit_binary_op(
-                context,
-                Opcode::Sub,
-                facade::clone_val(&result),
-                one,
-            );
+            let new_val = emit_binary_op(context, Opcode::Sub, facade::clone_val(&result), one);
             let var_name_zval = facade::string_val(&name);
             let new_val_op2 = StdValFactory::clone_val(&new_val);
             context.emit_opcode(Opcode::Assign, var_name_zval, new_val, new_val_op2);
@@ -319,7 +309,9 @@ fn parse_static_access(
 
     // Handle static property access: ClassName::$prop or static::$prop
     if member_token.token_type == TokenType::T_VARIABLE {
-        let prop_name = member_token.value.as_ref()
+        let prop_name = member_token
+            .value
+            .as_ref()
             .ok_or("Expected property name after '::'")?
             .as_str();
         let prop_zval = facade::string_val(prop_name);
@@ -334,7 +326,9 @@ fn parse_static_access(
     }
 
     // Handle static method call or constant: ClassName::method() or ClassName::CONST
-    let member_name = member_token.value.as_ref()
+    let member_name = member_token
+        .value
+        .as_ref()
         .ok_or("Expected member name after '::'")?
         .as_str();
     let member_zval = facade::string_val(member_name);
@@ -486,7 +480,10 @@ pub(crate) fn compile_new_obj(
     let (resolved_name, peek, ctor_args) = if class_token.token_type == TokenType::T_CLASS {
         use std::sync::atomic::{AtomicU64, Ordering};
         static ANON_CLASS_COUNTER: AtomicU64 = AtomicU64::new(0);
-        let anon_name = format!("__anon_class_{}", ANON_CLASS_COUNTER.fetch_add(1, Ordering::Relaxed));
+        let anon_name = format!(
+            "__anon_class_{}",
+            ANON_CLASS_COUNTER.fetch_add(1, Ordering::Relaxed)
+        );
         let mut ce = crate::engine::types::ClassEntry::new(&anon_name);
 
         let mut next = lexer.next_token()?;
@@ -511,7 +508,9 @@ pub(crate) fn compile_new_obj(
         // Optional: extends ParentClass
         if next.token_type == TokenType::T_EXTENDS {
             let parent_token = lexer.next_token()?;
-            let parent_name = parent_token.value.as_ref()
+            let parent_name = parent_token
+                .value
+                .as_ref()
                 .ok_or("Expected parent class name after 'extends'")?
                 .as_str();
             ce.parent_name = Some(context.resolve_class_name(parent_name));
@@ -542,7 +541,11 @@ pub(crate) fn compile_new_obj(
             .as_ref()
             .ok_or("Expected class name after 'new'")?
             .as_str();
-        (context.resolve_class_name(class_name), lexer.next_token()?, Vec::new())
+        (
+            context.resolve_class_name(class_name),
+            lexer.next_token()?,
+            Vec::new(),
+        )
     };
 
     let class_zval = facade::string_val(&resolved_name);
@@ -783,12 +786,7 @@ pub(crate) fn parse_array_literal(
     lexer: &mut Lexer,
     context: &mut CompileContext,
 ) -> Result<Val, String> {
-    parse_array_elements(
-        lexer,
-        context,
-        "]",
-        "Expected ',' or ']' in array literal",
-    )
+    parse_array_elements(lexer, context, "]", "Expected ',' or ']' in array literal")
 }
 
 /// Parse legacy array constructor: array(...) — `array` keyword already consumed
@@ -800,12 +798,7 @@ pub(crate) fn parse_long_array_literal(
     if !token_is_punct(&open, "(") {
         return Err("Expected '(' after array".to_string());
     }
-    parse_array_elements(
-        lexer,
-        context,
-        ")",
-        "Expected ',' or ')' in array()",
-    )
+    parse_array_elements(lexer, context, ")", "Expected ',' or ')' in array()")
 }
 
 /// Parse a single call argument, detecting named arguments (name: value)
@@ -849,14 +842,19 @@ pub(crate) fn parse_call_arg(
                 facade::null_val(),
             );
             *positional_idx += 1;
-            return Ok(lexer.next_token()?);
+            return lexer.next_token();
         }
     }
 
     // Positional argument (or non-named T_STRING)
     let (arg_val, after) =
         super::operators::parse_additive_expr_with_initial(lexer, context, first_token)?;
-    context.emit_opcode(Opcode::SendVal, arg_val, facade::null_val(), facade::null_val());
+    context.emit_opcode(
+        Opcode::SendVal,
+        arg_val,
+        facade::null_val(),
+        facade::null_val(),
+    );
     *positional_idx += 1;
     Ok(after)
 }
@@ -868,13 +866,7 @@ pub(crate) fn parse_call_arg_unknown(
     first_token: Token,
 ) -> Result<Token, String> {
     let mut positional_idx = 0;
-    parse_call_arg(
-        lexer,
-        context,
-        first_token,
-        None,
-        &mut positional_idx,
-    )
+    parse_call_arg(lexer, context, first_token, None, &mut positional_idx)
 }
 
 fn compile_first_class_function(name: &str) -> Val {
@@ -893,21 +885,12 @@ fn compile_first_class_static(class_name: &str, method: &str) -> Val {
 }
 
 fn emit_array_assoc_pair(context: &mut CompileContext, arr: Val, key: &str, value: Val) {
-    context.emit_opcode(
-        Opcode::AddArrayElement,
-        arr,
-        value,
-        facade::string_val(key),
-    );
+    context.emit_opcode(Opcode::AddArrayElement, arr, value, facade::string_val(key));
     let last_idx = context.current_op_index() - 1;
     context.update_jump_target(last_idx, 1);
 }
 
-fn emit_first_class_method_callable(
-    context: &mut CompileContext,
-    obj: Val,
-    method: &str,
-) -> Val {
+fn emit_first_class_method_callable(context: &mut CompileContext, obj: Val, method: &str) -> Val {
     let arr_slot = context.alloc_temp();
     context.emit_opcode(
         Opcode::InitArray,
@@ -975,7 +958,10 @@ pub(crate) fn parse_function_call(
         if !token_is_punct(&close, ")") {
             return Err("Expected ')' after '...' in first-class callable".to_string());
         }
-        return Ok((compile_first_class_function(function_name), lexer.next_token()?));
+        return Ok((
+            compile_first_class_function(function_name),
+            lexer.next_token()?,
+        ));
     }
 
     // Emit InitFCall

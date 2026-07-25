@@ -2,7 +2,7 @@
 //!
 //! Demonstrates PHP error handling system
 
-use phprs::errors::{error_at_line, php_error, set_error_handler, ErrorType, PhpError};
+use phprs::errors::{ErrorType, PhpError, error_at_line, php_error, set_error_handler};
 
 fn main() {
     println!("=== phprs Error Handling Example ===\n");

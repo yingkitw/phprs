@@ -3,7 +3,7 @@
 //! This module implements optimized memory allocation and garbage collection
 //! to outperform PHP 8's memory management.
 
-use std::alloc::{alloc, dealloc, Layout};
+use std::alloc::{Layout, alloc, dealloc};
 use std::ptr::NonNull;
 use std::sync::atomic::{AtomicUsize, Ordering};
 

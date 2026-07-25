@@ -389,11 +389,11 @@ pub fn hash_hmac(args: &[Val]) -> Result<Val, String> {
 }
 
 fn hmac_md5(data: &[u8], key: &[u8]) -> String {
-    hmac_hash(data, key, 64, |d| md5_hash(d))
+    hmac_hash(data, key, 64, md5_hash)
 }
 
 fn hmac_sha1(data: &[u8], key: &[u8]) -> String {
-    hmac_hash(data, key, 64, |d| sha1_hash(d))
+    hmac_hash(data, key, 64, sha1_hash)
 }
 
 fn hmac_sha256(data: &[u8], key: &[u8]) -> String {
@@ -506,7 +506,7 @@ pub fn random_bytes(args: &[Val]) -> Result<Val, String> {
     }
 
     let length = crate::engine::operators::zval_get_long(&args[0]) as usize;
-    if length <= 0 {
+    if length == 0 {
         return Err("random_bytes(): Argument #1 ($length) must be greater than 0".to_string());
     }
 
@@ -532,9 +532,10 @@ pub fn random_int(args: &[Val]) -> Result<Val, String> {
     let max = crate::engine::operators::zval_get_long(&args[1]);
 
     if min > max {
-        return Err(format!(
+        return Err(
             "random_int(): Argument #1 ($min) must be less than or equal to argument #2 ($max)"
-        ));
+                .to_string(),
+        );
     }
 
     let mut bytes = [0u8; 8];
@@ -656,13 +657,13 @@ pub fn hex2bin(args: &[Val]) -> Result<Val, String> {
 
     let s = zval_get_string(&args[0]);
     let s_str = s.as_str();
-    if s_str.len() % 2 != 0 {
+    if !s_str.len().is_multiple_of(2) {
         return Err("hex2bin(): Input string must be hexadecimal string".to_string());
     }
 
     let mut result = Vec::with_capacity(s_str.len() / 2);
     for chunk in s_str.as_bytes().chunks(2) {
-        let byte = u8::from_str_radix(&std::str::from_utf8(chunk).unwrap_or("00"), 16)
+        let byte = u8::from_str_radix(std::str::from_utf8(chunk).unwrap_or("00"), 16)
             .map_err(|e| format!("hex2bin(): {}", e))?;
         result.push(byte);
     }
@@ -744,7 +745,9 @@ mod tests {
     fn test_hash_hmac_sha256() {
         let h = hash_hmac(&[
             Val::new(
-                PhpValue::String(Box::new(crate::engine::string::string_init("sha256", false))),
+                PhpValue::String(Box::new(crate::engine::string::string_init(
+                    "sha256", false,
+                ))),
                 PhpType::String,
             ),
             Val::new(
@@ -752,7 +755,9 @@ mod tests {
                 PhpType::String,
             ),
             Val::new(
-                PhpValue::String(Box::new(crate::engine::string::string_init("secret", false))),
+                PhpValue::String(Box::new(crate::engine::string::string_init(
+                    "secret", false,
+                ))),
                 PhpType::String,
             ),
         ])

@@ -69,7 +69,7 @@ fn test_hash_table_with_multiple_types() {
     hash_add_or_update(&mut ht, Some(&key1), 0, val1, 0);
 
     let key2 = string_init("double_val", false);
-    let val2 = Val::new(PhpValue::Double(3.14), PhpType::Double);
+    let val2 = Val::new(PhpValue::Double(std::f64::consts::PI), PhpType::Double);
     hash_add_or_update(&mut ht, Some(&key2), 0, val2, 0);
 
     let key3 = string_init("string_val", false);

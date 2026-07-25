@@ -1,11 +1,11 @@
 //! Primary expression parsing (literals, variables, new, ->, arrays, function calls)
 
+use super::helpers::*;
 use crate::engine::compile::context::CompileContext;
 use crate::engine::facade::{self, StdValFactory, ValFactory};
-use crate::engine::lexer::{Token, Lexer, TokenType};
+use crate::engine::lexer::{Lexer, Token, TokenType};
 use crate::engine::types::Val;
 use crate::engine::vm::var_ref;
-use super::helpers::*;
 
 /// Parse primary expression (numbers, variables, strings, new, arrays, function calls)
 pub(crate) fn parse_primary_expr(
@@ -17,12 +17,24 @@ pub(crate) fn parse_primary_expr(
 
     match token.token_type {
         TokenType::T_LNUMBER => {
-            let num_val = token.value.as_ref().unwrap().as_str().parse::<i64>().unwrap_or(0);
+            let num_val = token
+                .value
+                .as_ref()
+                .unwrap()
+                .as_str()
+                .parse::<i64>()
+                .unwrap_or(0);
             let zval = facade::long_val(num_val);
             Ok((zval, lexer.next_token()?))
         }
         TokenType::T_DNUMBER => {
-            let num_val = token.value.as_ref().unwrap().as_str().parse::<f64>().unwrap_or(0.0);
+            let num_val = token
+                .value
+                .as_ref()
+                .unwrap()
+                .as_str()
+                .parse::<f64>()
+                .unwrap_or(0.0);
             let zval = facade::double_val(num_val);
             Ok((zval, lexer.next_token()?))
         }
@@ -33,7 +45,10 @@ pub(crate) fn parse_primary_expr(
                 let result = compile_interpolated_string(s, context)?;
                 Ok((result, lexer.next_token()?))
             } else {
-                let zval = Val::new(crate::engine::types::PhpValue::String(Box::new(str_val)), crate::engine::types::PhpType::String); // PhpString clone, not &str
+                let zval = Val::new(
+                    crate::engine::types::PhpValue::String(Box::new(str_val)),
+                    crate::engine::types::PhpType::String,
+                ); // PhpString clone, not &str
                 Ok((zval, lexer.next_token()?))
             }
         }
@@ -63,7 +78,8 @@ pub(crate) fn parse_primary_expr(
             } else if val == "(" {
                 let (inner, close_token) = super::parse_expression(lexer, context)?;
                 if token_is_punct(&close_token, ")") {
-                    Ok((inner, lexer.next_token()?))
+                    let next = lexer.next_token()?;
+                    parse_access_chain(lexer, context, inner, next)
                 } else {
                     Err("Expected ')' after parenthesized expression".to_string())
                 }
@@ -76,7 +92,8 @@ pub(crate) fn parse_primary_expr(
             } else {
                 let next_token = lexer.next_token()?;
                 if token_is_punct(&next_token, "(") {
-                    parse_function_call(lexer, context, val)
+                    let (result, next) = parse_function_call(lexer, context, val)?;
+                    parse_access_chain(lexer, context, result, next)
                 } else if next_token.token_type == TokenType::T_PAAMAYIM_NEKUDOTAYIM {
                     let class_val = facade::string_val(val);
                     parse_access_chain(lexer, context, class_val, next_token)
@@ -92,6 +109,9 @@ pub(crate) fn parse_primary_expr(
             let next = lexer.next_token()?;
             parse_access_chain(lexer, context, static_val, next)
         }
-        _ => Err(format!("Unexpected token in expression: {:?}", token.token_type)),
+        _ => Err(format!(
+            "Unexpected token in expression: {:?}",
+            token.token_type
+        )),
     }
 }

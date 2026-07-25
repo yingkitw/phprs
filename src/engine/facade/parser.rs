@@ -2,7 +2,7 @@
 //!
 //! Provides traits and helpers for common parsing operations
 
-use crate::engine::lexer::{Token, Lexer, TokenType};
+use crate::engine::lexer::{Lexer, Token, TokenType};
 
 /// Trait for token-based parsing operations
 pub trait TokenParser {

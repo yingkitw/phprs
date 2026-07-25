@@ -3,7 +3,6 @@
 use crate::php::output::{
     php_output_current_callback, php_output_end, php_output_end_clean, php_output_start,
     php_output_start_with_callback, php_output_take, php_output_take_clean, php_output_write,
-    php_output_write_to_active,
 };
 
 #[test]
@@ -76,7 +75,10 @@ fn test_php_output_callback() {
     let _ = php_output_start_with_callback("my_callback".to_string());
     let _ = php_output_write("Hello".as_bytes());
 
-    assert_eq!(php_output_current_callback(), Some("my_callback".to_string()));
+    assert_eq!(
+        php_output_current_callback(),
+        Some("my_callback".to_string())
+    );
 
     let (contents, callback) = php_output_take().unwrap();
     assert_eq!(contents, "Hello");

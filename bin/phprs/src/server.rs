@@ -3,14 +3,14 @@
 //! Like PHP's built-in server (`php -S`), this serves both static pages
 //! and executes PHP code — all from a single Rust binary.
 
-use phprs::php::output::{php_output_end, php_output_start};
 use phprs::engine::compile::compile_string_with_functions;
-use phprs::engine::vm::{execute_ex, ExecuteData};
-use std::sync::Arc;
+use phprs::engine::vm::{ExecuteData, execute_ex};
+use phprs::php::output::{php_output_end, php_output_start};
 use serde::{Deserialize, Serialize};
 use std::io::{BufRead, BufReader, Read, Write};
 use std::net::TcpListener;
 use std::path::Path;
+use std::sync::Arc;
 
 const EXAMPLES_DIR: &str = "examples";
 
@@ -153,7 +153,8 @@ fn handle_connection(mut stream: std::net::TcpStream) -> Result<(), String> {
 
     println!("{method} {path}");
 
-    let (status, content_type, response_body, set_cookie) = route_request(method, path, &body, &cookie_header);
+    let (status, content_type, response_body, set_cookie) =
+        route_request(method, path, &body, &cookie_header);
 
     let mut resp = format!(
         "HTTP/1.1 {status}\r\n\
@@ -184,9 +185,19 @@ fn handle_connection(mut stream: std::net::TcpStream) -> Result<(), String> {
 // Router
 // ---------------------------------------------------------------------------
 
-fn route_request(method: &str, path: &str, body: &str, cookies: &str) -> (String, String, String, Option<String>) {
+fn route_request(
+    method: &str,
+    path: &str,
+    body: &str,
+    cookies: &str,
+) -> (String, String, String, Option<String>) {
     if method == "OPTIONS" {
-        return ("204 No Content".into(), "text/plain".into(), String::new(), None);
+        return (
+            "204 No Content".into(),
+            "text/plain".into(),
+            String::new(),
+            None,
+        );
     }
 
     let json = "application/json".to_string();

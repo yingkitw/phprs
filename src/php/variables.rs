@@ -50,7 +50,7 @@ fn normalize_variable_name(name: &str) -> String {
     let mut result = String::with_capacity(name.len());
     let mut chars = name.chars().peekable();
 
-    while let Some(ch) = chars.next() {
+    for ch in chars.by_ref() {
         match ch {
             ' ' | '.' => result.push('_'),
             '[' => {
@@ -62,7 +62,7 @@ fn normalize_variable_name(name: &str) -> String {
     }
 
     // Copy remaining characters (array index)
-    while let Some(ch) = chars.next() {
+    for ch in chars {
         result.push(ch);
     }
 

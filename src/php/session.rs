@@ -103,15 +103,19 @@ fn val_to_json_value(val: &Val) -> serde_json::Value {
         PhpType::Null => serde_json::Value::Null,
         PhpType::True => serde_json::Value::Bool(true),
         PhpType::False => serde_json::Value::Bool(false),
-        PhpType::Long => serde_json::Value::Number(
-            serde_json::Number::from(crate::engine::operators::zval_get_long(val)),
-        ),
-        PhpType::Double => serde_json::Number::from_f64(crate::engine::operators::zval_get_double(val))
-            .map(serde_json::Value::Number)
-            .unwrap_or(serde_json::Value::Null),
-        PhpType::String => {
-            serde_json::Value::String(crate::engine::operators::zval_get_string(val).as_str().to_string())
+        PhpType::Long => serde_json::Value::Number(serde_json::Number::from(
+            crate::engine::operators::zval_get_long(val),
+        )),
+        PhpType::Double => {
+            serde_json::Number::from_f64(crate::engine::operators::zval_get_double(val))
+                .map(serde_json::Value::Number)
+                .unwrap_or(serde_json::Value::Null)
         }
+        PhpType::String => serde_json::Value::String(
+            crate::engine::operators::zval_get_string(val)
+                .as_str()
+                .to_string(),
+        ),
         PhpType::Array => {
             if let PhpValue::Array(ref arr) = val.value {
                 let is_list = arr.ar_data.iter().all(|b| b.key.is_none());
@@ -145,7 +149,10 @@ fn val_to_json_value(val: &Val) -> serde_json::Value {
 fn save_session_data(id: &str, arr: &PhpArray) -> Result<(), String> {
     let dir = save_path();
     std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
-    let val = Val::new(PhpValue::Array(Box::new(ExecuteData::clone_php_array(arr))), PhpType::Array);
+    let val = Val::new(
+        PhpValue::Array(Box::new(ExecuteData::clone_php_array(arr))),
+        PhpType::Array,
+    );
     let json = serde_json::to_string(&val_to_json_value(&val)).map_err(|e| e.to_string())?;
     std::fs::write(session_file_path(id), json).map_err(|e| e.to_string())
 }

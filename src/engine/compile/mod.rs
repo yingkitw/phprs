@@ -27,7 +27,10 @@ pub fn compile_string(code: &str, filename: &str) -> Result<OpArray, String> {
 }
 
 /// Compile PHP code string to opcodes and return the function table
-pub fn compile_string_with_functions(code: &str, filename: &str) -> Result<(OpArray, function_table::FunctionTable), String> {
+pub fn compile_string_with_functions(
+    code: &str,
+    filename: &str,
+) -> Result<(OpArray, function_table::FunctionTable), String> {
     let mut context = CompileContext::new();
     context.set_filename(filename);
 
@@ -43,7 +46,7 @@ pub fn compile_string_with_functions(code: &str, filename: &str) -> Result<(OpAr
         token = parse_statement(&mut lexer, &mut context, token)?;
     }
 
-    let ft = std::mem::replace(&mut context.function_table, function_table::FunctionTable::new());
+    let ft = std::mem::take(&mut context.function_table);
     Ok((context.finalize(), ft))
 }
 

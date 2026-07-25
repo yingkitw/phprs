@@ -3,8 +3,8 @@
 //! Advanced function call optimizations to outperform PHP 8
 
 use crate::engine::types::PhpResult;
-use crate::vm::execute_data::{ExecResult, ExecuteData};
-use crate::vm::opcodes::{Op, OpArray, Opcode};
+use crate::engine::vm::execute_data::{ExecResult, ExecuteData};
+use crate::engine::vm::opcodes::{Op, OpArray, Opcode};
 use std::collections::HashMap;
 use std::sync::{OnceLock, RwLock};
 
@@ -161,12 +161,12 @@ impl FunctionOptimizer {
         for i in 0..ops.len() {
             if ops[i].opcode == Opcode::InitFCall {
                 // Look for function name in subsequent operations
-                if i + 1 < ops.len() && ops[i + 1].opcode == Opcode::DoFCall {
-                    if let crate::engine::types::PhpValue::String(ref func_name) =
+                if i + 1 < ops.len()
+                    && ops[i + 1].opcode == Opcode::DoFCall
+                    && let crate::engine::types::PhpValue::String(ref func_name) =
                         ops[i + 1].op1.value
-                    {
-                        candidates.push(func_name.as_str().to_string());
-                    }
+                {
+                    candidates.push(func_name.as_str().to_string());
                 }
             }
         }
@@ -251,11 +251,11 @@ impl FunctionOptimizer {
             match op.opcode {
                 Opcode::InitFCall | Opcode::DoFCall => {
                     // Try to inline nested function calls
-                    if let crate::engine::types::PhpValue::String(ref func_name) = op.op1.value {
-                        if self.should_inline(func_name.as_str()) {
-                            // Skip the function call - it will be inlined
-                            continue;
-                        }
+                    if let crate::engine::types::PhpValue::String(ref func_name) = op.op1.value
+                        && self.should_inline(func_name.as_str())
+                    {
+                        // Skip the function call - it will be inlined
+                        continue;
                     }
                     // Keep the call if it can't be inlined
                     optimized.push(op.clone());
@@ -344,7 +344,7 @@ impl FunctionOptimizer {
     ) -> Result<PhpResult, String> {
         // Execute optimized opcodes directly
         for op in &inlined.optimized_ops {
-            match crate::vm::dispatch_handlers::dispatch_opcode(op, execute_data)? {
+            match crate::engine::vm::dispatch_handlers::dispatch_opcode(op, execute_data)? {
                 ExecResult::Continue => continue,
                 ExecResult::Jump(_) => {
                     // Handle jumps in inlined code
@@ -366,7 +366,10 @@ impl FunctionOptimizer {
         op_array: &OpArray,
     ) -> Result<PhpResult, String> {
         // Use normal execution path
-        Ok(crate::vm::execute::execute_ex(execute_data, op_array))
+        Ok(crate::engine::vm::execute::execute_ex(
+            execute_data,
+            op_array,
+        ))
     }
 
     /// Get optimization statistics

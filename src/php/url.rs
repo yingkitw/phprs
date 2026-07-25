@@ -41,17 +41,14 @@ pub fn parse_url(args: &[Val]) -> Result<Val, String> {
 
     let url = zval_get_string(&args[0]).as_str().to_string();
     let component = if args.len() > 1 {
-        crate::engine::operators::zval_get_long(&args[1]) as i64
+        crate::engine::operators::zval_get_long(&args[1])
     } else {
         -1
     };
 
     let parsed = url::Url::parse(&url);
 
-    let scheme = parsed
-        .as_ref()
-        .ok()
-        .and_then(|u| Some(u.scheme().to_string()));
+    let scheme = parsed.as_ref().ok().map(|u| u.scheme().to_string());
     let host = parsed
         .as_ref()
         .ok()

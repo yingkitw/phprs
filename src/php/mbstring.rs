@@ -21,10 +21,10 @@ pub fn mb_strlen(args: &[Val]) -> Result<Val, String> {
 
     let s = zval_get_string(&args[0]);
     let s_str = s.as_str();
-    
+
     // Count Unicode grapheme clusters
     let len = s_str.graphemes(true).count();
-    
+
     Ok(Val::new(PhpValue::Long(len as i64), PhpType::Long))
 }
 
@@ -37,13 +37,13 @@ pub fn mb_substr(args: &[Val]) -> Result<Val, String> {
     let s = zval_get_string(&args[0]);
     let s_str = s.as_str();
     let start = crate::engine::operators::zval_get_long(&args[1]) as isize;
-    
+
     let graphemes: Vec<&str> = s_str.graphemes(true).collect();
     let total = graphemes.len();
-    
+
     // Handle negative start
     let start = if start < 0 {
-        let abs_start = start.abs() as usize;
+        let abs_start = start.unsigned_abs();
         if abs_start >= total {
             return Ok(string_val(""));
         }
@@ -51,16 +51,16 @@ pub fn mb_substr(args: &[Val]) -> Result<Val, String> {
     } else {
         start as usize
     };
-    
+
     if start >= total {
         return Ok(string_val(""));
     }
-    
+
     // Handle length
     let end = if args.len() > 2 {
         let length = crate::engine::operators::zval_get_long(&args[2]) as isize;
         if length < 0 {
-            let abs_length = length.abs() as usize;
+            let abs_length = length.unsigned_abs();
             if abs_length >= total - start {
                 return Ok(string_val(""));
             }
@@ -72,7 +72,7 @@ pub fn mb_substr(args: &[Val]) -> Result<Val, String> {
     } else {
         total
     };
-    
+
     let result: String = graphemes[start..end].concat();
     Ok(string_val(&result))
 }
@@ -85,7 +85,7 @@ pub fn mb_strtolower(args: &[Val]) -> Result<Val, String> {
 
     let s = zval_get_string(&args[0]);
     let s_str = s.as_str();
-    
+
     Ok(string_val(&s_str.to_lowercase()))
 }
 
@@ -97,7 +97,7 @@ pub fn mb_strtoupper(args: &[Val]) -> Result<Val, String> {
 
     let s = zval_get_string(&args[0]);
     let s_str = s.as_str();
-    
+
     Ok(string_val(&s_str.to_uppercase()))
 }
 
@@ -111,11 +111,11 @@ pub fn mb_strpos(args: &[Val]) -> Result<Val, String> {
     let haystack_str = haystack.as_str();
     let needle = zval_get_string(&args[1]);
     let needle_str = needle.as_str();
-    
+
     if needle_str.is_empty() {
         return Err("mb_strpos(): Empty delimiter".to_string());
     }
-    
+
     let offset = if args.len() > 2 {
         let off = crate::engine::operators::zval_get_long(&args[2]) as usize;
         if off > 0 {
@@ -130,7 +130,7 @@ pub fn mb_strpos(args: &[Val]) -> Result<Val, String> {
     } else {
         haystack_str.to_string()
     };
-    
+
     match offset.find(needle_str) {
         Some(pos) => {
             let graphemes_before = offset[..pos].graphemes(true).count();
@@ -139,7 +139,10 @@ pub fn mb_strpos(args: &[Val]) -> Result<Val, String> {
             } else {
                 0
             };
-            Ok(Val::new(PhpValue::Long((graphemes_before + base_offset) as i64), PhpType::Long))
+            Ok(Val::new(
+                PhpValue::Long((graphemes_before + base_offset) as i64),
+                PhpType::Long,
+            ))
         }
         None => Ok(Val::new(PhpValue::Long(0), PhpType::False)),
     }
@@ -155,18 +158,18 @@ pub fn mb_strrpos(args: &[Val]) -> Result<Val, String> {
     let haystack_str = haystack.as_str();
     let needle = zval_get_string(&args[1]);
     let needle_str = needle.as_str();
-    
+
     if needle_str.is_empty() {
         return Err("mb_strrpos(): Empty delimiter".to_string());
     }
-    
+
     let graphemes: Vec<&str> = haystack_str.graphemes(true).collect();
-    
+
     // Handle offset
     let end = if args.len() > 2 {
-        let off = crate::engine::operators::zval_get_long(&args[2]) as i64;
+        let off = crate::engine::operators::zval_get_long(&args[2]);
         if off < 0 {
-            let abs_off = off.abs() as usize;
+            let abs_off = off.unsigned_abs() as usize;
             if abs_off >= graphemes.len() {
                 return Ok(Val::new(PhpValue::Long(0), PhpType::False));
             }
@@ -182,14 +185,14 @@ pub fn mb_strrpos(args: &[Val]) -> Result<Val, String> {
     } else {
         graphemes.len()
     };
-    
+
     // Search from the end
     for i in (0..end).rev() {
         if graphemes[i..end].concat().starts_with(needle_str) {
             return Ok(Val::new(PhpValue::Long(i as i64), PhpType::Long));
         }
     }
-    
+
     Ok(Val::new(PhpValue::Long(0), PhpType::False))
 }
 
@@ -201,7 +204,7 @@ pub fn mb_convert_encoding(args: &[Val]) -> Result<Val, String> {
 
     let s = zval_get_string(&args[0]);
     let s_str = s.as_str();
-    
+
     // For now, we only handle UTF-8 to UTF-8 (no conversion needed)
     // Full implementation would use encoding_rs or similar crate
     Ok(string_val(s_str))
@@ -217,13 +220,13 @@ pub fn mb_substr_count(args: &[Val]) -> Result<Val, String> {
     let haystack_str = haystack.as_str();
     let needle = zval_get_string(&args[1]);
     let needle_str = needle.as_str();
-    
+
     if needle_str.is_empty() {
         return Err("mb_substr_count(): Empty substring".to_string());
     }
-    
+
     let count = haystack_str.match_indices(needle_str).count();
-    
+
     Ok(Val::new(PhpValue::Long(count as i64), PhpType::Long))
 }
 
@@ -235,20 +238,16 @@ pub fn mb_strwidth(args: &[Val]) -> Result<Val, String> {
 
     let s = zval_get_string(&args[0]);
     let s_str = s.as_str();
-    
+
     // Calculate display width (East Asian Width)
     let width = s_str
         .chars()
         .map(|c| {
             // Simplified width calculation
-            if is_wide_char(c) {
-                2
-            } else {
-                1
-            }
+            if is_wide_char(c) { 2 } else { 1 }
         })
         .sum::<usize>();
-    
+
     Ok(Val::new(PhpValue::Long(width as i64), PhpType::Long))
 }
 
@@ -256,16 +255,16 @@ fn is_wide_char(c: char) -> bool {
     // Simplified check for wide characters (CJK, etc.)
     // Full implementation would use unicode-width crate
     let cp = c as u32;
-    (cp >= 0x1100 && cp <= 0x115F) ||
-    (cp >= 0x2E80 && cp <= 0xA4CF) ||
-    (cp >= 0xAC00 && cp <= 0xD7A3) ||
-    (cp >= 0xF900 && cp <= 0xFAFF) ||
-    (cp >= 0xFE10 && cp <= 0xFE19) ||
-    (cp >= 0xFE30 && cp <= 0xFE6F) ||
-    (cp >= 0xFF00 && cp <= 0xFF60) ||
-    (cp >= 0xFFE0 && cp <= 0xFFE6) ||
-    (cp >= 0x20000 && cp <= 0x2FFFD) ||
-    (cp >= 0x30000 && cp <= 0x3FFFD)
+    (0x1100..=0x115F).contains(&cp)
+        || (0x2E80..=0xA4CF).contains(&cp)
+        || (0xAC00..=0xD7A3).contains(&cp)
+        || (0xF900..=0xFAFF).contains(&cp)
+        || (0xFE10..=0xFE19).contains(&cp)
+        || (0xFE30..=0xFE6F).contains(&cp)
+        || (0xFF00..=0xFF60).contains(&cp)
+        || (0xFFE0..=0xFFE6).contains(&cp)
+        || (0x20000..=0x2FFFD).contains(&cp)
+        || (0x30000..=0x3FFFD).contains(&cp)
 }
 
 /// mb_strimwidth($str, $start, $width, $trimmarker = "", $encoding = null) - Get truncated string
@@ -283,36 +282,42 @@ pub fn mb_strimwidth(args: &[Val]) -> Result<Val, String> {
     } else {
         String::new()
     };
-    
+
     let chars: Vec<char> = s_str.chars().collect();
-    let total_width: usize = chars.iter().map(|c| if is_wide_char(*c) { 2 } else { 1 }).sum();
-    
+    let total_width: usize = chars
+        .iter()
+        .map(|c| if is_wide_char(*c) { 2 } else { 1 })
+        .sum();
+
     if start >= total_width {
         return Ok(string_val(""));
     }
-    
+
     let mut current_width = 0;
     let mut result = String::new();
-    let marker_width = trimmarker.chars().map(|c| if is_wide_char(c) { 2 } else { 1 }).sum::<usize>();
-    
+    let marker_width = trimmarker
+        .chars()
+        .map(|c| if is_wide_char(c) { 2 } else { 1 })
+        .sum::<usize>();
+
     for c in chars {
         if current_width < start {
             current_width += if is_wide_char(c) { 2 } else { 1 };
             continue;
         }
-        
+
         let char_width = if is_wide_char(c) { 2 } else { 1 };
         let remaining = width - (current_width - start);
-        
+
         if remaining < marker_width + char_width {
             result.push_str(&trimmarker);
             break;
         }
-        
+
         result.push(c);
         current_width += char_width;
     }
-    
+
     Ok(string_val(&result))
 }
 

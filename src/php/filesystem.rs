@@ -162,6 +162,7 @@ pub fn php_is_writable(path: &str) -> bool {
                 fs::OpenOptions::new()
                     .write(true)
                     .create(true)
+                    .truncate(true)
                     .open(path)
                     .map(|_| {
                         let _ = fs::remove_file(path);
@@ -216,9 +217,7 @@ pub fn php_glob(pattern: &str) -> Result<Vec<String>, String> {
         let entry = entry.map_err(|e| format!("Failed to read entry: {e}"))?;
         let name = entry.file_name().to_string_lossy().to_string();
         if glob_match(&file_pattern, &name) {
-            matches.push(
-                dir.join(&name).to_string_lossy().to_string(),
-            );
+            matches.push(dir.join(&name).to_string_lossy().to_string());
         }
     }
 

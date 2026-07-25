@@ -117,11 +117,11 @@ impl StreamWrapper for FileStream {
             mode,
             mtime: metadata
                 .modified()
-                .and_then(|t| Ok(t.duration_since(std::time::UNIX_EPOCH).unwrap().as_secs() as i64))
+                .map(|t| t.duration_since(std::time::UNIX_EPOCH).unwrap().as_secs() as i64)
                 .unwrap_or(0),
             ctime: metadata
                 .created()
-                .and_then(|t| Ok(t.duration_since(std::time::UNIX_EPOCH).unwrap().as_secs() as i64))
+                .map(|t| t.duration_since(std::time::UNIX_EPOCH).unwrap().as_secs() as i64)
                 .unwrap_or(0),
         })
     }

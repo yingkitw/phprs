@@ -23,12 +23,7 @@ fn make_array(values: Vec<Val>) -> Val {
 
 /// Parse a CSV line into fields.
 /// Handles enclosures, escapes, and empty fields.
-fn parse_csv_line(
-    line: &str,
-    delimiter: char,
-    enclosure: char,
-    escape: char,
-) -> Vec<String> {
+fn parse_csv_line(line: &str, delimiter: char, enclosure: char, escape: char) -> Vec<String> {
     let mut fields = Vec::new();
     let mut current = String::new();
     let mut in_enclosure = false;
@@ -75,12 +70,7 @@ fn parse_csv_line(
 }
 
 /// Format fields into a CSV line.
-fn format_csv_line(
-    fields: &[String],
-    delimiter: char,
-    enclosure: char,
-    escape: char,
-) -> String {
+fn format_csv_line(fields: &[String], delimiter: char, enclosure: char, escape: char) -> String {
     let mut result = String::new();
     for (i, field) in fields.iter().enumerate() {
         if i > 0 {
@@ -137,7 +127,9 @@ pub fn str_getcsv(args: &[Val]) -> Result<Val, String> {
     // PHP's str_getcsv only parses the first line
     let line = input.lines().next().unwrap_or(&input);
     let fields = parse_csv_line(line, delimiter, enclosure, escape);
-    Ok(make_array(fields.into_iter().map(|s| string_val(&s)).collect()))
+    Ok(make_array(
+        fields.into_iter().map(|s| string_val(&s)).collect(),
+    ))
 }
 
 /// fgetcsv($handle, $length = 0, $separator = ",", $enclosure = "\"", $escape = "\\")
@@ -176,7 +168,9 @@ pub fn fgetcsv(args: &[Val]) -> Result<Val, String> {
 
     let line = content.lines().next().unwrap_or("");
     let fields = parse_csv_line(line, delimiter, enclosure, escape);
-    Ok(make_array(fields.into_iter().map(|s| string_val(&s)).collect()))
+    Ok(make_array(
+        fields.into_iter().map(|s| string_val(&s)).collect(),
+    ))
 }
 
 /// fputcsv($handle, $fields, $separator = ",", $enclosure = "\"", $escape = "\\", $eol = "\n")
@@ -238,7 +232,10 @@ pub fn fputcsv(args: &[Val]) -> Result<Val, String> {
     file.write_all(output.as_bytes())
         .map_err(|e| format!("fputcsv(): {}", e))?;
 
-    Ok(Val::new(PhpValue::Long(bytes_written as i64), PhpType::Long))
+    Ok(Val::new(
+        PhpValue::Long(bytes_written as i64),
+        PhpType::Long,
+    ))
 }
 
 #[cfg(test)]
@@ -265,7 +262,10 @@ mod tests {
         let result = str_getcsv(&[input]).unwrap();
         if let PhpValue::Array(ref arr) = result.value {
             assert_eq!(arr.ar_data.len(), 2);
-            assert_eq!(zval_get_string(&arr.ar_data[0].val).as_str(), "hello, world");
+            assert_eq!(
+                zval_get_string(&arr.ar_data[0].val).as_str(),
+                "hello, world"
+            );
             assert_eq!(zval_get_string(&arr.ar_data[1].val).as_str(), "baz");
         } else {
             panic!("Expected array");
@@ -279,7 +279,10 @@ mod tests {
         let result = str_getcsv(&[input]).unwrap();
         if let PhpValue::Array(ref arr) = result.value {
             assert_eq!(arr.ar_data.len(), 2);
-            assert_eq!(zval_get_string(&arr.ar_data[0].val).as_str(), "he said \"hello\"");
+            assert_eq!(
+                zval_get_string(&arr.ar_data[0].val).as_str(),
+                "he said \"hello\""
+            );
         } else {
             panic!("Expected array");
         }
@@ -325,9 +328,21 @@ mod tests {
         // Build array
         let mut arr = crate::engine::types::PhpArray::new();
         let ks1 = Box::new(string_init("0", false));
-        let _ = crate::engine::hash::hash_add_or_update(&mut arr, Some(&*ks1), 0, string_val("hello"), 0);
+        let _ = crate::engine::hash::hash_add_or_update(
+            &mut arr,
+            Some(&*ks1),
+            0,
+            string_val("hello"),
+            0,
+        );
         let ks2 = Box::new(string_init("1", false));
-        let _ = crate::engine::hash::hash_add_or_update(&mut arr, Some(&*ks2), 0, string_val("world, test"), 0);
+        let _ = crate::engine::hash::hash_add_or_update(
+            &mut arr,
+            Some(&*ks2),
+            0,
+            string_val("world, test"),
+            0,
+        );
         let arr_val = Val::new(PhpValue::Array(Box::new(arr)), PhpType::Array);
 
         let path_val = string_val(path_str);

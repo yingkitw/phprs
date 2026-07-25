@@ -63,7 +63,9 @@ pub fn gzcompress(args: &[Val]) -> Result<Val, String> {
     encoder
         .write_all(&input_bytes)
         .map_err(|e| format!("gzcompress(): {}", e))?;
-    let compressed = encoder.finish().map_err(|e| format!("gzcompress(): {}", e))?;
+    let compressed = encoder
+        .finish()
+        .map_err(|e| format!("gzcompress(): {}", e))?;
 
     Ok(bytes_val(&compressed))
 }
@@ -135,7 +137,9 @@ pub fn gzdeflate(args: &[Val]) -> Result<Val, String> {
     encoder
         .write_all(&input_bytes)
         .map_err(|e| format!("gzdeflate(): {}", e))?;
-    let compressed = encoder.finish().map_err(|e| format!("gzdeflate(): {}", e))?;
+    let compressed = encoder
+        .finish()
+        .map_err(|e| format!("gzdeflate(): {}", e))?;
 
     Ok(bytes_val(&compressed))
 }

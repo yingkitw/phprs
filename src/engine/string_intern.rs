@@ -92,12 +92,7 @@ impl StringInterner {
 
     /// Number of unique interned strings currently held.
     pub fn unique_count(&self) -> usize {
-        self.entries
-            .lock()
-            .unwrap()
-            .values()
-            .map(|v| v.len())
-            .sum()
+        self.entries.lock().unwrap().values().map(|v| v.len()).sum()
     }
 
     #[inline]

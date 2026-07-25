@@ -12,7 +12,7 @@ use super::statement::parse_statement_block;
 use crate::engine::facade::{clone_val, null_val, result_val, string_val, zero_val};
 use crate::engine::lexer::{Lexer, Token, TokenType};
 use crate::engine::types::Val;
-use crate::engine::vm::{temp_var_ref, Op, Opcode};
+use crate::engine::vm::{Op, Opcode, temp_var_ref};
 
 /// Compile if statement: if (condition) { body } [else { body }]
 pub fn compile_if(lexer: &mut Lexer, context: &mut CompileContext) -> Result<Token, String> {
@@ -85,7 +85,7 @@ pub fn compile_if(lexer: &mut Lexer, context: &mut CompileContext) -> Result<Tok
     }
 
     // After if/else, get the next token
-    Ok(lexer.next_token()?)
+    lexer.next_token()
 }
 
 /// Compile while loop: while (condition) { body }
@@ -138,7 +138,7 @@ pub fn compile_while(lexer: &mut Lexer, context: &mut CompileContext) -> Result<
     context.update_jump_target(jmpz_index, context.current_op_index() as u32);
 
     // After while loop, get the next token
-    Ok(lexer.next_token()?)
+    lexer.next_token()
 }
 
 /// Compile for loop: for (init; condition; increment) { body }
@@ -249,14 +249,13 @@ pub fn compile_for(lexer: &mut Lexer, context: &mut CompileContext) -> Result<To
     let back_z1 = zero_val();
     let back_z2 = zero_val();
     let back_r = result_val(crate::engine::types::PhpType::Bool);
-    let jmp_back_index =
-        context.emit_opcode_with_index(Opcode::Jmp, back_z1, back_z2, back_r);
+    let jmp_back_index = context.emit_opcode_with_index(Opcode::Jmp, back_z1, back_z2, back_r);
     context.update_jump_target(jmp_back_index, loop_head_index as u32);
 
     let after_loop = context.current_op_index() as u32;
     context.update_jump_target(jmpz_exit_index, after_loop);
 
-    Ok(lexer.next_token()?)
+    lexer.next_token()
 }
 
 /// Compile foreach loop: foreach ($array as $value) { body }
@@ -309,9 +308,7 @@ pub fn compile_foreach(lexer: &mut Lexer, context: &mut CompileContext) -> Resul
     context.emit_opcode(
         Opcode::FeReset,
         array_expr.clone(),
-        key_slot
-            .map(temp_var_ref)
-            .unwrap_or_else(null_val),
+        key_slot.map(temp_var_ref).unwrap_or_else(null_val),
         temp_var_ref(iterator_slot),
     );
 
@@ -328,12 +325,7 @@ pub fn compile_foreach(lexer: &mut Lexer, context: &mut CompileContext) -> Resul
     let value_var = crate::engine::vm::var_ref(value_var_name.as_str());
     let value_ref = temp_var_ref(value_slot);
     let value_ref_assign = clone_val(&value_ref);
-    context.emit_opcode(
-        Opcode::Assign,
-        value_var,
-        value_ref,
-        value_ref_assign,
-    );
+    context.emit_opcode(Opcode::Assign, value_var, value_ref, value_ref_assign);
 
     if let (Some(key_name), Some(key_slot)) = (key_var_name.as_ref(), key_slot) {
         let key_var = crate::engine::vm::var_ref(key_name.as_str());
@@ -373,7 +365,7 @@ pub fn compile_foreach(lexer: &mut Lexer, context: &mut CompileContext) -> Resul
     let after_foreach = context.current_op_index() as u32;
     context.update_jump_target(end_jmp_idx, after_foreach);
 
-    Ok(lexer.next_token()?)
+    lexer.next_token()
 }
 
 /// Compile try-catch-finally: try { body } catch (ExceptionClass $e) { body } [finally { body }]
@@ -473,9 +465,9 @@ pub fn compile_try_catch(lexer: &mut Lexer, context: &mut CompileContext) -> Res
             crate::engine::types::PhpType::String,
         );
         let var_zval = Val::new(
-            crate::engine::types::PhpValue::String(Box::new(
-                crate::engine::string::string_init(&var_name, false),
-            )),
+            crate::engine::types::PhpValue::String(Box::new(crate::engine::string::string_init(
+                &var_name, false,
+            ))),
             crate::engine::types::PhpType::String,
         );
         let catch_r = zero_val();

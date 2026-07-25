@@ -10,7 +10,7 @@
 
 use super::builtins::{execute_builtin_function, is_builtin_function};
 use super::execute::execute_ex_returning;
-use super::execute_data::{clone_val, ExecuteData};
+use super::execute_data::{ExecuteData, clone_val};
 use super::opcodes::{Op, OpArray};
 use crate::engine::compile::function_table::FunctionTable;
 use crate::engine::types::{PhpValue, Val};
@@ -41,7 +41,7 @@ pub fn invoke_callable(
         None => {
             return Err(
                 "phprs: only string callables are supported in callbacks so far".to_string(),
-            )
+            );
         }
     };
 
@@ -121,11 +121,10 @@ pub fn invoke_user_function(
     let saved_global_imports = std::mem::take(&mut execute_data.global_imports);
     let saved_ref_bindings = std::mem::take(&mut execute_data.ref_param_bindings);
 
-    if execute_data.global_script_table.is_none() {
-        if let Some(ref saved) = saved_symbol_table {
-            execute_data.global_script_table =
-                Some(ExecuteData::clone_php_array(saved));
-        }
+    if execute_data.global_script_table.is_none()
+        && let Some(ref saved) = saved_symbol_table
+    {
+        execute_data.global_script_table = Some(ExecuteData::clone_php_array(saved));
     }
 
     execute_data.ref_caller_scope = saved_symbol_table;

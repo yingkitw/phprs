@@ -167,7 +167,10 @@ pub enum Repository {
     },
 
     /// Path repository (local)
-    Path { url: String, options: Option<PathOptions> },
+    Path {
+        url: String,
+        options: Option<PathOptions>,
+    },
 
     /// Package repository (inline)
     Package { package: ComposerJson },

@@ -1,8 +1,10 @@
 //! Core lexer implementation
 
-use super::tokens::{Token, TokenType};
 use super::keywords::keyword_to_token;
-use super::readers::{read_number, read_string, read_identifier, read_variable, skip_whitespace_with_lineno};
+use super::readers::{
+    read_identifier, read_number, read_string, read_variable, skip_whitespace_with_lineno,
+};
+use super::tokens::{Token, TokenType};
 use crate::engine::string::string_init;
 
 /// Lexer state
@@ -51,10 +53,10 @@ impl Lexer {
 
     /// Advance position
     pub fn advance(&mut self) {
-        if let Some(ch) = self.current_char() {
-            if ch == b'\n' {
-                self.lineno += 1;
-            }
+        if let Some(ch) = self.current_char()
+            && ch == b'\n'
+        {
+            self.lineno += 1;
         }
         self.position += 1;
     }
@@ -120,13 +122,15 @@ impl Lexer {
                 self.position = offset;
             }
 
-            let (token_type, value_str) = self.read_token(self.current_char().ok_or("Unexpected EOF")?)?;
+            let (token_type, value_str) =
+                self.read_token(self.current_char().ok_or("Unexpected EOF")?)?;
 
-            let value = if value_str.is_empty() && token_type != TokenType::T_CONSTANT_ENCAPSED_STRING {
-                None
-            } else {
-                Some(string_init(&value_str, false))
-            };
+            let value =
+                if value_str.is_empty() && token_type != TokenType::T_CONSTANT_ENCAPSED_STRING {
+                    None
+                } else {
+                    Some(string_init(&value_str, false))
+                };
 
             return Ok(Token::new(token_type, value, lineno, offset));
         }
@@ -148,19 +152,13 @@ impl Lexer {
                 let _start = self.position;
                 self.read_with(|lexer| read_variable(&lexer.input, &mut lexer.position))
             }
-            b'"' | b'\'' => {
-                self.read_with(|lexer| read_string(&lexer.input, &mut lexer.position))
-            }
-            b'0'..=b'9' => {
-                self.read_with(|lexer| read_number(&lexer.input, &mut lexer.position))
-            }
-            b'a'..=b'z' | b'A'..=b'Z' | b'_' => {
-                self.read_with(|lexer| {
-                    let (_token_type, value) = read_identifier(&lexer.input, &mut lexer.position)?;
-                    let kw_token = keyword_to_token(&value);
-                    Ok((kw_token, value))
-                })
-            }
+            b'"' | b'\'' => self.read_with(|lexer| read_string(&lexer.input, &mut lexer.position)),
+            b'0'..=b'9' => self.read_with(|lexer| read_number(&lexer.input, &mut lexer.position)),
+            b'a'..=b'z' | b'A'..=b'Z' | b'_' => self.read_with(|lexer| {
+                let (_token_type, value) = read_identifier(&lexer.input, &mut lexer.position)?;
+                let kw_token = keyword_to_token(&value);
+                Ok((kw_token, value))
+            }),
             b'+' => {
                 self.advance();
                 if self.current_char() == Some(b'=') {
@@ -222,7 +220,7 @@ impl Lexer {
                     // Check for === (three equals)
                     if self.current_char() == Some(b'=') {
                         self.advance();
-                        Ok((TokenType::T_IS_IDENTICAL, "===" .to_string()))
+                        Ok((TokenType::T_IS_IDENTICAL, "===".to_string()))
                     } else {
                         Ok((TokenType::T_IS_EQUAL, "==".to_string()))
                     }
@@ -335,7 +333,9 @@ impl Lexer {
                     } else {
                         Ok((TokenType::T_COALESCE, "??".to_string()))
                     }
-                } else if self.current_char() == Some(b'-') && self.input.get(self.position + 1) == Some(&b'>') {
+                } else if self.current_char() == Some(b'-')
+                    && self.input.get(self.position + 1) == Some(&b'>')
+                {
                     self.advance(); // skip -
                     self.advance(); // skip >
                     Ok((TokenType::T_NULLSAFE_OBJECT_OPERATOR, "?->".to_string()))

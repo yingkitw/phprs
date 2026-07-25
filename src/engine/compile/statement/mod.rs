@@ -8,13 +8,18 @@
 pub(crate) mod oop;
 
 use super::context::CompileContext;
-use super::control_flow::{compile_for, compile_foreach, compile_if, compile_throw, compile_try_catch, compile_while};
-use super::expression::{parse_expression, parse_additive_expr_with_initial};
+use super::control_flow::{
+    compile_for, compile_foreach, compile_if, compile_throw, compile_try_catch, compile_while,
+};
 use super::expression::helpers::token_is_punct;
+use super::expression::{parse_additive_expr_with_initial, parse_expression};
 use super::function::compile_function;
-use crate::engine::facade::{null_val, result_val, string_val, string_val_copy, zero_val, clone_val, StdValFactory, ValFactory};
+use crate::engine::facade::{
+    StdValFactory, ValFactory, clone_val, null_val, result_val, string_val, string_val_copy,
+    zero_val,
+};
+use crate::engine::lexer::{Lexer, Token, TokenType};
 use crate::engine::types::Val;
-use crate::engine::lexer::{Token, Lexer, TokenType};
 use crate::engine::vm::{Opcode, temp_var_ref, var_ref};
 
 /// Helper: consume semicolon if present, return next token
@@ -46,23 +51,28 @@ pub fn parse_statement_block(
         if current_token.token_type == last_token_type {
             same_token_count += 1;
             if same_token_count > 100 {
-                return Err(format!("Infinite loop detected in statement block at token {:?}", current_token.token_type));
+                return Err(format!(
+                    "Infinite loop detected in statement block at token {:?}",
+                    current_token.token_type
+                ));
             }
         } else {
             same_token_count = 0;
             last_token_type = current_token.token_type;
         }
 
-        if let Some(s) = current_token.value.as_ref() {
-            if current_token.token_type == TokenType::T_STRING {
-                if s.as_str() == "}" {
-                    brace_count -= 1;
-                    if brace_count == 0 { return Ok(()); }
-                    current_token = lexer.next_token()?;
-                    continue;
-                } else if s.as_str() == "{" {
-                    brace_count += 1;
+        if let Some(s) = current_token.value.as_ref()
+            && current_token.token_type == TokenType::T_STRING
+        {
+            if s.as_str() == "}" {
+                brace_count -= 1;
+                if brace_count == 0 {
+                    return Ok(());
                 }
+                current_token = lexer.next_token()?;
+                continue;
+            } else if s.as_str() == "{" {
+                brace_count += 1;
             }
         }
 
@@ -89,12 +99,15 @@ pub fn parse_statement(
         TokenType::T_LNUMBER | TokenType::T_DNUMBER => Ok(lexer.next_token()?),
         TokenType::T_CONSTANT_ENCAPSED_STRING => Ok(lexer.next_token()?),
         TokenType::T_STRING => compile_string_stmt(lexer, context, &token),
-        TokenType::T_PLUS | TokenType::T_MINUS | TokenType::T_MUL | TokenType::T_DIV | TokenType::T_MOD => {
-            Ok(lexer.next_token()?)
-        }
-        TokenType::T_INCLUDE | TokenType::T_INCLUDE_ONCE | TokenType::T_REQUIRE | TokenType::T_REQUIRE_ONCE => {
-            compile_include(lexer, context, &token)
-        }
+        TokenType::T_PLUS
+        | TokenType::T_MINUS
+        | TokenType::T_MUL
+        | TokenType::T_DIV
+        | TokenType::T_MOD => Ok(lexer.next_token()?),
+        TokenType::T_INCLUDE
+        | TokenType::T_INCLUDE_ONCE
+        | TokenType::T_REQUIRE
+        | TokenType::T_REQUIRE_ONCE => compile_include(lexer, context, &token),
         TokenType::T_IF => compile_if(lexer, context),
         TokenType::T_WHILE => compile_while(lexer, context),
         TokenType::T_FOR => compile_for(lexer, context),
@@ -123,7 +136,7 @@ pub(crate) fn skip_attribute_block(lexer: &mut Lexer) -> Result<Token, String> {
         } else if token_is_punct(&token, "]") {
             depth -= 1;
             if depth == 0 {
-                return Ok(lexer.next_token()?);
+                return lexer.next_token();
             }
         }
         token = lexer.next_token()?;
@@ -132,14 +145,13 @@ pub(crate) fn skip_attribute_block(lexer: &mut Lexer) -> Result<Token, String> {
 }
 
 /// Compile echo statement
-fn compile_echo(
-    lexer: &mut Lexer,
-    context: &mut CompileContext,
-) -> Result<Token, String> {
+fn compile_echo(lexer: &mut Lexer, context: &mut CompileContext) -> Result<Token, String> {
     let (echo_value, _) = parse_expression(lexer, context)?;
     let zval_zero = zero_val();
     let zval_result = match &echo_value.value {
-        crate::engine::types::PhpValue::String(s) => string_val_copy(s.as_str(), echo_value.get_type()),
+        crate::engine::types::PhpValue::String(s) => {
+            string_val_copy(s.as_str(), echo_value.get_type())
+        }
         _ => result_val(echo_value.get_type()),
     };
     context.emit_opcode(Opcode::Echo, echo_value, zval_zero, zval_result);
@@ -198,7 +210,10 @@ fn compile_variable_stmt(
         // Parse args using the same pattern as function calls
         let mut arg_token = lexer.next_token()?;
         while !token_is_punct(&arg_token, ")") {
-            let (arg_val, after_arg) = crate::engine::compile::expression::parse_additive_expr_with_initial(lexer, context, arg_token)?;
+            let (arg_val, after_arg) =
+                crate::engine::compile::expression::parse_additive_expr_with_initial(
+                    lexer, context, arg_token,
+                )?;
             context.emit_opcode(Opcode::SendVal, arg_val, null_val(), null_val());
             if token_is_punct(&after_arg, ",") {
                 arg_token = lexer.next_token()?;
@@ -207,7 +222,12 @@ fn compile_variable_stmt(
             }
         }
         let call_slot = context.alloc_temp();
-        context.emit_opcode(Opcode::DoFCall, var_zval, null_val(), crate::engine::vm::temp_var_ref(call_slot));
+        context.emit_opcode(
+            Opcode::DoFCall,
+            var_zval,
+            null_val(),
+            crate::engine::vm::temp_var_ref(call_slot),
+        );
         let next = lexer.next_token()?;
         skip_semicolon(lexer, next)
     } else if next_token.token_type == TokenType::T_OBJECT_OPERATOR {
@@ -245,8 +265,7 @@ fn parse_dim_assign_keys(
             break;
         }
 
-        let (index_val, after_index) =
-            parse_additive_expr_with_initial(lexer, context, token)?;
+        let (index_val, after_index) = parse_additive_expr_with_initial(lexer, context, token)?;
         if !token_is_punct(&after_index, "]") {
             return Err("Expected ']' after array index in assignment".to_string());
         }
@@ -281,7 +300,12 @@ fn emit_dim_assignment(
         if last.append {
             context.emit_opcode_ext(Opcode::AssignDim, var_name_zval, value, null_val(), 1);
         } else {
-            context.emit_opcode(Opcode::AssignDim, var_name_zval, value, clone_val(&last.key));
+            context.emit_opcode(
+                Opcode::AssignDim,
+                var_name_zval,
+                value,
+                clone_val(&last.key),
+            );
         }
         return Ok(());
     }
@@ -314,12 +338,7 @@ fn emit_dim_assignment(
     if last.append {
         context.emit_opcode_ext(Opcode::AssignDim, container, value, null_val(), 1);
     } else {
-        context.emit_opcode(
-            Opcode::AssignDim,
-            container,
-            value,
-            clone_val(&last.key),
-        );
+        context.emit_opcode(Opcode::AssignDim, container, value, clone_val(&last.key));
     }
 
     for i in (0..keys.len() - 1).rev() {
@@ -409,12 +428,7 @@ fn emit_obj_prop_dim_assignment(
     if last.append {
         context.emit_opcode_ext(Opcode::AssignDim, container, value, null_val(), 1);
     } else {
-        context.emit_opcode(
-            Opcode::AssignDim,
-            container,
-            value,
-            clone_val(&last.key),
-        );
+        context.emit_opcode(Opcode::AssignDim, container, value, clone_val(&last.key));
     }
 
     for i in (0..keys.len() - 1).rev() {
@@ -523,7 +537,9 @@ fn compile_object_stmt(
     var_name: &str,
 ) -> Result<Token, String> {
     let member_token = lexer.next_token()?;
-    let member_name = member_token.value.as_ref()
+    let member_name = member_token
+        .value
+        .as_ref()
         .ok_or("Expected property/method name after '->'")?
         .as_str();
     let member_zval = string_val(member_name);
@@ -540,7 +556,9 @@ fn compile_object_stmt(
         );
         let mut arg_token = lexer.next_token()?;
         while !token_is_punct(&arg_token, ")") {
-            arg_token = crate::engine::compile::expression::helpers::parse_call_arg_unknown(lexer, context, arg_token)?;
+            arg_token = crate::engine::compile::expression::helpers::parse_call_arg_unknown(
+                lexer, context, arg_token,
+            )?;
             if token_is_punct(&arg_token, ",") {
                 arg_token = lexer.next_token()?;
             }
@@ -584,7 +602,7 @@ fn compile_string_stmt(
 ) -> Result<Token, String> {
     let val = token.value.as_ref().map(|s| s.as_str()).unwrap_or("");
     if val == ";" || val == "{" || val == "}" || val == ")" || val == "(" {
-        return Ok(lexer.next_token()?);
+        return lexer.next_token();
     }
     let next = lexer.next_token()?;
     if token_is_punct(&next, "(") {
@@ -606,43 +624,47 @@ fn compile_string_stmt(
             } else {
                 // Static property read as statement (result ignored)
                 let slot = context.alloc_temp();
-                context.emit_opcode(Opcode::FetchStaticProp, class_val, prop_zval, temp_var_ref(slot));
+                context.emit_opcode(
+                    Opcode::FetchStaticProp,
+                    class_val,
+                    prop_zval,
+                    temp_var_ref(slot),
+                );
                 skip_semicolon(lexer, after)
             }
         } else {
-            let member_name = member_token.value.as_ref()
+            let member_name = member_token
+                .value
+                .as_ref()
                 .ok_or("Expected member name after '::'")?
                 .as_str();
             let member_zval = string_val(member_name);
             let peek = lexer.next_token()?;
             if token_is_punct(&peek, "(") {
                 // Static method call
-                context.emit_opcode(
-                    Opcode::InitFCall,
-                    null_val(),
-                    null_val(),
-                    null_val(),
-                );
+                context.emit_opcode(Opcode::InitFCall, null_val(), null_val(), null_val());
                 let mut arg_token = lexer.next_token()?;
                 while !token_is_punct(&arg_token, ")") {
-                    arg_token = super::expression::helpers::parse_call_arg_unknown(lexer, context, arg_token)?;
+                    arg_token = super::expression::helpers::parse_call_arg_unknown(
+                        lexer, context, arg_token,
+                    )?;
                     if token_is_punct(&arg_token, ",") {
                         arg_token = lexer.next_token()?;
                     }
                 }
                 let _call_slot = context.alloc_temp();
-                context.emit_opcode(
-                    Opcode::DoStaticCall,
-                    member_zval,
-                    class_val,
-                    null_val(),
-                );
+                context.emit_opcode(Opcode::DoStaticCall, member_zval, class_val, null_val());
                 let after_close = lexer.next_token()?;
                 skip_semicolon(lexer, after_close)
             } else {
                 // Static constant access (result ignored)
                 let slot = context.alloc_temp();
-                context.emit_opcode(Opcode::FetchStaticProp, class_val, member_zval, temp_var_ref(slot));
+                context.emit_opcode(
+                    Opcode::FetchStaticProp,
+                    class_val,
+                    member_zval,
+                    temp_var_ref(slot),
+                );
                 skip_semicolon(lexer, peek)
             }
         }
@@ -652,10 +674,7 @@ fn compile_string_stmt(
 }
 
 /// Compile global statement: global $a, $b;
-fn compile_global(
-    lexer: &mut Lexer,
-    context: &mut CompileContext,
-) -> Result<Token, String> {
+fn compile_global(lexer: &mut Lexer, context: &mut CompileContext) -> Result<Token, String> {
     let mut token = lexer.next_token()?;
     loop {
         if token.token_type != TokenType::T_VARIABLE {
@@ -706,10 +725,7 @@ fn compile_include(
 }
 
 /// Compile namespace declaration: namespace Foo\Bar;
-fn compile_namespace(
-    lexer: &mut Lexer,
-    context: &mut CompileContext,
-) -> Result<Token, String> {
+fn compile_namespace(lexer: &mut Lexer, context: &mut CompileContext) -> Result<Token, String> {
     // Read namespace name parts: Foo\Bar\Baz
     let mut parts = Vec::new();
     let mut tok = lexer.next_token()?;
@@ -740,7 +756,7 @@ fn compile_namespace(
             if token_is_punct(&current, "}") {
                 brace_count -= 1;
                 if brace_count == 0 {
-                    return Ok(lexer.next_token()?);
+                    return lexer.next_token();
                 }
             } else if token_is_punct(&current, "{") {
                 brace_count += 1;
@@ -752,10 +768,7 @@ fn compile_namespace(
 }
 
 /// Compile use statement: use Foo\Bar\Baz; or use Foo\Bar\Baz as Alias;
-fn compile_use(
-    lexer: &mut Lexer,
-    context: &mut CompileContext,
-) -> Result<Token, String> {
+fn compile_use(lexer: &mut Lexer, context: &mut CompileContext) -> Result<Token, String> {
     // Read fully qualified name parts
     let mut parts = Vec::new();
     let mut tok = lexer.next_token()?;
@@ -788,10 +801,7 @@ fn compile_use(
 }
 
 /// Compile return statement
-fn compile_return(
-    lexer: &mut Lexer,
-    context: &mut CompileContext,
-) -> Result<Token, String> {
+fn compile_return(lexer: &mut Lexer, context: &mut CompileContext) -> Result<Token, String> {
     let peek = lexer.next_token()?;
     // Check for bare `return;` (no expression)
     if token_is_punct(&peek, ";") {
@@ -807,17 +817,20 @@ fn compile_return(
 }
 
 /// Compile yield statement (currently treated as return-style value)
-fn compile_yield(
-    lexer: &mut Lexer,
-    context: &mut CompileContext,
-) -> Result<Token, String> {
+fn compile_yield(lexer: &mut Lexer, context: &mut CompileContext) -> Result<Token, String> {
     let yield_array = context.ensure_yield_array();
     let peek = lexer.next_token()?;
     if token_is_punct(&peek, ";") {
         context.emit_opcode(Opcode::AddArrayElement, yield_array, null_val(), null_val());
         return lexer.next_token().map(Ok)?;
     }
-    let (yield_value, after) = crate::engine::compile::expression::parse_additive_expr_with_initial(lexer, context, peek)?;
-    context.emit_opcode(Opcode::AddArrayElement, yield_array, yield_value, null_val());
+    let (yield_value, after) =
+        crate::engine::compile::expression::parse_additive_expr_with_initial(lexer, context, peek)?;
+    context.emit_opcode(
+        Opcode::AddArrayElement,
+        yield_array,
+        yield_value,
+        null_val(),
+    );
     skip_semicolon(lexer, after)
 }

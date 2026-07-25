@@ -471,7 +471,7 @@ cargo run -p phprs-cli -- run examples/test-streams-regex-pdo.php
 cargo run -p phprs-cli -- run examples/wordpress/test-theme-plugin.php
 ```
 
-The workspace runs **clean** (no warnings) on `cargo test --workspace` and `cargo build --workspace`.
+The workspace passes `cargo build --workspace` and `cargo test --workspace`. Some `cargo clippy` style warnings remain and are being tidied incrementally.
 
 ## Documentation
 

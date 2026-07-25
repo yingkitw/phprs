@@ -67,7 +67,12 @@ fn serialize_into(out: &mut String, val: &Val) {
         }
         PhpValue::Object(obj) => {
             let name = obj.class_name.as_str();
-            out.push_str(&format!("O:{}:\"{}\":{}:{{", name.len(), name, obj.properties.len()));
+            out.push_str(&format!(
+                "O:{}:\"{}\":{}:{{",
+                name.len(),
+                name,
+                obj.properties.len()
+            ));
             for (pname, pval) in &obj.properties {
                 let pb = pname.as_bytes();
                 out.push_str(&format!("s:{}:\"", pb.len()));
@@ -155,19 +160,25 @@ fn parse_value(cur: &mut Cursor) -> Result<Val, String> {
         'b' => {
             cur.expect(b':')?;
             let raw = cur.read_until(b';')?;
-            let b = std::str::from_utf8(raw).map_err(|_| "unserialize(): invalid UTF-8".to_string())?
+            let b = std::str::from_utf8(raw)
+                .map_err(|_| "unserialize(): invalid UTF-8".to_string())?
                 .trim()
                 .parse::<u8>()
                 .map_err(|_| "unserialize(): invalid bool".to_string())?;
             Ok(Val::new(
                 PhpValue::Long(if b != 0 { 1 } else { 0 }),
-                if b != 0 { PhpType::True } else { PhpType::False },
+                if b != 0 {
+                    PhpType::True
+                } else {
+                    PhpType::False
+                },
             ))
         }
         'i' => {
             cur.expect(b':')?;
             let raw = cur.read_until(b';')?;
-            let n: i64 = std::str::from_utf8(raw).map_err(|_| "unserialize(): invalid UTF-8".to_string())?
+            let n: i64 = std::str::from_utf8(raw)
+                .map_err(|_| "unserialize(): invalid UTF-8".to_string())?
                 .trim()
                 .parse()
                 .map_err(|_| "unserialize(): invalid integer".to_string())?;
@@ -176,7 +187,8 @@ fn parse_value(cur: &mut Cursor) -> Result<Val, String> {
         'd' => {
             cur.expect(b':')?;
             let raw = cur.read_until(b';')?;
-            let d: f64 = std::str::from_utf8(raw).map_err(|_| "unserialize(): invalid UTF-8".to_string())?
+            let d: f64 = std::str::from_utf8(raw)
+                .map_err(|_| "unserialize(): invalid UTF-8".to_string())?
                 .trim()
                 .parse()
                 .map_err(|_| "unserialize(): invalid double".to_string())?;
@@ -185,7 +197,8 @@ fn parse_value(cur: &mut Cursor) -> Result<Val, String> {
         's' => {
             cur.expect(b':')?;
             let len_raw = cur.read_until(b':')?;
-            let len: usize = std::str::from_utf8(len_raw).map_err(|_| "unserialize(): invalid UTF-8".to_string())?
+            let len: usize = std::str::from_utf8(len_raw)
+                .map_err(|_| "unserialize(): invalid UTF-8".to_string())?
                 .trim()
                 .parse()
                 .map_err(|_| "unserialize(): invalid string length".to_string())?;
@@ -199,7 +212,8 @@ fn parse_value(cur: &mut Cursor) -> Result<Val, String> {
         'a' => {
             cur.expect(b':')?;
             let count_raw = cur.read_until(b':')?;
-            let count: usize = std::str::from_utf8(count_raw).map_err(|_| "unserialize(): invalid UTF-8".to_string())?
+            let count: usize = std::str::from_utf8(count_raw)
+                .map_err(|_| "unserialize(): invalid UTF-8".to_string())?
                 .trim()
                 .parse()
                 .map_err(|_| "unserialize(): invalid array count".to_string())?;
@@ -234,17 +248,21 @@ fn parse_value(cur: &mut Cursor) -> Result<Val, String> {
         'O' => {
             cur.expect(b':')?;
             let name_len_raw = cur.read_until(b':')?;
-            let name_len: usize = std::str::from_utf8(name_len_raw).map_err(|_| "unserialize(): invalid UTF-8".to_string())?
+            let name_len: usize = std::str::from_utf8(name_len_raw)
+                .map_err(|_| "unserialize(): invalid UTF-8".to_string())?
                 .trim()
                 .parse()
                 .map_err(|_| "unserialize(): invalid class name length".to_string())?;
             cur.expect(b'"')?;
             let name_bytes = cur.read_fixed(name_len)?;
-            let class_name = std::str::from_utf8(name_bytes).unwrap_or("stdClass").to_string();
+            let class_name = std::str::from_utf8(name_bytes)
+                .unwrap_or("stdClass")
+                .to_string();
             cur.expect(b'"')?;
             cur.expect(b':')?;
             let prop_count_raw = cur.read_until(b':')?;
-            let prop_count: usize = std::str::from_utf8(prop_count_raw).map_err(|_| "unserialize(): invalid UTF-8".to_string())?
+            let prop_count: usize = std::str::from_utf8(prop_count_raw)
+                .map_err(|_| "unserialize(): invalid UTF-8".to_string())?
                 .trim()
                 .parse()
                 .map_err(|_| "unserialize(): invalid property count".to_string())?;
@@ -350,7 +368,10 @@ mod tests {
             let s = php_serialize(&[val.clone()]).unwrap();
             assert_eq!(zval_get_string(&s).as_str(), *expected);
             let back = php_unserialize(&[s]).unwrap();
-            assert_eq!(zval_get_string(&back).as_str(), zval_get_string(val).as_str());
+            assert_eq!(
+                zval_get_string(&back).as_str(),
+                zval_get_string(val).as_str()
+            );
         }
     }
 
@@ -364,11 +385,7 @@ mod tests {
 
     #[test]
     fn round_trip_indexed_array() {
-        let arr = array_of(&[
-            (None, mk_long(1)),
-            (None, mk_long(2)),
-            (None, mk_str("x")),
-        ]);
+        let arr = array_of(&[(None, mk_long(1)), (None, mk_long(2)), (None, mk_str("x"))]);
         let s = php_serialize(&[arr]).unwrap();
         let expected = "a:3:{i:0;i:1;i:1;i:2;i:2;s:1:\"x\";}";
         assert_eq!(zval_get_string(&s).as_str(), expected);
@@ -383,7 +400,10 @@ mod tests {
 
     #[test]
     fn round_trip_assoc_array() {
-        let arr = array_of(&[(Some(mk_str("a")), mk_long(1)), (Some(mk_str("b")), mk_str("y"))]);
+        let arr = array_of(&[
+            (Some(mk_str("a")), mk_long(1)),
+            (Some(mk_str("b")), mk_str("y")),
+        ]);
         let s = php_serialize(&[arr]).unwrap();
         let back = php_unserialize(&[s]).unwrap();
         if let PhpValue::Array(a) = &back.value {
@@ -401,7 +421,11 @@ mod tests {
         obj.properties.insert("y".to_string(), mk_long(2));
         let v = Val::new(PhpValue::Object(Box::new(obj)), PhpType::Object);
         let s = php_serialize(&[v]).unwrap();
-        assert!(zval_get_string(&s).as_str().starts_with("O:5:\"Point\":2:{"));
+        assert!(
+            zval_get_string(&s)
+                .as_str()
+                .starts_with("O:5:\"Point\":2:{")
+        );
         let back = php_unserialize(&[s]).unwrap();
         if let PhpValue::Object(o) = &back.value {
             assert_eq!(o.class_name, "Point");

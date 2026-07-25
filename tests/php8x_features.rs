@@ -6,7 +6,7 @@
 
 use phprs::engine::compile::compile_string_with_functions;
 use phprs::engine::types::PhpResult;
-use phprs::engine::vm::{execute_ex, ExecuteData};
+use phprs::engine::vm::{ExecuteData, execute_ex};
 use std::sync::Arc;
 
 /// Compile and run a PHP code string, returning (result, output)
@@ -34,7 +34,10 @@ Counter::increment();
 echo Counter::$count;
 "#;
     let (r, out) = run_php(code).expect("run");
-    assert!(matches!(r, PhpResult::Success), "vm result: {r:?}, output: {out:?}");
+    assert!(
+        matches!(r, PhpResult::Success),
+        "vm result: {r:?}, output: {out:?}"
+    );
     assert!(out.contains("2"), "expected count=2, got: {out:?}");
 }
 
@@ -53,10 +56,15 @@ echo "|";
 echo Child::getClass();
 "#;
     let (r, out) = run_php(code).expect("run");
-    assert!(matches!(r, PhpResult::Success), "vm result: {r:?}, output: {out:?}");
+    assert!(
+        matches!(r, PhpResult::Success),
+        "vm result: {r:?}, output: {out:?}"
+    );
     // static:: should resolve to the called class
-    assert!(out.contains("Base|Child") || out.contains("Base") || out.contains("Child"),
-        "late static binding output: {out:?}");
+    assert!(
+        out.contains("Base|Child") || out.contains("Base") || out.contains("Child"),
+        "late static binding output: {out:?}"
+    );
 }
 
 #[test]
@@ -76,7 +84,10 @@ echo "|";
 echo $box->baz;
 "#;
     let (r, out) = run_php(code).expect("run");
-    assert!(matches!(r, PhpResult::Success), "vm result: {r:?}, output: {out:?}");
+    assert!(
+        matches!(r, PhpResult::Success),
+        "vm result: {r:?}, output: {out:?}"
+    );
     assert!(out.contains("set_foo=bar"), "__set output: {out:?}");
     assert!(out.contains("got_baz"), "__get output: {out:?}");
 }
@@ -93,7 +104,10 @@ $obj = new Dynamic();
 echo $obj->doSomething(1, 2, 3);
 "#;
     let (r, out) = run_php(code).expect("run");
-    assert!(matches!(r, PhpResult::Success), "vm result: {r:?}, output: {out:?}");
+    assert!(
+        matches!(r, PhpResult::Success),
+        "vm result: {r:?}, output: {out:?}"
+    );
     assert!(out.contains("doSomething(3)"), "__call output: {out:?}");
 }
 
@@ -117,7 +131,10 @@ echo "|";
 echo $box->allowed;
 "#;
     let (r, out) = run_php(code).expect("run");
-    assert!(matches!(r, PhpResult::Success), "vm result: {r:?}, output: {out:?}");
+    assert!(
+        matches!(r, PhpResult::Success),
+        "vm result: {r:?}, output: {out:?}"
+    );
     assert!(out.contains("yes|no|got_allowed"), "__isset magic: {out:?}");
 }
 
@@ -132,7 +149,10 @@ $obj = new class {
 echo $obj->greet();
 "#;
     let (r, out) = run_php(code).expect("run");
-    assert!(matches!(r, PhpResult::Success), "vm result: {r:?}, output: {out:?}");
+    assert!(
+        matches!(r, PhpResult::Success),
+        "vm result: {r:?}, output: {out:?}"
+    );
     assert!(out.contains("hello"), "anonymous class output: {out:?}");
 }
 
@@ -149,7 +169,10 @@ function sum(...$numbers) {
 echo sum(1, 2, 3, 4);
 "#;
     let (r, out) = run_php(code).expect("run");
-    assert!(matches!(r, PhpResult::Success), "vm result: {r:?}, output: {out:?}");
+    assert!(
+        matches!(r, PhpResult::Success),
+        "vm result: {r:?}, output: {out:?}"
+    );
     assert!(out.contains("10"), "variadic output: {out:?}");
 }
 
@@ -162,7 +185,10 @@ function greet($name, $greeting = "Hello") {
 echo greet(greeting: "Hi", name: "World");
 "#;
     let (r, out) = run_php(code).expect("run");
-    assert!(matches!(r, PhpResult::Success), "vm result: {r:?}, output: {out:?}");
+    assert!(
+        matches!(r, PhpResult::Success),
+        "vm result: {r:?}, output: {out:?}"
+    );
     assert!(out.contains("Hi World"), "named args output: {out:?}");
 }
 
@@ -175,7 +201,10 @@ function acceptsIntOrString(int|string $value): void {
 acceptsIntOrString(42);
 "#;
     let (r, out) = run_php(code).expect("run");
-    assert!(matches!(r, PhpResult::Success), "vm result: {r:?}, output: {out:?}");
+    assert!(
+        matches!(r, PhpResult::Success),
+        "vm result: {r:?}, output: {out:?}"
+    );
     assert!(out.contains("42"), "union type output: {out:?}");
 }
 
@@ -189,7 +218,10 @@ enum Status {
 echo Status::Pending;
 "#;
     let (r, out) = run_php(code).expect("run");
-    assert!(matches!(r, PhpResult::Success), "vm result: {r:?}, output: {out:?}");
+    assert!(
+        matches!(r, PhpResult::Success),
+        "vm result: {r:?}, output: {out:?}"
+    );
     assert!(out.contains("Pending"), "enum output: {out:?}");
 }
 
@@ -203,7 +235,10 @@ enum Color: string {
 echo Color::Red;
 "#;
     let (r, out) = run_php(code).expect("run");
-    assert!(matches!(r, PhpResult::Success), "vm result: {r:?}, output: {out:?}");
+    assert!(
+        matches!(r, PhpResult::Success),
+        "vm result: {r:?}, output: {out:?}"
+    );
     assert!(out.contains("red"), "backed enum output: {out:?}");
 }
 
@@ -217,8 +252,14 @@ Config::$value = "updated";
 echo Config::$value;
 "#;
     let (r, out) = run_php(code).expect("run");
-    assert!(matches!(r, PhpResult::Success), "vm result: {r:?}, output: {out:?}");
-    assert!(out.contains("updated"), "static prop assignment output: {out:?}");
+    assert!(
+        matches!(r, PhpResult::Success),
+        "vm result: {r:?}, output: {out:?}"
+    );
+    assert!(
+        out.contains("updated"),
+        "static prop assignment output: {out:?}"
+    );
 }
 
 #[test]
@@ -233,7 +274,10 @@ $obj = new class(5) {
 echo $obj->value;
 "#;
     let (r, out) = run_php(code).expect("run");
-    assert!(matches!(r, PhpResult::Success), "vm result: {r:?}, output: {out:?}");
+    assert!(
+        matches!(r, PhpResult::Success),
+        "vm result: {r:?}, output: {out:?}"
+    );
     assert!(out.contains("5"), "anon class with ctor output: {out:?}");
 }
 
@@ -258,7 +302,10 @@ $inc = $obj->inc(...);
 echo $inc(9);
 "#;
     let (r, out) = run_php(code).expect("run");
-    assert!(matches!(r, PhpResult::Success), "vm result: {r:?}, output: {out:?}");
+    assert!(
+        matches!(r, PhpResult::Success),
+        "vm result: {r:?}, output: {out:?}"
+    );
     assert!(out.contains("5"), "strlen FCC output: {out:?}");
     assert!(out.contains("8"), "static FCC output: {out:?}");
     assert!(out.contains("10"), "method FCC output: {out:?}");
@@ -276,6 +323,9 @@ if ($a == 'Home' && $b == 'index') {
 }
 "#;
     let (r, out) = run_php(code).expect("run");
-    assert!(matches!(r, PhpResult::Success), "vm result: {r:?}, output: {out:?}");
+    assert!(
+        matches!(r, PhpResult::Success),
+        "vm result: {r:?}, output: {out:?}"
+    );
     assert!(out.contains("ok"), "combined && output: {out:?}");
 }

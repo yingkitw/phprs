@@ -4,12 +4,12 @@
 //! including unit tests, integration tests, and edge cases.
 
 use phprs::{
-    php::{streams, streams::StreamMode},
     engine::{
-        facade::{ValFactory, StdValFactory},
+        facade::{StdValFactory, ValFactory},
         lexer::Lexer,
         types::{PhpType, PhpValue},
     },
+    php::{streams, streams::StreamMode},
 };
 
 // ============================================================================
@@ -22,12 +22,44 @@ mod lexer_tests {
     #[test]
     fn test_lexer_all_keywords() {
         let keywords = [
-            "if", "else", "elseif", "while", "for", "foreach", "function",
-            "class", "return", "echo", "true", "false", "null", "array",
-            "new", "static", "public", "private", "protected", "const",
-            "break", "continue", "switch", "case", "default", "try", "catch",
-            "throw", "namespace", "use", "as", "abstract", "extends", "final",
-            "implements", "interface", "trait", "clone",
+            "if",
+            "else",
+            "elseif",
+            "while",
+            "for",
+            "foreach",
+            "function",
+            "class",
+            "return",
+            "echo",
+            "true",
+            "false",
+            "null",
+            "array",
+            "new",
+            "static",
+            "public",
+            "private",
+            "protected",
+            "const",
+            "break",
+            "continue",
+            "switch",
+            "case",
+            "default",
+            "try",
+            "catch",
+            "throw",
+            "namespace",
+            "use",
+            "as",
+            "abstract",
+            "extends",
+            "final",
+            "implements",
+            "interface",
+            "trait",
+            "clone",
         ];
 
         for keyword in &keywords {
@@ -164,7 +196,7 @@ mod zval_factory_tests {
         let long_val = StdValFactory::long_val(42);
         assert_eq!(long_val.get_type(), PhpType::Long);
 
-        let double_val = StdValFactory::double_val(3.14);
+        let double_val = StdValFactory::double_val(std::f64::consts::PI);
         assert_eq!(double_val.get_type(), PhpType::Double);
 
         let string_val = StdValFactory::string_val("test");
@@ -193,7 +225,7 @@ mod zval_factory_tests {
 
     #[test]
     fn test_zval_result_dup() {
-        let source = StdValFactory::double_val(2.71828);
+        let source = StdValFactory::double_val(std::f64::consts::E);
         let copy = StdValFactory::result_dup(&source);
 
         assert_eq!(source.get_type(), copy.get_type());
@@ -232,7 +264,9 @@ mod stream_tests {
         for (path, mode) in &test_paths {
             let result = streams::php_stream_open(path, *mode);
             match mode {
-                StreamMode::Read => assert!(result.is_ok(), "Read mode should work for existing file"),
+                StreamMode::Read => {
+                    assert!(result.is_ok(), "Read mode should work for existing file")
+                }
                 StreamMode::Write => assert!(result.is_ok(), "Write mode should work"),
                 StreamMode::Append => assert!(result.is_ok(), "Append mode should work"),
                 StreamMode::ReadWrite => assert!(result.is_ok(), "ReadWrite mode should work"),
@@ -365,10 +399,7 @@ mod edge_case_tests {
         let big_number = "12345678901234567890";
         let mut lexer = Lexer::new(big_number);
         let token = lexer.next_token().unwrap();
-        assert_eq!(
-            token.token_type,
-            phprs::engine::lexer::TokenType::T_LNUMBER
-        );
+        assert_eq!(token.token_type, phprs::engine::lexer::TokenType::T_LNUMBER);
     }
 
     #[test]

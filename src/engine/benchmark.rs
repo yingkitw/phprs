@@ -5,8 +5,8 @@
 use crate::engine::array_ops::{ArrayOps, OptimizedArray};
 use crate::engine::perf_alloc::StringBuilder;
 use crate::engine::types::{PhpType, PhpValue, Val};
-use crate::engine::vm::{execute_ex, Op, OpArray, Opcode};
-use crate::vm::execute_data::ExecuteData;
+use crate::engine::vm::execute_data::ExecuteData;
+use crate::engine::vm::{Op, OpArray, Opcode, execute_ex};
 use std::time::{Duration, Instant};
 
 /// Benchmark result
@@ -260,8 +260,7 @@ impl BenchmarkSuite {
         for i in 0..iterations {
             // Test memory allocation and deallocation
             let size = 64 + (i % 256);
-            let mut vec = Vec::with_capacity(size);
-            vec.resize(size, 0);
+            let _vec = vec![0; size];
 
             // Simulate string operations
             let string = format!("test_string_{}", i);
@@ -363,7 +362,10 @@ impl BenchmarkSuite {
         println!("{}", "=".repeat(60));
 
         for result in &self.results {
-            println!("{:<20} | {:>12.2} ops/sec", result.name, result.ops_per_second);
+            println!(
+                "{:<20} | {:>12.2} ops/sec",
+                result.name, result.ops_per_second
+            );
         }
 
         // Print optimization statistics

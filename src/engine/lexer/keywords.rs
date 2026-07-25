@@ -63,13 +63,51 @@ pub fn keyword_to_token(keyword: &str) -> TokenType {
 pub fn is_keyword(keyword: &str) -> bool {
     matches!(
         keyword,
-        "if" | "else" | "elseif" | "while" | "for" | "foreach" | "function" |
-        "class" | "return" | "echo" | "array" | "new" | "static" | "public" |
-        "private" | "protected" | "const" | "break" | "continue" | "switch" |
-        "case" | "default" | "try" | "catch" | "throw" | "namespace" | "use" |
-        "as" | "abstract" | "extends" | "final" | "implements" | "interface" |
-        "trait" | "clone" | "instanceof" | "do" | "callable" | "insteadof" |
-        "include" | "include_once" | "require" | "require_once" | "match" | "yield" | "global"
+        "if" | "else"
+            | "elseif"
+            | "while"
+            | "for"
+            | "foreach"
+            | "function"
+            | "class"
+            | "return"
+            | "echo"
+            | "array"
+            | "new"
+            | "static"
+            | "public"
+            | "private"
+            | "protected"
+            | "const"
+            | "break"
+            | "continue"
+            | "switch"
+            | "case"
+            | "default"
+            | "try"
+            | "catch"
+            | "throw"
+            | "namespace"
+            | "use"
+            | "as"
+            | "abstract"
+            | "extends"
+            | "final"
+            | "implements"
+            | "interface"
+            | "trait"
+            | "clone"
+            | "instanceof"
+            | "do"
+            | "callable"
+            | "insteadof"
+            | "include"
+            | "include_once"
+            | "require"
+            | "require_once"
+            | "match"
+            | "yield"
+            | "global"
     )
 }
 

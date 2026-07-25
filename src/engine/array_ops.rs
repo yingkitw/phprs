@@ -4,7 +4,7 @@
 
 use super::perf_alloc::MemoryPool;
 use crate::engine::types::{Bucket, PhpArray, PhpString, Val};
-use crate::vm::execute_data::clone_val;
+use crate::engine::vm::execute_data::clone_val;
 use std::collections::HashMap;
 
 /// Optimized array with pre-allocation and efficient operations
@@ -52,9 +52,9 @@ impl OptimizedArray {
         let key_hash = self.fast_hash(key.as_bytes());
 
         // Cache the string for future use
-        if !self.string_cache.contains_key(&key_hash) {
-            self.string_cache.insert(key_hash, key.to_string());
-        }
+        self.string_cache
+            .entry(key_hash)
+            .or_insert_with(|| key.to_string());
 
         let key_php = PhpString::new(key, false);
         let bucket = Bucket {
@@ -73,10 +73,11 @@ impl OptimizedArray {
         let key_hash = self.fast_hash(key.as_bytes());
 
         for bucket in &self.inner.ar_data {
-            if let Some(ref bucket_key) = bucket.key {
-                if bucket.h == key_hash && bucket_key.as_str() == key {
-                    return Some(&bucket.val);
-                }
+            if let Some(ref bucket_key) = bucket.key
+                && bucket.h == key_hash
+                && bucket_key.as_str() == key
+            {
+                return Some(&bucket.val);
             }
         }
 
@@ -272,7 +273,7 @@ impl ArrayOps {
 
     /// Fast array chunk operation
     pub fn chunk(array: &OptimizedArray, size: usize) -> Vec<OptimizedArray> {
-        let mut result = Vec::with_capacity((array.len() + size - 1) / size);
+        let mut result = Vec::with_capacity(array.len().div_ceil(size));
 
         for chunk in array.inner.ar_data.chunks(size) {
             let mut new_array = OptimizedArray::with_capacity(chunk.len());

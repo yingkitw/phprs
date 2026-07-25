@@ -17,36 +17,37 @@ impl HttpStream {
     pub fn open(url: &str) -> Result<Self, String> {
         // Use reqwest to fetch the content synchronously
         let content = Self::fetch_url(url)?;
-        
+
         Ok(Self {
             url: url.to_string(),
             content,
             position: 0,
         })
     }
-    
+
     /// Fetch URL content (blocking)
     fn fetch_url(url: &str) -> Result<Vec<u8>, String> {
         // Create a runtime for blocking operation
         let rt = tokio::runtime::Runtime::new()
             .map_err(|e| format!("Failed to create runtime: {}", e))?;
-        
+
         rt.block_on(async {
             let response = reqwest::get(url)
                 .await
                 .map_err(|e| format!("HTTP request failed: {}", e))?;
-            
+
             if !response.status().is_success() {
                 return Err(format!("HTTP error: {}", response.status()));
             }
-            
-            response.bytes()
+
+            response
+                .bytes()
                 .await
                 .map(|b| b.to_vec())
                 .map_err(|e| format!("Failed to read response: {}", e))
         })
     }
-    
+
     /// Get content as string
     pub fn get_contents(&self) -> String {
         String::from_utf8_lossy(&self.content).to_string()
@@ -58,7 +59,7 @@ impl Read for HttpStream {
         if self.position >= self.content.len() {
             return Ok(0);
         }
-        
+
         let remaining = &self.content[self.position..];
         let to_read = remaining.len().min(buf.len());
         buf[..to_read].copy_from_slice(&remaining[..to_read]);
@@ -71,10 +72,10 @@ impl Write for HttpStream {
     fn write(&mut self, _buf: &[u8]) -> std::io::Result<usize> {
         Err(std::io::Error::new(
             std::io::ErrorKind::Unsupported,
-            "HTTP streams are read-only"
+            "HTTP streams are read-only",
         ))
     }
-    
+
     fn flush(&mut self) -> std::io::Result<()> {
         Ok(())
     }
@@ -99,7 +100,7 @@ impl Seek for HttpStream {
                 }
             }
         };
-        
+
         self.position = new_pos.min(self.content.len());
         Ok(self.position as u64)
     }

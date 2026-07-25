@@ -5,7 +5,7 @@
 
 use phprs::engine::compile::{compile_file, compile_string};
 use phprs::engine::types::PhpResult;
-use phprs::engine::vm::{execute_ex, ExecuteData, OpArray};
+use phprs::engine::vm::{ExecuteData, OpArray, execute_ex};
 use std::fs;
 use std::path::Path;
 
@@ -21,10 +21,7 @@ fn test_php_file_compilation(filepath: &str) -> Result<OpArray, String> {
     let op_array = compile_file(path.to_str().unwrap())?;
 
     // Verify we got an op array
-    assert!(
-        !op_array.filename.is_none(),
-        "Op array should have filename"
-    );
+    assert!(op_array.filename.is_some(), "Op array should have filename");
 
     Ok(op_array)
 }
@@ -48,7 +45,9 @@ fn test_string_operations_php_compilation() {
         assert!(op_array.filename.is_some());
     } else {
         // Compilation may fail for unsupported features like complex string interpolation
-        eprintln!("Note: string_operations.php compilation failed (may be expected for unsupported features)");
+        eprintln!(
+            "Note: string_operations.php compilation failed (may be expected for unsupported features)"
+        );
     }
 }
 
@@ -81,7 +80,9 @@ fn test_error_handling_php_compilation() {
         assert!(op_array.filename.is_some());
     } else {
         // Compilation may fail for unsupported features like closures and function calls
-        eprintln!("Note: error_handling.php compilation failed (may be expected for unsupported features)");
+        eprintln!(
+            "Note: error_handling.php compilation failed (may be expected for unsupported features)"
+        );
     }
 }
 

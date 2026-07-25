@@ -4,7 +4,9 @@ use phprs::engine::{function_optimizer, jit, opcode_cache, perf_alloc};
 
 fn main() {
     println!("phprs — performance-oriented interpreter components (demo)");
-    println!("This demo exercises internal optimizations; compare to PHP only with your own benchmarks.\n");
+    println!(
+        "This demo exercises internal optimizations; compare to PHP only with your own benchmarks.\n"
+    );
 
     // Test optimized memory allocation
     println!("📊 Testing Memory Optimizations:");

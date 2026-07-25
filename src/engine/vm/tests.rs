@@ -2,7 +2,7 @@
 
 use crate::engine::types::{PhpResult, PhpType, PhpValue, Val};
 use crate::engine::vm::{
-    execute_ex, get_opcode_name, temp_var_ref, var_ref, ExecuteData, Op, OpArray, Opcode,
+    ExecuteData, Op, OpArray, Opcode, execute_ex, get_opcode_name, temp_var_ref, var_ref,
 };
 
 fn run_php_code(code: &str) -> (PhpResult, String) {
@@ -359,6 +359,14 @@ fn test_compile_and_execute_assoc_array_access() {
 }
 
 #[test]
+fn test_compile_and_execute_function_result_array_access() {
+    let code = "<?php\nfunction values() { return [\"x\" => \"hello\"]; }\necho values()[\"x\"] . (values())[\"x\"];\n";
+    let (result, output) = run_php_code(code);
+    assert!(matches!(result, PhpResult::Success));
+    assert_eq!(output, "hellohello");
+}
+
+#[test]
 fn test_compile_and_execute_long_array_empty() {
     let code = "<?php\n$a = array();\necho count($a);\n";
     let (result, output) = run_php_code(code);
@@ -540,8 +548,7 @@ fn test_builtin_call_inside_user_function() {
 #[test]
 fn test_builtin_call_inside_user_function_via_compile_file() {
     let path = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/udf_strlen.php");
-    let (op_array, ft) =
-        crate::engine::compile::compile_file_with_functions(path).unwrap();
+    let (op_array, ft) = crate::engine::compile::compile_file_with_functions(path).unwrap();
     crate::php::output::php_output_start().unwrap();
     let mut ed = ExecuteData::new();
     ed.function_table = Some(std::sync::Arc::new(ft));
@@ -569,7 +576,8 @@ fn test_foreach_key_value() {
 
 #[test]
 fn test_chained_array_assign_dim() {
-    let code = "<?php\n$root = array();\n$root['outer']['inner'] = 'ok';\necho $root['outer']['inner'];\n";
+    let code =
+        "<?php\n$root = array();\n$root['outer']['inner'] = 'ok';\necho $root['outer']['inner'];\n";
     let (result, output) = run_php_code(code);
     assert!(matches!(result, PhpResult::Success));
     assert_eq!(output, "ok");

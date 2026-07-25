@@ -41,7 +41,7 @@ impl StreamBuilder {
 
     /// Build the stream
     pub fn build(self) -> StreamResult<FileStream> {
-        let path = self.path.ok_or_else(|| StreamError::InvalidOperation)?;
+        let path = self.path.ok_or(StreamError::InvalidOperation)?;
         FileStream::open(&path, self.mode)
     }
 
@@ -77,7 +77,8 @@ pub fn read_file_contents(path: &str) -> StreamResult<String> {
     let mut stream = StreamBuilder::read(path)?;
     let mut contents = String::new();
     use std::io::Read;
-    stream.read_to_string(&mut contents)
+    stream
+        .read_to_string(&mut contents)
         .map_err(|e| StreamError::IoError(e.to_string()))?;
     Ok(contents)
 }
@@ -86,9 +87,11 @@ pub fn read_file_contents(path: &str) -> StreamResult<String> {
 pub fn write_file_contents(path: &str, contents: &str) -> StreamResult<()> {
     let mut stream = StreamBuilder::write(path)?;
     use std::io::Write;
-    stream.write_all(contents.as_bytes())
+    stream
+        .write_all(contents.as_bytes())
         .map_err(|e| StreamError::IoError(e.to_string()))?;
-    stream.flush()
+    stream
+        .flush()
         .map_err(|e| StreamError::IoError(e.to_string()))?;
     Ok(())
 }

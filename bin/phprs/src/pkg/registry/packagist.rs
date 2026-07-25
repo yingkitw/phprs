@@ -36,10 +36,7 @@ impl PackagistClient {
     }
 
     /// Get package metadata from Packagist
-    pub async fn get_package_metadata(
-        &self,
-        package_name: &str,
-    ) -> Result<PackageMetadata> {
+    pub async fn get_package_metadata(&self, package_name: &str) -> Result<PackageMetadata> {
         let url = format!("{}/p2/{}.json", self.base_url, package_name);
 
         log::info!("Fetching package metadata from: {}", url);
@@ -52,16 +49,23 @@ impl PackagistClient {
             .map_err(super::super::error::PkgError::Network)?;
 
         if !response.status().is_success() {
-            return Err(super::super::error::PkgError::PackageNotFound(package_name.to_string()));
+            return Err(super::super::error::PkgError::PackageNotFound(
+                package_name.to_string(),
+            ));
         }
 
-        let response_text = response.text().await
+        let response_text = response
+            .text()
+            .await
             .map_err(super::super::error::PkgError::Network)?;
 
-        let packagist_response: PackagistResponse = serde_json::from_str(&response_text)
-            .map_err(|e| {
+        let packagist_response: PackagistResponse =
+            serde_json::from_str(&response_text).map_err(|e| {
                 log::error!("Failed to parse JSON: {}", e);
-                log::debug!("Response text: {}", &response_text[..response_text.len().min(500)]);
+                log::debug!(
+                    "Response text: {}",
+                    &response_text[..response_text.len().min(500)]
+                );
                 super::super::error::PkgError::Config(format!("JSON parse error: {}", e))
             })?;
 
@@ -76,9 +80,7 @@ impl PackagistClient {
         dist: &PackageDist,
         cache_dir: &Path,
     ) -> Result<PathBuf> {
-        let package_dir = cache_dir
-            .join(package_name.replace('/', "-"))
-            .join(version);
+        let package_dir = cache_dir.join(package_name.replace('/', "-")).join(version);
 
         if package_dir.exists() {
             log::info!("Package {}={} already cached", package_name, version);
@@ -97,9 +99,10 @@ impl PackagistClient {
 
         // Check if we got a successful response
         if !response.status().is_success() {
-            return Err(super::super::error::PkgError::ArchiveExtraction(
-                format!("Failed to download package: HTTP {}", response.status())
-            ));
+            return Err(super::super::error::PkgError::ArchiveExtraction(format!(
+                "Failed to download package: HTTP {}",
+                response.status()
+            )));
         }
 
         let bytes = response
@@ -107,7 +110,12 @@ impl PackagistClient {
             .await
             .map_err(super::super::error::PkgError::Network)?;
 
-        log::debug!("Downloaded {} bytes for {}={}", bytes.len(), package_name, version);
+        log::debug!(
+            "Downloaded {} bytes for {}={}",
+            bytes.len(),
+            package_name,
+            version
+        );
 
         // Verify checksum if provided and non-empty
         if let Some(ref shasum) = dist.shasum {
@@ -122,7 +130,11 @@ impl PackagistClient {
                 }
                 log::debug!("Checksum verified for {}={}", package_name, version);
             } else {
-                log::debug!("Skipping checksum verification for {}={} (no checksum provided)", package_name, version);
+                log::debug!(
+                    "Skipping checksum verification for {}={} (no checksum provided)",
+                    package_name,
+                    version
+                );
             }
         }
 
@@ -130,7 +142,12 @@ impl PackagistClient {
         std::fs::create_dir_all(&package_dir)?;
         self.extract_archive(&bytes, &dist.type_, &package_dir)?;
 
-        log::info!("Extracted {}={} to {}", package_name, version, package_dir.display());
+        log::info!(
+            "Extracted {}={} to {}",
+            package_name,
+            version,
+            package_dir.display()
+        );
 
         Ok(package_dir)
     }
@@ -295,7 +312,12 @@ impl PackageMetadata {
     pub fn latest_stable_version(&self) -> Option<&VersionMetadata> {
         self.versions
             .iter()
-            .filter(|(v, _)| !v.contains("dev") && !v.contains("alpha") && !v.contains("beta") && !v.contains("RC"))
+            .filter(|(v, _)| {
+                !v.contains("dev")
+                    && !v.contains("alpha")
+                    && !v.contains("beta")
+                    && !v.contains("RC")
+            })
             .max_by(|(a, _), (b, _)| {
                 // Simple version comparison (should use semver for proper comparison)
                 a.cmp(b)

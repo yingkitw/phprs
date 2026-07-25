@@ -65,23 +65,7 @@ fn array_from_vals(vals: &[Val]) -> Val {
     Val::new(PhpValue::Array(Box::new(arr)), PhpType::Array)
 }
 
-/// Borrow the value stored at a numeric index of a returned array.
-fn array_index<'a>(arr: &'a Val, idx: u64) -> Option<&'a Val> {
-    if let PhpValue::Array(a) = &arr.value {
-        a.ar_data
-            .iter()
-            .find(|b| b.key.is_none() && b.h == idx)
-            .map(|b| &b.val)
-    } else {
-        None
-    }
-}
-
-fn run(
-    name: &'static str,
-    args: &[Val],
-    ed: &mut ExecuteData,
-) -> Result<Option<Val>, String> {
+fn run(name: &'static str, args: &[Val], ed: &mut ExecuteData) -> Result<Option<Val>, String> {
     execute_builtin_function(name, args, ed)
 }
 
@@ -115,19 +99,37 @@ fn unset_builtin_returns_none() {
 fn string_builtins_strlen_substr_strpos_replace_case_trim() {
     let mut ed = ExecuteData::new();
     assert_eq!(
-        zval_get_long(&run("strlen", &[str_val("hello")], &mut ed).unwrap().unwrap()),
+        zval_get_long(
+            &run("strlen", &[str_val("hello")], &mut ed)
+                .unwrap()
+                .unwrap()
+        ),
         5
     );
     assert_eq!(
-        zval_get_string(&run("substr", &[str_val("abcdef"), long_val(2), long_val(3)], &mut ed).unwrap().unwrap())
-            .as_str(),
+        zval_get_string(
+            &run(
+                "substr",
+                &[str_val("abcdef"), long_val(2), long_val(3)],
+                &mut ed
+            )
+            .unwrap()
+            .unwrap()
+        )
+        .as_str(),
         "cde"
     );
     assert_eq!(
-        zval_get_long(&run("strpos", &[str_val("haystack"), str_val("stack")], &mut ed).unwrap().unwrap()),
+        zval_get_long(
+            &run("strpos", &[str_val("haystack"), str_val("stack")], &mut ed)
+                .unwrap()
+                .unwrap()
+        ),
         3
     );
-    let nope = run("strpos", &[str_val("abc"), str_val("z")], &mut ed).unwrap().unwrap();
+    let nope = run("strpos", &[str_val("abc"), str_val("z")], &mut ed)
+        .unwrap()
+        .unwrap();
     assert_eq!(nope.get_type(), PhpType::False);
     assert_eq!(
         zval_get_string(
@@ -143,11 +145,21 @@ fn string_builtins_strlen_substr_strpos_replace_case_trim() {
         "bonono"
     );
     assert_eq!(
-        zval_get_string(&run("strtolower", &[str_val("AbC")], &mut ed).unwrap().unwrap()).as_str(),
+        zval_get_string(
+            &run("strtolower", &[str_val("AbC")], &mut ed)
+                .unwrap()
+                .unwrap()
+        )
+        .as_str(),
         "abc"
     );
     assert_eq!(
-        zval_get_string(&run("strtoupper", &[str_val("AbC")], &mut ed).unwrap().unwrap()).as_str(),
+        zval_get_string(
+            &run("strtoupper", &[str_val("AbC")], &mut ed)
+                .unwrap()
+                .unwrap()
+        )
+        .as_str(),
         "ABC"
     );
     assert_eq!(
@@ -182,7 +194,12 @@ fn explode_implode_sprintf_ucfirst() {
     assert_eq!(zval_get_string(&sp).as_str(), "n:7");
 
     assert_eq!(
-        zval_get_string(&run("ucfirst", &[str_val("hello")], &mut ed).unwrap().unwrap()).as_str(),
+        zval_get_string(
+            &run("ucfirst", &[str_val("hello")], &mut ed)
+                .unwrap()
+                .unwrap()
+        )
+        .as_str(),
         "Hello"
     );
 }
@@ -197,7 +214,12 @@ fn intval_floatval_strval() {
         42
     );
     assert!(
-        (zval_get_double(&run("floatval", &[str_val("3.5")], &mut ed).unwrap().unwrap()) - 3.5).abs()
+        (zval_get_double(
+            &run("floatval", &[str_val("3.5")], &mut ed)
+                .unwrap()
+                .unwrap()
+        ) - 3.5)
+            .abs()
             < 0.001
     );
     assert_eq!(
@@ -215,7 +237,9 @@ fn isset_empty() {
     assert!(!zval_get_bool(
         &run("isset", &[null_val()], &mut ed).unwrap().unwrap()
     ));
-    assert!(zval_get_bool(&run("empty", &[long_val(0)], &mut ed).unwrap().unwrap()));
+    assert!(zval_get_bool(
+        &run("empty", &[long_val(0)], &mut ed).unwrap().unwrap()
+    ));
     assert!(!zval_get_bool(
         &run("empty", &[long_val(1)], &mut ed).unwrap().unwrap()
     ));
@@ -225,7 +249,9 @@ fn isset_empty() {
 fn is_array_string_object() {
     let mut ed = ExecuteData::new();
     let arr = array_from_str_keys(&[("k", "v")]);
-    assert!(zval_get_bool(&run("is_array", &[arr], &mut ed).unwrap().unwrap()));
+    assert!(zval_get_bool(
+        &run("is_array", &[arr], &mut ed).unwrap().unwrap()
+    ));
     assert!(zval_get_bool(
         &run("is_string", &[str_val("x")], &mut ed).unwrap().unwrap()
     ));
@@ -241,34 +267,45 @@ fn array_key_exists_in_array_count_merge() {
     let mut ed = ExecuteData::new();
     let probe = || array_from_str_keys(&[("name", "PHP-RS"), ("v", "1")]);
     assert!(zval_get_bool(
-        &run("array_key_exists", &[str_val("name"), probe()], &mut ed).unwrap().unwrap()
+        &run("array_key_exists", &[str_val("name"), probe()], &mut ed)
+            .unwrap()
+            .unwrap()
     ));
     assert!(!zval_get_bool(
-        &run("array_key_exists", &[str_val("missing"), probe()], &mut ed).unwrap().unwrap()
+        &run("array_key_exists", &[str_val("missing"), probe()], &mut ed)
+            .unwrap()
+            .unwrap()
     ));
     assert!(zval_get_bool(
-        &run("in_array", &[str_val("PHP-RS"), probe()], &mut ed).unwrap().unwrap()
+        &run("in_array", &[str_val("PHP-RS"), probe()], &mut ed)
+            .unwrap()
+            .unwrap()
     ));
 
     let c = run("count", &[probe()], &mut ed).unwrap().unwrap();
     assert_eq!(zval_get_long(&c), 2);
-    assert_eq!(zval_get_long(&run("count", &[str_val("scalar")], &mut ed).unwrap().unwrap()), 1);
+    assert_eq!(
+        zval_get_long(
+            &run("count", &[str_val("scalar")], &mut ed)
+                .unwrap()
+                .unwrap()
+        ),
+        1
+    );
 
     let a2 = array_from_str_keys(&[("b", "2")]);
-    let merged = run("array_merge", &[probe(), a2], &mut ed).unwrap().unwrap();
+    let merged = run("array_merge", &[probe(), a2], &mut ed)
+        .unwrap()
+        .unwrap();
     if let PhpValue::Array(ref m) = merged.value {
         assert!(m.ar_data.len() >= 2);
     } else {
         panic!("array_merge");
     }
 
-    let _push = run(
-        "array_push",
-        &[merged.clone(), str_val("tail")],
-        &mut ed,
-    )
-    .unwrap()
-    .unwrap();
+    let _push = run("array_push", &[merged.clone(), str_val("tail")], &mut ed)
+        .unwrap()
+        .unwrap();
 }
 
 // --- Array helpers ---
@@ -298,7 +335,9 @@ fn array_keys_values_pop_shift_slice_reverse() {
     let shift = run("array_shift", &[probe()], &mut ed).unwrap().unwrap();
     assert_eq!(zval_get_string(&shift).as_str(), "1");
 
-    let slice = run("array_slice", &[probe(), long_val(1), long_val(1)], &mut ed).unwrap().unwrap();
+    let slice = run("array_slice", &[probe(), long_val(1), long_val(1)], &mut ed)
+        .unwrap()
+        .unwrap();
     if let PhpValue::Array(ref s) = slice.value {
         assert_eq!(s.ar_data.len(), 1);
     } else {
@@ -318,9 +357,13 @@ fn array_keys_values_pop_shift_slice_reverse() {
 #[test]
 fn json_encode_decode() {
     let mut ed = ExecuteData::new();
-    let enc = run("json_encode", &[long_val(99)], &mut ed).unwrap().unwrap();
+    let enc = run("json_encode", &[long_val(99)], &mut ed)
+        .unwrap()
+        .unwrap();
     assert!(zval_get_string(&enc).as_str().contains('9'));
-    let dec = run("json_decode", &[str_val(r#"{"a":1}"#)], &mut ed).unwrap().unwrap();
+    let dec = run("json_decode", &[str_val(r#"{"a":1}"#)], &mut ed)
+        .unwrap()
+        .unwrap();
     assert_eq!(zval_get_string(&dec).as_str(), r#"{"a":1}"#);
 }
 
@@ -330,12 +373,18 @@ fn json_encode_decode() {
 fn define_defined_constant_dirname() {
     let mut ed = ExecuteData::new();
     assert!(zval_get_bool(
-        &run("define", &[str_val("MY_CONST"), long_val(99)], &mut ed).unwrap().unwrap()
+        &run("define", &[str_val("MY_CONST"), long_val(99)], &mut ed)
+            .unwrap()
+            .unwrap()
     ));
     assert!(zval_get_bool(
-        &run("defined", &[str_val("MY_CONST")], &mut ed).unwrap().unwrap()
+        &run("defined", &[str_val("MY_CONST")], &mut ed)
+            .unwrap()
+            .unwrap()
     ));
-    let v = run("constant", &[str_val("MY_CONST")], &mut ed).unwrap().unwrap();
+    let v = run("constant", &[str_val("MY_CONST")], &mut ed)
+        .unwrap()
+        .unwrap();
     assert_eq!(zval_get_long(&v), 99);
     assert!(run("constant", &[str_val("NOPE")], &mut ed).is_err());
 
@@ -371,7 +420,11 @@ fn exit_with_code() {
 #[test]
 fn do_action_apply_filters_shortcode_atts() {
     let mut ed = ExecuteData::new();
-    assert!(run("do_action", &[str_val("init")], &mut ed).unwrap().is_none());
+    assert!(
+        run("do_action", &[str_val("init")], &mut ed)
+            .unwrap()
+            .is_none()
+    );
     let v = run(
         "apply_filters",
         &[str_val("the_title"), str_val("Hello")],
@@ -408,7 +461,9 @@ fn htmlspecialchars_htmlentities_esc_attr_esc_url() {
         .unwrap();
     assert!(!zval_get_string(&e).as_str().is_empty());
 
-    let ea = run("esc_attr", &[str_val("\"a\"")], &mut ed).unwrap().unwrap();
+    let ea = run("esc_attr", &[str_val("\"a\"")], &mut ed)
+        .unwrap()
+        .unwrap();
     assert!(zval_get_string(&ea).as_str().contains("&quot;"));
 
     let u = run("esc_url", &[str_val("https://ex.test/x")], &mut ed)
@@ -557,12 +612,7 @@ fn ob_stack_functions_smoke() {
 #[test]
 fn error_handlers_shutdown_ini_include_path() {
     let mut ed = ExecuteData::new();
-    let _ = run(
-        "set_error_handler",
-        &[str_val("my_err_handler")],
-        &mut ed,
-    )
-    .unwrap();
+    let _ = run("set_error_handler", &[str_val("my_err_handler")], &mut ed).unwrap();
     assert!(zval_get_bool(
         &run("restore_error_handler", &[], &mut ed).unwrap().unwrap()
     ));
@@ -574,17 +624,26 @@ fn error_handlers_shutdown_ini_include_path() {
     )
     .unwrap();
     assert!(zval_get_bool(
-        &run("restore_exception_handler", &[], &mut ed).unwrap().unwrap()
+        &run("restore_exception_handler", &[], &mut ed)
+            .unwrap()
+            .unwrap()
     ));
 
-    assert!(run("register_shutdown_function", &[str_val("fini")], &mut ed)
-        .unwrap()
-        .is_none());
+    assert!(
+        run("register_shutdown_function", &[str_val("fini")], &mut ed)
+            .unwrap()
+            .is_none()
+    );
     assert_eq!(ed.shutdown_functions, vec!["fini".to_string()]);
 
-    assert_eq!(zval_get_long(&run("error_reporting", &[], &mut ed).unwrap().unwrap()), 0);
+    assert_eq!(
+        zval_get_long(&run("error_reporting", &[], &mut ed).unwrap().unwrap()),
+        0
+    );
     assert!(zval_get_bool(
-        &run("trigger_error", &[str_val("msg")], &mut ed).unwrap().unwrap()
+        &run("trigger_error", &[str_val("msg")], &mut ed)
+            .unwrap()
+            .unwrap()
     ));
 
     let _ = run("set_include_path", &[str_val("/tmp")], &mut ed).unwrap();
@@ -601,7 +660,10 @@ fn error_handlers_shutdown_ini_include_path() {
 #[test]
 fn math_builtins_delegate() {
     let mut ed = ExecuteData::new();
-    assert_eq!(zval_get_long(&run("abs", &[long_val(-3)], &mut ed).unwrap().unwrap()), 3);
+    assert_eq!(
+        zval_get_long(&run("abs", &[long_val(-3)], &mut ed).unwrap().unwrap()),
+        3
+    );
     assert_eq!(
         zval_get_double(&run("ceil", &[double_val(2.1)], &mut ed).unwrap().unwrap()),
         3.0
@@ -616,7 +678,9 @@ fn math_builtins_delegate() {
     );
     assert!(
         (zval_get_double(
-            &run("pow", &[long_val(2), long_val(4)], &mut ed).unwrap().unwrap()
+            &run("pow", &[long_val(2), long_val(4)], &mut ed)
+                .unwrap()
+                .unwrap()
         ) - 16.0)
             .abs()
             < 0.001
@@ -624,14 +688,24 @@ fn math_builtins_delegate() {
     let pi = run("pi", &[], &mut ed).unwrap().unwrap();
     assert!(zval_get_double(&pi) > 3.0);
     assert_eq!(
-        zval_get_long(&run("max", &[long_val(1), long_val(9), long_val(3)], &mut ed).unwrap().unwrap()),
+        zval_get_long(
+            &run("max", &[long_val(1), long_val(9), long_val(3)], &mut ed)
+                .unwrap()
+                .unwrap()
+        ),
         9
     );
     assert_eq!(
-        zval_get_long(&run("min", &[long_val(1), long_val(9), long_val(3)], &mut ed).unwrap().unwrap()),
+        zval_get_long(
+            &run("min", &[long_val(1), long_val(9), long_val(3)], &mut ed)
+                .unwrap()
+                .unwrap()
+        ),
         1
     );
-    let r = run("rand", &[long_val(1), long_val(2)], &mut ed).unwrap().unwrap();
+    let r = run("rand", &[long_val(1), long_val(2)], &mut ed)
+        .unwrap()
+        .unwrap();
     let rv = zval_get_long(&r);
     assert!((1..=2).contains(&rv));
 }
@@ -665,10 +739,14 @@ fn hash_builtins_md5_sha1_hash_hmac_crc32_base64_bin_hex() {
 
     let b2h = run("bin2hex", &[str_val("ab")], &mut ed).unwrap().unwrap();
     assert_eq!(zval_get_string(&b2h).as_str(), "6162");
-    let h2b = run("hex2bin", &[str_val("6162")], &mut ed).unwrap().unwrap();
+    let h2b = run("hex2bin", &[str_val("6162")], &mut ed)
+        .unwrap()
+        .unwrap();
     assert_eq!(zval_get_string(&h2b).as_str(), "ab");
 
-    let b64 = run("base64_encode", &[str_val("hi")], &mut ed).unwrap().unwrap();
+    let b64 = run("base64_encode", &[str_val("hi")], &mut ed)
+        .unwrap()
+        .unwrap();
     let dec = run("base64_decode", &[b64], &mut ed).unwrap().unwrap();
     assert_eq!(zval_get_string(&dec).as_str(), "hi");
 }
@@ -676,7 +754,9 @@ fn hash_builtins_md5_sha1_hash_hmac_crc32_base64_bin_hex() {
 #[test]
 fn random_and_password_builtins() {
     let mut ed = ExecuteData::new();
-    let rb = run("random_bytes", &[long_val(8)], &mut ed).unwrap().unwrap();
+    let rb = run("random_bytes", &[long_val(8)], &mut ed)
+        .unwrap()
+        .unwrap();
     // Bytes are UTF-8 lossy–encoded; strlen in Rust may not equal 8.
     assert!(!zval_get_string(&rb).as_str().is_empty());
     let ri = run("random_int", &[long_val(10), long_val(10)], &mut ed)
@@ -723,20 +803,23 @@ fn datetime_builtins_smoke() {
 
     let mk = run(
         "mktime",
-        &[long_val(0), long_val(0), long_val(0), long_val(1), long_val(1), long_val(2020)],
+        &[
+            long_val(0),
+            long_val(0),
+            long_val(0),
+            long_val(1),
+            long_val(1),
+            long_val(2020),
+        ],
         &mut ed,
     )
     .unwrap()
     .unwrap();
     assert_ne!(zval_get_long(&mk), 0);
 
-    let st = run(
-        "strtotime",
-        &[str_val("+1 day"), long_val(0)],
-        &mut ed,
-    )
-    .unwrap()
-    .unwrap();
+    let st = run("strtotime", &[str_val("+1 day"), long_val(0)], &mut ed)
+        .unwrap()
+        .unwrap();
     assert_eq!(zval_get_long(&st), 86400);
 }
 
@@ -745,9 +828,13 @@ fn datetime_builtins_smoke() {
 #[test]
 fn url_builtins_parse_build_encode_decode_parse_str() {
     let mut ed = ExecuteData::new();
-    let pu = run("parse_url", &[str_val("https://ex.org:8080/p?q=1#h")], &mut ed)
-        .unwrap()
-        .unwrap();
+    let pu = run(
+        "parse_url",
+        &[str_val("https://ex.org:8080/p?q=1#h")],
+        &mut ed,
+    )
+    .unwrap()
+    .unwrap();
     if let PhpValue::Array(ref a) = pu.value {
         assert!(!a.ar_data.is_empty());
     } else {
@@ -764,12 +851,16 @@ fn url_builtins_parse_build_encode_decode_parse_str() {
     let qs = zval_get_string(&q).as_str().to_string();
     assert!(qs.contains('a') && qs.contains('b'));
 
-    let enc = run("urlencode", &[str_val("a b")], &mut ed).unwrap().unwrap();
+    let enc = run("urlencode", &[str_val("a b")], &mut ed)
+        .unwrap()
+        .unwrap();
     assert_eq!(zval_get_string(&enc).as_str(), "a+b");
     let dec = run("urldecode", &[enc], &mut ed).unwrap().unwrap();
     assert_eq!(zval_get_string(&dec).as_str(), "a b");
 
-    let re = run("rawurlencode", &[str_val("a/b")], &mut ed).unwrap().unwrap();
+    let re = run("rawurlencode", &[str_val("a/b")], &mut ed)
+        .unwrap()
+        .unwrap();
     let rd = run("rawurldecode", &[re], &mut ed).unwrap().unwrap();
     assert_eq!(zval_get_string(&rd).as_str(), "a/b");
 
@@ -794,16 +885,28 @@ fn url_builtins_parse_build_encode_decode_parse_str() {
 fn mbstring_builtins_smoke() {
     let mut ed = ExecuteData::new();
     assert_eq!(
-        zval_get_long(&run("mb_strlen", &[str_val("hi")], &mut ed).unwrap().unwrap()),
+        zval_get_long(
+            &run("mb_strlen", &[str_val("hi")], &mut ed)
+                .unwrap()
+                .unwrap()
+        ),
         2
     );
-    let sub = run("mb_substr", &[str_val("abcde"), long_val(1), long_val(3)], &mut ed)
+    let sub = run(
+        "mb_substr",
+        &[str_val("abcde"), long_val(1), long_val(3)],
+        &mut ed,
+    )
+    .unwrap()
+    .unwrap();
+    assert_eq!(zval_get_string(&sub).as_str(), "bcd");
+    let lo = run("mb_strtolower", &[str_val("AB")], &mut ed)
         .unwrap()
         .unwrap();
-    assert_eq!(zval_get_string(&sub).as_str(), "bcd");
-    let lo = run("mb_strtolower", &[str_val("AB")], &mut ed).unwrap().unwrap();
     assert_eq!(zval_get_string(&lo).as_str(), "ab");
-    let up = run("mb_strtoupper", &[str_val("ab")], &mut ed).unwrap().unwrap();
+    let up = run("mb_strtoupper", &[str_val("ab")], &mut ed)
+        .unwrap()
+        .unwrap();
     assert_eq!(zval_get_string(&up).as_str(), "AB");
     let pos = run("mb_strpos", &[str_val("abc"), str_val("b")], &mut ed)
         .unwrap()
@@ -832,7 +935,9 @@ fn mbstring_builtins_smoke() {
     .unwrap();
     assert_eq!(zval_get_long(&cnt), 2);
 
-    let w = run("mb_strwidth", &[str_val("abc")], &mut ed).unwrap().unwrap();
+    let w = run("mb_strwidth", &[str_val("abc")], &mut ed)
+        .unwrap()
+        .unwrap();
     assert_eq!(zval_get_long(&w), 3);
 
     let trimw = run(
@@ -850,28 +955,62 @@ fn mbstring_builtins_smoke() {
 #[test]
 fn class_exists_builtin() {
     let mut ed = ExecuteData::new();
-    assert!(!zval_get_bool(&run("class_exists", &[str_val("NonExistent")], &mut ed).unwrap().unwrap()));
+    assert!(!zval_get_bool(
+        &run("class_exists", &[str_val("NonExistent")], &mut ed)
+            .unwrap()
+            .unwrap()
+    ));
 }
 
 #[test]
 fn method_exists_builtin() {
     let mut ed = ExecuteData::new();
-    assert!(!zval_get_bool(&run("method_exists", &[str_val("NonExistent"), str_val("foo")], &mut ed).unwrap().unwrap()));
+    assert!(!zval_get_bool(
+        &run(
+            "method_exists",
+            &[str_val("NonExistent"), str_val("foo")],
+            &mut ed
+        )
+        .unwrap()
+        .unwrap()
+    ));
 }
 
 #[test]
 fn function_exists_builtin() {
     let mut ed = ExecuteData::new();
-    assert!(zval_get_bool(&run("function_exists", &[str_val("strlen")], &mut ed).unwrap().unwrap()));
-    assert!(!zval_get_bool(&run("function_exists", &[str_val("nonexistent_fn_xyz")], &mut ed).unwrap().unwrap()));
+    assert!(zval_get_bool(
+        &run("function_exists", &[str_val("strlen")], &mut ed)
+            .unwrap()
+            .unwrap()
+    ));
+    assert!(!zval_get_bool(
+        &run("function_exists", &[str_val("nonexistent_fn_xyz")], &mut ed)
+            .unwrap()
+            .unwrap()
+    ));
 }
 
 #[test]
 fn gettype_builtin() {
     let mut ed = ExecuteData::new();
-    assert_eq!(zval_get_string(&run("gettype", &[long_val(42)], &mut ed).unwrap().unwrap()).as_str(), "integer");
-    assert_eq!(zval_get_string(&run("gettype", &[str_val("hello")], &mut ed).unwrap().unwrap()).as_str(), "string");
-    assert_eq!(zval_get_string(&run("gettype", &[null_val()], &mut ed).unwrap().unwrap()).as_str(), "NULL");
+    assert_eq!(
+        zval_get_string(&run("gettype", &[long_val(42)], &mut ed).unwrap().unwrap()).as_str(),
+        "integer"
+    );
+    assert_eq!(
+        zval_get_string(
+            &run("gettype", &[str_val("hello")], &mut ed)
+                .unwrap()
+                .unwrap()
+        )
+        .as_str(),
+        "string"
+    );
+    assert_eq!(
+        zval_get_string(&run("gettype", &[null_val()], &mut ed).unwrap().unwrap()).as_str(),
+        "NULL"
+    );
 }
 
 // --- SPL autoloading ---
@@ -879,11 +1018,37 @@ fn gettype_builtin() {
 #[test]
 fn spl_autoload_register_and_unregister() {
     let mut ed = ExecuteData::new();
-    assert!(zval_get_bool(&run("spl_autoload_register", &[str_val("my_autoloader")], &mut ed).unwrap().unwrap()));
-    let funcs = run("spl_autoload_functions", &[], &mut ed).unwrap().unwrap();
+    assert!(zval_get_bool(
+        &run(
+            "spl_autoload_register",
+            &[str_val("my_autoloader")],
+            &mut ed
+        )
+        .unwrap()
+        .unwrap()
+    ));
+    let funcs = run("spl_autoload_functions", &[], &mut ed)
+        .unwrap()
+        .unwrap();
     assert_eq!(funcs.get_type(), PhpType::Array);
-    assert!(zval_get_bool(&run("spl_autoload_unregister", &[str_val("my_autoloader")], &mut ed).unwrap().unwrap()));
-    assert!(!zval_get_bool(&run("spl_autoload_unregister", &[str_val("my_autoloader")], &mut ed).unwrap().unwrap()));
+    assert!(zval_get_bool(
+        &run(
+            "spl_autoload_unregister",
+            &[str_val("my_autoloader")],
+            &mut ed
+        )
+        .unwrap()
+        .unwrap()
+    ));
+    assert!(!zval_get_bool(
+        &run(
+            "spl_autoload_unregister",
+            &[str_val("my_autoloader")],
+            &mut ed
+        )
+        .unwrap()
+        .unwrap()
+    ));
 }
 
 // --- Filesystem (local) ---
@@ -900,7 +1065,9 @@ fn file_exists_and_file_get_contents_resolved() {
     ed.current_script_dir = Some(dir);
 
     let base = path.file_name().unwrap().to_string_lossy().into_owned();
-    let ex = run("file_exists", &[str_val(&base)], &mut ed).unwrap().unwrap();
+    let ex = run("file_exists", &[str_val(&base)], &mut ed)
+        .unwrap()
+        .unwrap();
     assert!(zval_get_bool(&ex));
 
     let contents = run("file_get_contents", &[str_val(&base)], &mut ed)
@@ -917,26 +1084,35 @@ fn reflection_class_methods() {
     let mut ed = ExecuteData::new();
     // Register a test class
     let mut ce = crate::engine::types::ClassEntry::new("TestReflectClass");
-    ce.default_properties.insert("foo".to_string(), str_val("bar"));
+    ce.default_properties
+        .insert("foo".to_string(), str_val("bar"));
     ed.class_table.insert("TestReflectClass".to_string(), ce);
 
     // Create ReflectionClass object as $this
     let mut rc_obj = crate::engine::types::PhpObject::new("ReflectionClass");
-    rc_obj.properties.insert("name".to_string(), str_val("TestReflectClass"));
+    rc_obj
+        .properties
+        .insert("name".to_string(), str_val("TestReflectClass"));
     let rc_val = Val::new(PhpValue::Object(Box::new(rc_obj)), PhpType::Object);
     ed.set_var("this", rc_val);
 
     // getName
-    let name = crate::engine::vm::reflection::execute_reflection_class_method("getName", &[], &mut ed);
+    let name =
+        crate::engine::vm::reflection::execute_reflection_class_method("getName", &[], &mut ed);
     assert!(name.is_some());
     assert_eq!(zval_get_string(&name.unwrap()).as_str(), "TestReflectClass");
 
     // getMethods
-    let methods = crate::engine::vm::reflection::execute_reflection_class_method("getMethods", &[], &mut ed);
+    let methods =
+        crate::engine::vm::reflection::execute_reflection_class_method("getMethods", &[], &mut ed);
     assert!(methods.is_some());
 
     // getProperties
-    let props = crate::engine::vm::reflection::execute_reflection_class_method("getProperties", &[], &mut ed);
+    let props = crate::engine::vm::reflection::execute_reflection_class_method(
+        "getProperties",
+        &[],
+        &mut ed,
+    );
     assert!(props.is_some());
     if let PhpValue::Array(ref arr) = props.unwrap().value {
         assert_eq!(arr.ar_data.len(), 1);
@@ -945,12 +1121,20 @@ fn reflection_class_methods() {
     }
 
     // hasProperty
-    let has = crate::engine::vm::reflection::execute_reflection_class_method("hasProperty", &[str_val("foo")], &mut ed);
+    let has = crate::engine::vm::reflection::execute_reflection_class_method(
+        "hasProperty",
+        &[str_val("foo")],
+        &mut ed,
+    );
     assert!(has.is_some());
     assert!(zval_get_bool(&has.unwrap()));
 
     // hasMethod
-    let has_m = crate::engine::vm::reflection::execute_reflection_class_method("hasMethod", &[str_val("nonexistent")], &mut ed);
+    let has_m = crate::engine::vm::reflection::execute_reflection_class_method(
+        "hasMethod",
+        &[str_val("nonexistent")],
+        &mut ed,
+    );
     assert!(has_m.is_some());
     assert!(!zval_get_bool(&has_m.unwrap()));
 }
@@ -971,11 +1155,18 @@ fn reflection_function_and_parameter_and_method_params() {
 
     // ReflectionFunction pointing at the user function `greet`.
     let mut rf_obj = PhpObject::new("ReflectionFunction");
-    rf_obj.properties.insert("name".to_string(), str_val("greet"));
-    ed.set_var("this", Val::new(PhpValue::Object(Box::new(rf_obj)), PhpType::Object));
+    rf_obj
+        .properties
+        .insert("name".to_string(), str_val("greet"));
+    ed.set_var(
+        "this",
+        Val::new(PhpValue::Object(Box::new(rf_obj)), PhpType::Object),
+    );
 
     let n = crate::engine::vm::reflection::execute_reflection_function(
-        "getNumberOfParameters", &[], &mut ed,
+        "getNumberOfParameters",
+        &[],
+        &mut ed,
     )
     .unwrap();
     assert_eq!(zval_get_long(&n), 2);
@@ -998,10 +1189,19 @@ fn reflection_function_and_parameter_and_method_params() {
 
     // ReflectionParameter for greet's second param.
     let mut rp_obj = PhpObject::new("ReflectionParameter");
-    rp_obj.properties.insert("function".to_string(), str_val("greet"));
-    rp_obj.properties.insert("name".to_string(), str_val("greeting"));
-    rp_obj.properties.insert("position".to_string(), long_val(1));
-    ed.set_var("this", Val::new(PhpValue::Object(Box::new(rp_obj)), PhpType::Object));
+    rp_obj
+        .properties
+        .insert("function".to_string(), str_val("greet"));
+    rp_obj
+        .properties
+        .insert("name".to_string(), str_val("greeting"));
+    rp_obj
+        .properties
+        .insert("position".to_string(), long_val(1));
+    ed.set_var(
+        "this",
+        Val::new(PhpValue::Object(Box::new(rp_obj)), PhpType::Object),
+    );
 
     let pname =
         crate::engine::vm::reflection::execute_reflection_parameter("getName", &[], &mut ed)
@@ -1021,7 +1221,9 @@ fn array_combine_flip_search_unique() {
     let keys = array_from_vals(&[str_val("a"), str_val("b")]);
     let vals = array_from_vals(&[str_val("1"), str_val("2")]);
 
-    let combined = run("array_combine", &[keys, vals], &mut ed).unwrap().unwrap();
+    let combined = run("array_combine", &[keys, vals], &mut ed)
+        .unwrap()
+        .unwrap();
     if let PhpValue::Array(c) = &combined.value {
         assert_eq!(c.ar_data.len(), 2);
         assert_eq!(c.ar_data[0].key.as_ref().unwrap().as_str(), "a");
@@ -1075,17 +1277,19 @@ fn array_column_sum_product_chunk_count_fill_pad_range() {
     }
 
     assert_eq!(
-        zval_get_long(&run("array_sum", &[array_from_longs(&[1, 2, 3, 4])], &mut ed).unwrap().unwrap()),
+        zval_get_long(
+            &run("array_sum", &[array_from_longs(&[1, 2, 3, 4])], &mut ed)
+                .unwrap()
+                .unwrap()
+        ),
         10
     );
     assert_eq!(
-        zval_get_long(&run(
-            "array_product",
-            &[array_from_longs(&[1, 2, 3, 4])],
-            &mut ed
-        )
-        .unwrap()
-        .unwrap()),
+        zval_get_long(
+            &run("array_product", &[array_from_longs(&[1, 2, 3, 4])], &mut ed)
+                .unwrap()
+                .unwrap()
+        ),
         24
     );
 
@@ -1148,7 +1352,9 @@ fn array_column_sum_product_chunk_count_fill_pad_range() {
         panic!("array_pad");
     }
 
-    let r = run("range", &[long_val(1), long_val(4)], &mut ed).unwrap().unwrap();
+    let r = run("range", &[long_val(1), long_val(4)], &mut ed)
+        .unwrap()
+        .unwrap();
     if let PhpValue::Array(a) = &r.value {
         assert_eq!(a.ar_data.len(), 4);
         assert_eq!(zval_get_long(&a.ar_data[0].val), 1);
@@ -1169,7 +1375,9 @@ fn array_diff_intersect() {
     } else {
         panic!("array_diff");
     }
-    let inter = run("array_intersect", &[a(), b()], &mut ed).unwrap().unwrap();
+    let inter = run("array_intersect", &[a(), b()], &mut ed)
+        .unwrap()
+        .unwrap();
     if let PhpValue::Array(i) = &inter.value {
         assert_eq!(i.ar_data.len(), 1);
         assert_eq!(zval_get_string(&i.ar_data[0].val).as_str(), "b");
@@ -1255,7 +1463,12 @@ fn string_substr_count_replace_strpbrk_compare() {
 
     let rep = run(
         "substr_replace",
-        &[str_val("Hello World"), str_val("PHP"), long_val(0), long_val(5)],
+        &[
+            str_val("Hello World"),
+            str_val("PHP"),
+            long_val(0),
+            long_val(5),
+        ],
         &mut ed,
     )
     .unwrap()
@@ -1285,7 +1498,11 @@ fn string_substr_count_replace_strpbrk_compare() {
 fn math_intdiv_fmod_hypot() {
     let mut ed = ExecuteData::new();
     assert_eq!(
-        zval_get_long(&run("intdiv", &[long_val(7), long_val(2)], &mut ed).unwrap().unwrap()),
+        zval_get_long(
+            &run("intdiv", &[long_val(7), long_val(2)], &mut ed)
+                .unwrap()
+                .unwrap()
+        ),
         3
     );
     let fm = run("fmod", &[double_val(5.7), double_val(1.6)], &mut ed)
@@ -1304,13 +1521,9 @@ fn is_nan_infinite_finite() {
     assert!(!zval_get_bool(
         &run("is_nan", &[long_val(1)], &mut ed).unwrap().unwrap()
     ));
-    let nan = run(
-        "fmod",
-        &[double_val(f64::NAN), double_val(1.0)],
-        &mut ed,
-    )
-    .unwrap()
-    .unwrap();
+    let nan = run("fmod", &[double_val(f64::NAN), double_val(1.0)], &mut ed)
+        .unwrap()
+        .unwrap();
     assert!(zval_get_bool(
         &run("is_nan", &[nan.clone()], &mut ed).unwrap().unwrap()
     ));
@@ -1323,20 +1536,30 @@ fn is_nan_infinite_finite() {
 fn is_numeric_and_is_callable_boolval() {
     let mut ed = ExecuteData::new();
     assert!(zval_get_bool(
-        &run("is_numeric", &[str_val("123")], &mut ed).unwrap().unwrap()
+        &run("is_numeric", &[str_val("123")], &mut ed)
+            .unwrap()
+            .unwrap()
     ));
     assert!(zval_get_bool(
-        &run("is_numeric", &[str_val("1.5e3")], &mut ed).unwrap().unwrap()
+        &run("is_numeric", &[str_val("1.5e3")], &mut ed)
+            .unwrap()
+            .unwrap()
     ));
     assert!(!zval_get_bool(
-        &run("is_numeric", &[str_val("abc")], &mut ed).unwrap().unwrap()
+        &run("is_numeric", &[str_val("abc")], &mut ed)
+            .unwrap()
+            .unwrap()
     ));
 
     assert!(zval_get_bool(
-        &run("is_callable", &[str_val("strlen")], &mut ed).unwrap().unwrap()
+        &run("is_callable", &[str_val("strlen")], &mut ed)
+            .unwrap()
+            .unwrap()
     ));
     assert!(!zval_get_bool(
-        &run("is_callable", &[str_val("no_such_fn_xyz")], &mut ed).unwrap().unwrap()
+        &run("is_callable", &[str_val("no_such_fn_xyz")], &mut ed)
+            .unwrap()
+            .unwrap()
     ));
 
     assert!(zval_get_bool(
@@ -1353,22 +1576,39 @@ fn is_numeric_and_is_callable_boolval() {
 fn string_helpers_repeat_ucwords_lcfirst_split_reverse() {
     let mut ed = ExecuteData::new();
     assert_eq!(
-        zval_get_string(&run("str_repeat", &[str_val("ab"), long_val(3)], &mut ed).unwrap().unwrap())
-            .as_str(),
+        zval_get_string(
+            &run("str_repeat", &[str_val("ab"), long_val(3)], &mut ed)
+                .unwrap()
+                .unwrap()
+        )
+        .as_str(),
         "ababab"
     );
     assert_eq!(
-        zval_get_string(&run("ucwords", &[str_val("hello world foo")], &mut ed).unwrap().unwrap())
-            .as_str(),
+        zval_get_string(
+            &run("ucwords", &[str_val("hello world foo")], &mut ed)
+                .unwrap()
+                .unwrap()
+        )
+        .as_str(),
         "Hello World Foo"
     );
     assert_eq!(
-        zval_get_string(&run("lcfirst", &[str_val("HelloWorld")], &mut ed).unwrap().unwrap())
-            .as_str(),
+        zval_get_string(
+            &run("lcfirst", &[str_val("HelloWorld")], &mut ed)
+                .unwrap()
+                .unwrap()
+        )
+        .as_str(),
         "helloWorld"
     );
     assert_eq!(
-        zval_get_string(&run("strrev", &[str_val("hello")], &mut ed).unwrap().unwrap()).as_str(),
+        zval_get_string(
+            &run("strrev", &[str_val("hello")], &mut ed)
+                .unwrap()
+                .unwrap()
+        )
+        .as_str(),
         "olleh"
     );
     let split = run("str_split", &[str_val("hello"), long_val(2)], &mut ed)
@@ -1387,9 +1627,13 @@ fn string_helpers_repeat_ucwords_lcfirst_split_reverse() {
 fn string_predicates_and_tr_and_ireplace() {
     let mut ed = ExecuteData::new();
     assert!(zval_get_bool(
-        &run("str_contains", &[str_val("hello world"), str_val("world")], &mut ed)
-            .unwrap()
-            .unwrap()
+        &run(
+            "str_contains",
+            &[str_val("hello world"), str_val("world")],
+            &mut ed
+        )
+        .unwrap()
+        .unwrap()
     ));
     assert!(!zval_get_bool(
         &run("str_contains", &[str_val("hello"), str_val("x")], &mut ed)
@@ -1397,9 +1641,13 @@ fn string_predicates_and_tr_and_ireplace() {
             .unwrap()
     ));
     assert!(zval_get_bool(
-        &run("str_starts_with", &[str_val("hello"), str_val("he")], &mut ed)
-            .unwrap()
-            .unwrap()
+        &run(
+            "str_starts_with",
+            &[str_val("hello"), str_val("he")],
+            &mut ed
+        )
+        .unwrap()
+        .unwrap()
     ));
     assert!(zval_get_bool(
         &run("str_ends_with", &[str_val("hello"), str_val("lo")], &mut ed)
@@ -1408,18 +1656,28 @@ fn string_predicates_and_tr_and_ireplace() {
     ));
     // strtr char form
     assert_eq!(
-        zval_get_string(&run("strtr", &[str_val("Hello"), str_val("el"), str_val("ip")], &mut ed)
+        zval_get_string(
+            &run(
+                "strtr",
+                &[str_val("Hello"), str_val("el"), str_val("ip")],
+                &mut ed
+            )
             .unwrap()
-            .unwrap())
-            .as_str(),
+            .unwrap()
+        )
+        .as_str(),
         "Hippo"
     );
     // str_ireplace
     assert_eq!(
         zval_get_string(
-            &run("str_ireplace", &[str_val("WORLD"), str_val("php"), str_val("hello world")], &mut ed)
-                .unwrap()
-                .unwrap()
+            &run(
+                "str_ireplace",
+                &[str_val("WORLD"), str_val("php"), str_val("hello world")],
+                &mut ed
+            )
+            .unwrap()
+            .unwrap()
         )
         .as_str(),
         "hello php"
@@ -1430,41 +1688,81 @@ fn string_predicates_and_tr_and_ireplace() {
 fn string_escape_html_wordwrap_number_format() {
     let mut ed = ExecuteData::new();
     assert_eq!(
-        zval_get_string(&run("addslashes", &[str_val("it's")], &mut ed).unwrap().unwrap()).as_str(),
+        zval_get_string(
+            &run("addslashes", &[str_val("it's")], &mut ed)
+                .unwrap()
+                .unwrap()
+        )
+        .as_str(),
         "it\\'s"
     );
     assert_eq!(
-        zval_get_string(&run("stripslashes", &[str_val("it\\'s")], &mut ed).unwrap().unwrap())
-            .as_str(),
+        zval_get_string(
+            &run("stripslashes", &[str_val("it\\'s")], &mut ed)
+                .unwrap()
+                .unwrap()
+        )
+        .as_str(),
         "it's"
     );
     assert_eq!(
-        zval_get_string(&run("quotemeta", &[str_val("1+1=2?")], &mut ed).unwrap().unwrap()).as_str(),
+        zval_get_string(
+            &run("quotemeta", &[str_val("1+1=2?")], &mut ed)
+                .unwrap()
+                .unwrap()
+        )
+        .as_str(),
         "1\\+1=2\\?"
     );
     assert_eq!(
-        zval_get_string(&run("strip_tags", &[str_val("<b>hi</b><p>x</p>")], &mut ed).unwrap().unwrap())
-            .as_str(),
+        zval_get_string(
+            &run("strip_tags", &[str_val("<b>hi</b><p>x</p>")], &mut ed)
+                .unwrap()
+                .unwrap()
+        )
+        .as_str(),
         "hix"
     );
     assert_eq!(
         zval_get_string(
-            &run("htmlspecialchars_decode", &[str_val("a &amp; b &lt;t&gt;")], &mut ed)
-                .unwrap()
-                .unwrap()
+            &run(
+                "htmlspecialchars_decode",
+                &[str_val("a &amp; b &lt;t&gt;")],
+                &mut ed
+            )
+            .unwrap()
+            .unwrap()
         )
         .as_str(),
         "a & b <t>"
     );
     assert_eq!(
-        zval_get_string(&run("wordwrap", &[str_val("The quick brown fox"), long_val(10), str_val("/"), true_val()], &mut ed).unwrap().unwrap()).as_str(),
+        zval_get_string(
+            &run(
+                "wordwrap",
+                &[
+                    str_val("The quick brown fox"),
+                    long_val(10),
+                    str_val("/"),
+                    true_val()
+                ],
+                &mut ed
+            )
+            .unwrap()
+            .unwrap()
+        )
+        .as_str(),
         "The quick/brown fox"
     );
     assert_eq!(
         zval_get_string(
-            &run("number_format", &[double_val(1234567.891), long_val(2)], &mut ed)
-                .unwrap()
-                .unwrap()
+            &run(
+                "number_format",
+                &[double_val(1234567.891), long_val(2)],
+                &mut ed
+            )
+            .unwrap()
+            .unwrap()
         )
         .as_str(),
         "1,234,567.89"
@@ -1490,7 +1788,13 @@ fn printf_sprintf_vsprintf_precision() {
     let mut ed = ExecuteData::new();
     let s = run(
         "sprintf",
-        &[str_val("%s=%d pi=%.2f hex=%x"), str_val("k"), long_val(7), double_val(3.14159), long_val(255)],
+        &[
+            str_val("%s=%d pi=%.2f hex=%x"),
+            str_val("k"),
+            long_val(7),
+            double_val(std::f64::consts::PI),
+            long_val(255),
+        ],
         &mut ed,
     )
     .unwrap()
@@ -1499,7 +1803,10 @@ fn printf_sprintf_vsprintf_precision() {
 
     let v = run(
         "vsprintf",
-        &[str_val("%s-%s-%s"), array_from_vals(&[str_val("a"), str_val("b"), str_val("c")])],
+        &[
+            str_val("%s-%s-%s"),
+            array_from_vals(&[str_val("a"), str_val("b"), str_val("c")]),
+        ],
         &mut ed,
     )
     .unwrap()
@@ -1531,10 +1838,21 @@ fn base_conversion_and_trig_helpers() {
         255
     );
     assert_eq!(
-        zval_get_string(&run("base_convert", &[str_val("ff"), long_val(16), long_val(2)], &mut ed).unwrap().unwrap()).as_str(),
+        zval_get_string(
+            &run(
+                "base_convert",
+                &[str_val("ff"), long_val(16), long_val(2)],
+                &mut ed
+            )
+            .unwrap()
+            .unwrap()
+        )
+        .as_str(),
         "11111111"
     );
-    let r = run("deg2rad", &[double_val(180.0)], &mut ed).unwrap().unwrap();
+    let r = run("deg2rad", &[double_val(180.0)], &mut ed)
+        .unwrap()
+        .unwrap();
     assert!((zval_get_double(&r) - std::f64::consts::PI).abs() < 1e-9);
     let d = run("rad2deg", &[double_val(std::f64::consts::PI)], &mut ed)
         .unwrap()
@@ -1546,20 +1864,46 @@ fn base_conversion_and_trig_helpers() {
 fn fuzzy_similarity_levenshtein_soundex() {
     let mut ed = ExecuteData::new();
     assert_eq!(
-        zval_get_long(&run("similar_text", &[str_val("abcde"), str_val("abfde")], &mut ed).unwrap().unwrap()),
+        zval_get_long(
+            &run(
+                "similar_text",
+                &[str_val("abcde"), str_val("abfde")],
+                &mut ed
+            )
+            .unwrap()
+            .unwrap()
+        ),
         4
     );
     assert_eq!(
-        zval_get_long(&run("levenshtein", &[str_val("kitten"), str_val("sitting")], &mut ed).unwrap().unwrap()),
+        zval_get_long(
+            &run(
+                "levenshtein",
+                &[str_val("kitten"), str_val("sitting")],
+                &mut ed
+            )
+            .unwrap()
+            .unwrap()
+        ),
         3
     );
     // Robert and Rupert share the same soundex (R163).
     assert_eq!(
-        zval_get_string(&run("soundex", &[str_val("Robert")], &mut ed).unwrap().unwrap()).as_str(),
+        zval_get_string(
+            &run("soundex", &[str_val("Robert")], &mut ed)
+                .unwrap()
+                .unwrap()
+        )
+        .as_str(),
         "R163"
     );
     assert_eq!(
-        zval_get_string(&run("soundex", &[str_val("Rupert")], &mut ed).unwrap().unwrap()).as_str(),
+        zval_get_string(
+            &run("soundex", &[str_val("Rupert")], &mut ed)
+                .unwrap()
+                .unwrap()
+        )
+        .as_str(),
         "R163"
     );
 }
@@ -1574,7 +1918,9 @@ fn serialize_unserialize_round_trip_through_builtins() {
     assert_eq!(zval_get_long(&back), 42);
 
     // string
-    let s = run("serialize", &[str_val("hi")], &mut ed).unwrap().unwrap();
+    let s = run("serialize", &[str_val("hi")], &mut ed)
+        .unwrap()
+        .unwrap();
     assert_eq!(zval_get_string(&s).as_str(), "s:2:\"hi\";");
     let back = run("unserialize", &[s], &mut ed).unwrap().unwrap();
     assert_eq!(zval_get_string(&back).as_str(), "hi");
@@ -1596,4 +1942,3 @@ fn serialize_unserialize_round_trip_through_builtins() {
         .unwrap();
     assert_eq!(bad.get_type(), PhpType::False);
 }
-

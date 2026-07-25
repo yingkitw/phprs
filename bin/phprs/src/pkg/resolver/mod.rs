@@ -63,10 +63,8 @@ impl DependencyResolver {
             if let Some(reqs) = selected.require.as_ref() {
                 deps.extend(parse_require_map(reqs));
             }
-            if include_dev {
-                if let Some(reqs) = selected.require_dev.as_ref() {
-                    deps.extend(parse_require_map(reqs));
-                }
+            if include_dev && let Some(reqs) = selected.require_dev.as_ref() {
+                deps.extend(parse_require_map(reqs));
             }
 
             for (dep_name, dep_constraint) in deps {
@@ -101,13 +99,12 @@ fn parse_require_map(value: &serde_json::Value) -> HashMap<String, String> {
 
 fn select_version(metadata: &PackageMetadata, constraint: &str) -> Result<VersionMetadata> {
     if constraint.trim().is_empty() || constraint == "*" {
-        return metadata
-            .latest_stable_version()
-            .cloned()
-            .ok_or_else(|| PkgError::VersionNotFound {
+        return metadata.latest_stable_version().cloned().ok_or_else(|| {
+            PkgError::VersionNotFound {
                 package: metadata.name.clone(),
                 version: "*".to_string(),
-            });
+            }
+        });
     }
 
     if let Some(exact) = metadata.get_version(constraint) {
@@ -158,7 +155,10 @@ mod tests {
                 None
             } else {
                 let mut obj = serde_json::Map::new();
-                obj.insert(dep.to_string(), serde_json::Value::String("^1.0".to_string()));
+                obj.insert(
+                    dep.to_string(),
+                    serde_json::Value::String("^1.0".to_string()),
+                );
                 Some(serde_json::Value::Object(obj))
             };
             map.insert(

@@ -1,6 +1,6 @@
 //! Main VM execution loop
 
-use super::execute_data::{clone_val, ExecResult, ExecuteData};
+use super::execute_data::{ExecResult, ExecuteData, clone_val};
 
 use super::opcodes::{Op, OpArray, Opcode};
 use crate::engine::string::string_init;
@@ -238,15 +238,9 @@ pub fn execute_ex(execute_data: &mut ExecuteData, op_array: &OpArray) -> PhpResu
             new_ce
                 .default_properties
                 .reserve(ce.default_properties.len());
-            new_ce
-                .static_properties
-                .reserve(ce.static_properties.len());
-            new_ce
-                .property_flags
-                .reserve(ce.property_flags.len());
-            new_ce
-                .constants
-                .reserve(ce.constants.len());
+            new_ce.static_properties.reserve(ce.static_properties.len());
+            new_ce.property_flags.reserve(ce.property_flags.len());
+            new_ce.constants.reserve(ce.constants.len());
             new_ce.methods.reserve(ce.methods.len());
 
             for (prop_name, prop_val) in &ce.default_properties {
@@ -260,9 +254,7 @@ pub fn execute_ex(execute_data: &mut ExecuteData, op_array: &OpArray) -> PhpResu
                     .insert(prop_name.clone(), clone_val(prop_val));
             }
             for (prop_name, flags) in &ce.property_flags {
-                new_ce
-                    .property_flags
-                    .insert(prop_name.clone(), *flags);
+                new_ce.property_flags.insert(prop_name.clone(), *flags);
             }
             for (const_name, const_val) in &ce.constants {
                 new_ce
@@ -276,8 +268,7 @@ pub fn execute_ex(execute_data: &mut ExecuteData, op_array: &OpArray) -> PhpResu
                     .clone()
                     .filter(|f| !f.is_empty())
                     .unwrap_or_else(|| format!("{}::{}", name, method_name));
-                let mut new_op_arr =
-                    OpArray::with_capacity(method.op_array.ops.len(), method_file);
+                let mut new_op_arr = OpArray::with_capacity(method.op_array.ops.len(), method_file);
                 new_op_arr.ops = method
                     .op_array
                     .ops

@@ -222,7 +222,7 @@ impl Clone for Val {
                 PhpValue::Array(_a) => {
                     // For arrays, we need to implement proper cloning
                     // For now, just create a new empty array
-                    PhpValue::Array(Box::new(PhpArray::new()))
+                    PhpValue::Array(Box::default())
                 }
                 PhpValue::Object(_o) => {
                     // For objects, create a new stdClass

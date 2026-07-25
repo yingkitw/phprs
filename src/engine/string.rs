@@ -2,7 +2,7 @@
 //!
 //! High-performance string handling optimized to outperform PHP 8
 
-use super::perf_alloc::{allocate_php_string, fast_concat, StringBuilder};
+use super::perf_alloc::{StringBuilder, allocate_php_string, fast_concat};
 use crate::engine::types::PhpString;
 
 /// Hash function for strings (DJBX33A algorithm used by PHP)

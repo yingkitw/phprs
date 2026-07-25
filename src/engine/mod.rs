@@ -27,4 +27,4 @@ pub mod vm;
 pub use types::*;
 
 // Re-export facade for convenient access
-pub use facade::{ValFactory, StdValFactory};
+pub use facade::{StdValFactory, ValFactory};

@@ -21,12 +21,8 @@ fn test_exception_with_code() {
 #[test]
 fn test_exception_with_previous() {
     let prev = PhpException::new(ExceptionClass::Exception, "Previous error");
-    let ex = PhpException::with_previous(
-        ExceptionClass::RuntimeException,
-        "Current error",
-        1,
-        prev,
-    );
+    let ex =
+        PhpException::with_previous(ExceptionClass::RuntimeException, "Current error", 1, prev);
     assert_eq!(ex.get_message(), "Current error");
     assert!(ex.get_previous().is_some());
     assert_eq!(ex.get_previous().unwrap().get_message(), "Previous error");
@@ -77,7 +73,9 @@ fn test_exception_class_hierarchy() {
     assert!(ExceptionClass::Error.is_subclass_of(&ExceptionClass::Throwable));
     assert!(ExceptionClass::RuntimeException.is_subclass_of(&ExceptionClass::Exception));
     assert!(ExceptionClass::TypeError.is_subclass_of(&ExceptionClass::Error));
-    assert!(ExceptionClass::InvalidArgumentException.is_subclass_of(&ExceptionClass::LogicException));
+    assert!(
+        ExceptionClass::InvalidArgumentException.is_subclass_of(&ExceptionClass::LogicException)
+    );
     assert!(!ExceptionClass::Exception.is_subclass_of(&ExceptionClass::Error));
     assert!(!ExceptionClass::Error.is_subclass_of(&ExceptionClass::Exception));
 }
@@ -86,7 +84,10 @@ fn test_exception_class_hierarchy() {
 fn test_exception_class_name() {
     assert_eq!(ExceptionClass::Exception.name(), "Exception");
     assert_eq!(ExceptionClass::TypeError.name(), "TypeError");
-    assert_eq!(ExceptionClass::Custom("MyException".to_string()).name(), "MyException");
+    assert_eq!(
+        ExceptionClass::Custom("MyException".to_string()).name(),
+        "MyException"
+    );
 }
 
 #[test]
@@ -140,7 +141,11 @@ fn test_exception_state() {
     let ex = PhpException::new(ExceptionClass::RuntimeException, "caught!");
     let action = state.throw(ex);
     match action {
-        ExceptionAction::Catch { variable_name, jump_to, exception } => {
+        ExceptionAction::Catch {
+            variable_name,
+            jump_to,
+            exception,
+        } => {
             assert_eq!(variable_name, "$e");
             assert_eq!(jump_to, 11);
             assert_eq!(exception.get_message(), "caught!");

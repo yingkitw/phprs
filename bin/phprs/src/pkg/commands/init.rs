@@ -28,7 +28,9 @@ pub struct Init {
 
 impl Init {
     pub async fn execute(&self) -> anyhow::Result<()> {
-        let project_dir = self.path.as_ref()
+        let project_dir = self
+            .path
+            .as_ref()
             .unwrap_or(&PathBuf::from("."))
             .canonicalize()?;
 
@@ -54,7 +56,9 @@ impl Init {
         composer.type_ = Some(self.type_.clone());
 
         if let Some(ref license) = self.license {
-            composer.license = Some(super::super::composer::StringOrArray::Single(license.clone()));
+            composer.license = Some(super::super::composer::StringOrArray::Single(
+                license.clone(),
+            ));
         }
 
         // Add default autoload
@@ -69,19 +73,22 @@ impl Init {
                             let mut chars = s.chars();
                             match chars.next() {
                                 None => String::new(),
-                                first => first.unwrap().to_uppercase().collect::<String>() + chars.as_str(),
+                                first => {
+                                    first.unwrap().to_uppercase().collect::<String>()
+                                        + chars.as_str()
+                                }
                             }
                         })
                         .collect::<Vec<_>>()
                         .join("\\");
                     map.insert(
                         format!("{}\\", namespace),
-                        super::super::composer::StringOrArray::Single("src/".to_string())
+                        super::super::composer::StringOrArray::Single("src/".to_string()),
                     );
                 } else {
                     map.insert(
                         "App\\".to_string(),
-                        super::super::composer::StringOrArray::Single("src/".to_string())
+                        super::super::composer::StringOrArray::Single("src/".to_string()),
                     );
                 }
                 map

@@ -2,8 +2,8 @@
 //!
 //! Advanced opcode caching system with optimization passes to outperform PHP 8
 
-use crate::vm::execute_data::ExecuteData;
-use crate::vm::opcodes::{Op, OpArray, Opcode};
+use crate::engine::vm::execute_data::ExecuteData;
+use crate::engine::vm::opcodes::{Op, OpArray, Opcode};
 use std::collections::HashMap;
 use std::sync::{Arc, OnceLock, RwLock};
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -243,9 +243,8 @@ impl OpcodeCache {
         let mut loop_depth = 0;
 
         for op in &mut optimized {
-            match op.base.opcode {
-                Opcode::Jmp => loop_depth += 1,
-                _ => {}
+            if op.base.opcode == Opcode::Jmp {
+                loop_depth += 1
             }
 
             op.optimization_hints.loop_depth = loop_depth;
@@ -265,15 +264,15 @@ impl OpcodeCache {
 
         // Simple branch prediction - assume backward jumps are likely taken
         for i in 0..optimized.len() {
-            if optimized[i].base.opcode == Opcode::Jmp {
-                if let Some(target) = optimized[i].base.extended_value.checked_sub(1) {
-                    if target < i as u32 {
-                        // Backward jump - likely loop, high probability
-                        optimized[i].optimization_hints.branch_probability = 0.9;
-                    } else {
-                        // Forward jump - unlikely
-                        optimized[i].optimization_hints.branch_probability = 0.1;
-                    }
+            if optimized[i].base.opcode == Opcode::Jmp
+                && let Some(target) = optimized[i].base.extended_value.checked_sub(1)
+            {
+                if target < i as u32 {
+                    // Backward jump - likely loop, high probability
+                    optimized[i].optimization_hints.branch_probability = 0.9;
+                } else {
+                    // Forward jump - unlikely
+                    optimized[i].optimization_hints.branch_probability = 0.1;
                 }
             }
         }

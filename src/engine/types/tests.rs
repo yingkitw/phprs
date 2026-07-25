@@ -14,7 +14,7 @@ fn test_zval_get_type() {
     let zval_long = Val::new(PhpValue::Long(10), PhpType::Long);
     assert_eq!(zval_long.get_type(), PhpType::Long);
 
-    let zval_double = Val::new(PhpValue::Double(3.14), PhpType::Double);
+    let zval_double = Val::new(PhpValue::Double(std::f64::consts::PI), PhpType::Double);
     assert_eq!(zval_double.get_type(), PhpType::Double);
 
     let str_val = string_init("test", false);
@@ -64,9 +64,9 @@ fn test_refcounted_new() {
 fn test_php_value_variants() {
     // Test all PhpValue variants can be created
     let _long = PhpValue::Long(42);
-    let _double = PhpValue::Double(3.14);
+    let _double = PhpValue::Double(std::f64::consts::PI);
     let _string = PhpValue::String(Box::new(string_init("test", false)));
-    let _array = PhpValue::Array(Box::new(PhpArray::new()));
+    let _array = PhpValue::Array(Box::default());
     let _ptr = PhpValue::Ptr(std::ptr::null_mut());
 }
 

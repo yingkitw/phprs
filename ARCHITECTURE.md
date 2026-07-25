@@ -58,7 +58,7 @@ Magic constants `__FILE__` and `__DIR__` are set per script in `execute.rs` from
 
 ## Virtual machine
 
-- **67 opcodes** (arithmetic, control flow, calls, OOP, includes, exceptions, …)
+- **73 opcodes** (arithmetic, control flow, calls, OOP, includes, exceptions, …)
 - **Direct dispatch table** in `dispatch_handlers.rs`
 - **Built-ins** delegated from `builtins.rs` to `src/php/*` modules
 

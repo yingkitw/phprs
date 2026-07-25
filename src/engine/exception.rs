@@ -394,9 +394,7 @@ pub fn error_to_exception(
     line: u32,
 ) -> PhpException {
     let class = match error_type {
-        ErrorType::Error | ErrorType::CoreError | ErrorType::CompileError => {
-            ExceptionClass::Error
-        }
+        ErrorType::Error | ErrorType::CoreError | ErrorType::CompileError => ExceptionClass::Error,
         ErrorType::Warning
         | ErrorType::CoreWarning
         | ErrorType::CompileWarning

@@ -14,7 +14,7 @@ fn main() {
     println!("Long value: {}", zval_get_long(&long_val));
 
     // Create a double (float) value
-    let double_val = Val::new(PhpValue::Double(3.14159), PhpType::Double);
+    let double_val = Val::new(PhpValue::Double(std::f64::consts::PI), PhpType::Double);
     println!("Double value: {}", zval_get_double(&double_val));
 
     // Create a string value

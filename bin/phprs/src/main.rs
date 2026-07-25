@@ -13,7 +13,7 @@ use env_logger::Env;
 
 #[derive(Parser)]
 #[command(name = "phprs")]
-#[command(version = "0.1.0")]
+#[command(version = env!("CARGO_PKG_VERSION"))]
 #[command(about = "PHP interpreter, server, and package manager written in Rust")]
 struct Cli {
     /// Sets the level of verbosity
@@ -68,7 +68,7 @@ async fn main() -> anyhow::Result<()> {
 /// Execute a PHP file
 fn cmd_run(filename: &str) -> anyhow::Result<()> {
     use phprs::engine::compile::compile_file_with_functions;
-    use phprs::engine::vm::{execute_ex, ExecuteData};
+    use phprs::engine::vm::{ExecuteData, execute_ex};
     use phprs::php::output::{php_output_end, php_output_start};
     use std::sync::Arc;
 

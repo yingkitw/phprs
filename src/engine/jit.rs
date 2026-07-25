@@ -4,8 +4,8 @@
 //! hot code paths to native machine code.
 
 use crate::engine::types::{PhpResult, Val};
-use crate::vm::execute_data::{ExecResult, ExecuteData};
-use crate::vm::opcodes::{OpArray, Opcode};
+use crate::engine::vm::execute_data::{ExecResult, ExecuteData};
+use crate::engine::vm::opcodes::{OpArray, Opcode};
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{OnceLock, RwLock};
@@ -93,7 +93,7 @@ impl JitCompiler {
     pub fn get_counter(&mut self, function_name: &str) -> &ExecutionCounter {
         self.execution_counters
             .entry(function_name.to_string())
-            .or_insert_with(ExecutionCounter::new)
+            .or_default()
     }
 
     /// Check if function should be JIT compiled
@@ -209,7 +209,8 @@ impl JitCompiler {
                 // Execute the optimized opcode sequence
                 for op in &ops {
                     // Use the fast dispatch handlers
-                    let result = crate::vm::dispatch_handlers::dispatch_opcode(op, execute_data);
+                    let result =
+                        crate::engine::vm::dispatch_handlers::dispatch_opcode(op, execute_data);
                     match result {
                         Ok(ExecResult::Continue) => continue,
                         Ok(ExecResult::Jump(_)) => {
@@ -311,10 +312,10 @@ pub fn execute_with_jit(
     // Check if we should compile this function
     {
         let mut jit = get_jit_compiler().write().unwrap();
-        if jit.should_compile(function_name) {
-            if let Ok(compiled_fn) = jit.compile_function(function_name, op_array) {
-                return compiled_fn(execute_data);
-            }
+        if jit.should_compile(function_name)
+            && let Ok(compiled_fn) = jit.compile_function(function_name, op_array)
+        {
+            return compiled_fn(execute_data);
         }
 
         // Fallback to interpreter

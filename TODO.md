@@ -44,6 +44,8 @@
 - [x] `global $var` statement (BindGlobal opcode; script globals in user functions)
 - [x] Chained object property dimension assignment (`$obj->prop['k'] = v`, `$this->data['a']['b'] = v`)
 - [x] Class property defaults with constant expressions (`public $data = array()`)
+- [x] try/catch/finally exception dispatch (single op-array scope; cross-function propagation pending)
+- [x] Direct subscripting of function-call results (`func()['key']`, `(func())['key']`)
 
 ### Tools
 - [x] Unified CLI (`bin/phprs`) with `run`, `serve`, `pkg` subcommands
@@ -164,9 +166,8 @@
 - **485+ workspace tests** (`cargo test --workspace`)
 - **23 root PHP examples** — all run via `examples_root_php_scripts_all_run`
 - **Known gaps** (verified during testing — tracked, not blocking):
-  - **Exceptions are not wired into the VM dispatch.** `throw`, `try`/`catch`/`finally` opcodes (`Throw`, `TryCatchBegin/End`, `CatchBegin/End`, `FinallyBegin/End`) are **no-ops** in the real dispatch table — `src/engine/vm/handlers.rs` has the logic but is unused dead code, and `execute_ex` only dispatches ~50 of the 73 opcodes. The `exception.rs` state machine (`ExceptionState`, `TryCatchBlock`) is never triggered, so `throw new X()` silently continues and `catch` blocks never run. Unit tests pass because they exercise `ExceptionState` directly. **This is the highest-priority correctness gap.**
-  - Other un-dispatched opcodes (no-ops today): bitwise (`Sl`, `Sr`, `BwOr/And/Xor/Not`), `BoolXor`, `AssignOp` (compound `+=` etc. via opcode), `AssignObj`, `TypeCheck`, `Unset`, `IsSet`, `Empty`, `Count`, `Keys`, `Values`, `ArrayDiff`. Several are covered by their builtin equivalents (`isset`/`empty`/`count`/`unset` work as function calls), but the opcode-level forms do nothing.
-  - `func()['key']` / `(func())['key']` — subscripting a function-call result directly returns the whole array instead of the element. **Workaround:** assign the return value to a variable first (`$x = func(); $x['key']`).
+  - Un-dispatched opcodes (no-ops today): bitwise (`Sl`, `Sr`, `BwOr/And/Xor/Not`), `BoolXor`, `AssignOp` (compound `+=` etc. via opcode), `AssignObj`, `TypeCheck`, `Unset`, `IsSet`, `Empty`, `Count`, `Keys`, `Values`, `ArrayDiff`. Several are covered by their builtin equivalents (`isset`/`empty`/`count`/`unset` work as function calls), but the opcode-level forms do nothing.
+  - Exception dispatch is scoped to a single op-array; cross-function propagation (throw in a callee caught by a caller) is not yet supported.
   - Numeric-string array keys are not normalized to integers (PHP stores `'1'` as integer key `1`); lookups by the other form may miss.
   - `Val::clone()` is shallow for arrays/objects (creates an empty/default copy); engine code must use `clone_val` (deep) — a frequent source of subtle bugs for contributors.
 

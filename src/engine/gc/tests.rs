@@ -6,7 +6,7 @@ use crate::engine::gc::Gc;
 fn test_gc_new() {
     let gc = Gc::new();
     // Verify GC is initialized
-    assert_eq!(gc.should_collect(), false);
+    assert!(!gc.should_collect());
     let stats = gc.get_stats();
     assert_eq!(stats.collected, 0);
 }
@@ -26,7 +26,7 @@ fn test_gc_should_collect() {
     gc.set_threshold(5);
 
     // Initially should not collect
-    assert_eq!(gc.should_collect(), false);
+    assert!(!gc.should_collect());
 }
 
 #[test]

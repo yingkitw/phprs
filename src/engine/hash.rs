@@ -111,7 +111,7 @@ pub fn hash_find<'a>(ht: &'a PhpArray, key: &PhpString) -> Option<&'a Val> {
 }
 
 /// Find an element in the hash table by numeric index
-pub fn hash_index_find<'a>(ht: &'a PhpArray, h: u64) -> Option<&'a Val> {
+pub fn hash_index_find(ht: &PhpArray, h: u64) -> Option<&Val> {
     ht.ar_data
         .iter()
         .find(|bucket| bucket.h == h && bucket.key.is_none())

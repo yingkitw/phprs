@@ -8,11 +8,11 @@
 #[cfg(test)]
 mod tests;
 
-use std::alloc::{alloc, dealloc, handle_alloc_error, Layout};
+use std::alloc::{Layout, alloc, dealloc, handle_alloc_error};
 use std::collections::HashMap;
-use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Mutex;
 use std::sync::OnceLock;
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 /// Memory statistics
 #[derive(Debug, Default)]

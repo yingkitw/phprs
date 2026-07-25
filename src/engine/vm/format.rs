@@ -37,8 +37,11 @@ pub(crate) fn var_dump_value(val: &Val) -> String {
         PhpType::Object => {
             if let PhpValue::Object(ref obj) = val.value {
                 let count = obj.properties.len();
-                let mut out = format!("object({})#1 ({}) {{
-", obj.class_name, count);
+                let mut out = format!(
+                    "object({})#1 ({}) {{
+",
+                    obj.class_name, count
+                );
                 for (key, prop_val) in &obj.properties {
                     out.push_str(&format!("  [\"{}\"]=>\n  ", key));
                     out.push_str(&var_dump_value(prop_val));

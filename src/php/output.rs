@@ -14,11 +14,17 @@ pub struct OutputBuffer {
 
 impl OutputBuffer {
     pub fn new() -> Self {
-        Self { buffer: Vec::new(), callback: None }
+        Self {
+            buffer: Vec::new(),
+            callback: None,
+        }
     }
 
     pub fn with_callback(callback: String) -> Self {
-        Self { buffer: Vec::new(), callback: Some(callback) }
+        Self {
+            buffer: Vec::new(),
+            callback: Some(callback),
+        }
     }
 
     pub fn callback(&self) -> Option<&str> {
@@ -64,7 +70,7 @@ impl Default for OutputBuffer {
 }
 
 thread_local! {
-    static OUTPUT_BUFFERS: std::cell::RefCell<Vec<OutputBuffer>> = std::cell::RefCell::new(Vec::new());
+    static OUTPUT_BUFFERS: std::cell::RefCell<Vec<OutputBuffer>> = const { std::cell::RefCell::new(Vec::new()) };
 }
 
 /// Start output buffering
@@ -78,7 +84,9 @@ pub fn php_output_start() -> Result<(), String> {
 /// Start output buffering with a callback
 pub fn php_output_start_with_callback(callback: String) -> Result<(), String> {
     OUTPUT_BUFFERS.with(|buffers| {
-        buffers.borrow_mut().push(OutputBuffer::with_callback(callback));
+        buffers
+            .borrow_mut()
+            .push(OutputBuffer::with_callback(callback));
         Ok(())
     })
 }
@@ -86,7 +94,10 @@ pub fn php_output_start_with_callback(callback: String) -> Result<(), String> {
 /// Get callback of the current (top) buffer
 pub fn php_output_current_callback() -> Option<String> {
     OUTPUT_BUFFERS.with(|buffers| {
-        buffers.borrow().last().and_then(|b| b.callback().map(|s| s.to_string()))
+        buffers
+            .borrow()
+            .last()
+            .and_then(|b| b.callback().map(|s| s.to_string()))
     })
 }
 
@@ -107,7 +118,10 @@ pub fn php_output_take() -> Result<(String, Option<String>), String> {
     OUTPUT_BUFFERS.with(|buffers| {
         let mut bufs = buffers.borrow_mut();
         if let Some(buffer) = bufs.pop() {
-            Ok((buffer.get_contents_string(), buffer.callback().map(|s| s.to_string())))
+            Ok((
+                buffer.get_contents_string(),
+                buffer.callback().map(|s| s.to_string()),
+            ))
         } else {
             Err("No output buffer to end".to_string())
         }

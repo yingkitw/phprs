@@ -40,41 +40,43 @@ pub(crate) fn is_var_ref(z: &Val) -> bool {
 /// if it's a variable ref, look up in symbol_table; if it's a constant identifier,
 /// look up in constants; otherwise return literal.
 pub(crate) fn resolve_operand(operand: &Val, execute_data: &ExecuteData) -> Val {
-    if is_temp_ref(operand) {
-        if let PhpValue::Long(idx) = &operand.value {
-            return execute_data.get_temp(*idx as usize);
-        }
+    if is_temp_ref(operand)
+        && let PhpValue::Long(idx) = &operand.value
+    {
+        return execute_data.get_temp(*idx as usize);
     }
-    if is_var_ref(operand) {
-        if let PhpValue::String(name) = &operand.value {
-            let n = name.as_str();
-            let clean = if n.starts_with('$') { &n[1..] } else { n };
-            return execute_data.get_var(clean);
-        }
+    if is_var_ref(operand)
+        && let PhpValue::String(name) = &operand.value
+    {
+        let n = name.as_str();
+        let clean = if n.starts_with('$') { &n[1..] } else { n };
+        return execute_data.get_var(clean);
     }
     // Bare identifier constants are emitted as ConstantAst (not real string literals)
-    if operand.get_type() == PhpType::ConstantAst {
-        if let PhpValue::String(name) = &operand.value {
-            let name_str = name.as_str();
-            if let Some(v) = execute_data.constants.get(name_str) {
-                return clone_val(v);
-            }
-            // PHP legacy: undefined constant name becomes a string of that name
-            return Val::new(
-                PhpValue::String(Box::new(crate::engine::string::string_init(name_str, false))),
-                PhpType::String,
-            );
+    if operand.get_type() == PhpType::ConstantAst
+        && let PhpValue::String(name) = &operand.value
+    {
+        let name_str = name.as_str();
+        if let Some(v) = execute_data.constants.get(name_str) {
+            return clone_val(v);
         }
+        // PHP legacy: undefined constant name becomes a string of that name
+        return Val::new(
+            PhpValue::String(Box::new(crate::engine::string::string_init(
+                name_str, false,
+            ))),
+            PhpType::String,
+        );
     }
     clone_val(operand)
 }
 
 /// Get the result temp var index from an op's result field
 pub(crate) fn result_slot(op: &super::opcodes::Op) -> Option<usize> {
-    if is_temp_ref(&op.result) {
-        if let PhpValue::Long(idx) = &op.result.value {
-            return Some(*idx as usize);
-        }
+    if is_temp_ref(&op.result)
+        && let PhpValue::Long(idx) = &op.result.value
+    {
+        return Some(*idx as usize);
     }
     None
 }
@@ -148,6 +150,12 @@ pub struct ExecuteData {
     pub pending_exception: Option<Val>,
 }
 
+impl Default for ExecuteData {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl ExecuteData {
     pub fn new() -> Self {
         let mut ed = Self {
@@ -202,7 +210,7 @@ impl ExecuteData {
     pub fn get_temp(&self, index: usize) -> Val {
         self.temp_vars
             .get(index)
-            .map(|z| clone_val(z))
+            .map(clone_val)
             .unwrap_or_else(|| Val::new(PhpValue::Long(0), PhpType::Null))
     }
 
@@ -249,13 +257,7 @@ impl ExecuteData {
             if let Some(ref mut scope) = self.ref_caller_scope {
                 let key = crate::engine::string::string_init(&caller_var, false);
                 let key_box = Box::new(key);
-                let _ = crate::engine::hash::hash_add_or_update(
-                    scope,
-                    Some(&*key_box),
-                    0,
-                    val,
-                    0,
-                );
+                let _ = crate::engine::hash::hash_add_or_update(scope, Some(&*key_box), 0, val, 0);
             }
             return;
         }
@@ -264,13 +266,7 @@ impl ExecuteData {
             if let Some(ref mut global) = self.global_script_table {
                 let key = crate::engine::string::string_init(name, false);
                 let key_box = Box::new(key);
-                let _ = crate::engine::hash::hash_add_or_update(
-                    global,
-                    Some(&*key_box),
-                    0,
-                    val,
-                    0,
-                );
+                let _ = crate::engine::hash::hash_add_or_update(global, Some(&*key_box), 0, val, 0);
             }
             return;
         }

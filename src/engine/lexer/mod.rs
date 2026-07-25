@@ -4,14 +4,14 @@
 //!
 //! This module implements the PHP tokenizer/lexer, now modularized for better maintainability.
 
-mod tokens;
+mod core;
 mod keywords;
 mod readers;
-mod core;
+mod tokens;
 
 #[cfg(test)]
 mod tests;
 
-pub use tokens::*;
-pub use keywords::*;
 pub use core::*;
+pub use keywords::*;
+pub use tokens::*;

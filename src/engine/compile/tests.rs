@@ -1,6 +1,6 @@
 //! Unit tests for compiler
 
-use crate::engine::compile::{compile_file, compile_string, CompileContext};
+use crate::engine::compile::{CompileContext, compile_file, compile_string};
 use crate::engine::types::Val;
 use crate::engine::vm::Opcode;
 
@@ -87,7 +87,10 @@ fn test_lexer_strlen_fcc_tokens() {
     let mut lexer = Lexer::new("strlen(...)");
     assert_eq!(lexer.next_token().unwrap().token_type, TokenType::T_STRING);
     assert_eq!(lexer.next_token().unwrap().token_type, TokenType::T_STRING);
-    assert_eq!(lexer.next_token().unwrap().token_type, TokenType::T_ELLIPSIS);
+    assert_eq!(
+        lexer.next_token().unwrap().token_type,
+        TokenType::T_ELLIPSIS
+    );
     assert_eq!(lexer.next_token().unwrap().token_type, TokenType::T_STRING);
 }
 

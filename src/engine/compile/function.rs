@@ -17,7 +17,8 @@ fn is_punct(token: &Token, ch: &str) -> bool {
 }
 
 fn is_union_sep(token: &Token) -> bool {
-    token.token_type == TokenType::T_OR_EQUAL && token.value.as_ref().map(|s| s.as_str()) == Some("|")
+    token.token_type == TokenType::T_OR_EQUAL
+        && token.value.as_ref().map(|s| s.as_str()) == Some("|")
 }
 
 fn is_intersection_sep(token: &Token) -> bool {
@@ -27,24 +28,24 @@ fn is_intersection_sep(token: &Token) -> bool {
 
 /// Check if a token is a type hint keyword
 fn is_type_hint(token: &Token) -> bool {
-    if token.token_type == TokenType::T_STRING {
-        if let Some(ref val) = token.value {
-            return matches!(
-                val.as_str(),
-                "int"
-                    | "string"
-                    | "float"
-                    | "bool"
-                    | "array"
-                    | "object"
-                    | "mixed"
-                    | "void"
-                    | "never"
-                    | "self"
-                    | "static"
-                    | "iterable"
-            );
-        }
+    if token.token_type == TokenType::T_STRING
+        && let Some(ref val) = token.value
+    {
+        return matches!(
+            val.as_str(),
+            "int"
+                | "string"
+                | "float"
+                | "bool"
+                | "array"
+                | "object"
+                | "mixed"
+                | "void"
+                | "never"
+                | "self"
+                | "static"
+                | "iterable"
+        );
     }
     token.token_type == TokenType::T_ARRAY || token.token_type == TokenType::T_CALLABLE
 }
@@ -94,7 +95,8 @@ pub(crate) fn parse_params(
         };
 
         // Pass-by-reference: &$param
-        let is_ref = if current_token.token_type == TokenType::T_AMPERSAND_FOLLOWED_BY_VAR_OR_VARARG {
+        let is_ref = if current_token.token_type == TokenType::T_AMPERSAND_FOLLOWED_BY_VAR_OR_VARARG
+        {
             current_token = lexer.next_token()?;
             true
         } else {
@@ -281,7 +283,7 @@ pub fn compile_function(lexer: &mut Lexer, context: &mut CompileContext) -> Resu
         .function_table
         .store_function(function_name, func_op_array);
 
-    Ok(lexer.next_token()?)
+    lexer.next_token()
 }
 
 /// Compile a closure expression: function($params) use ($captures) { body }

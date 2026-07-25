@@ -26,8 +26,8 @@ fn test_basic_types_example() {
     assert_eq!(zval_get_long(&long_val), 42);
 
     // Double value
-    let double_val = Val::new(PhpValue::Double(3.14159), PhpType::Double);
-    assert_eq!(zval_get_double(&double_val), 3.14159);
+    let double_val = Val::new(PhpValue::Double(std::f64::consts::PI), PhpType::Double);
+    assert_eq!(zval_get_double(&double_val), std::f64::consts::PI);
 
     // String value
     let str_val = string_init("Hello, PHP-RS!", false);
@@ -37,8 +37,8 @@ fn test_basic_types_example() {
     // Boolean values
     let true_val = Val::new(PhpValue::Long(1), PhpType::True);
     let false_val = Val::new(PhpValue::Long(0), PhpType::False);
-    assert_eq!(zval_get_bool(&true_val), true);
-    assert_eq!(zval_get_bool(&false_val), false);
+    assert!(zval_get_bool(&true_val));
+    assert!(!zval_get_bool(&false_val));
 
     // Null value
     let null_val = Val::new(PhpValue::Long(0), PhpType::Null);
@@ -86,7 +86,7 @@ fn test_hash_table_example() {
     hash_add_or_update(&mut ht, Some(&key2), 0, val2, 0);
 
     let key3 = string_init("pi", false);
-    let val3 = Val::new(PhpValue::Double(3.14), PhpType::Double);
+    let val3 = Val::new(PhpValue::Double(std::f64::consts::PI), PhpType::Double);
     hash_add_or_update(&mut ht, Some(&key3), 0, val3, 0);
 
     assert_eq!(ht.n_num_of_elements, 3);
