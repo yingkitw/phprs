@@ -13,6 +13,29 @@ fn ht_size_to_mask(n_table_size: u32) -> u32 {
     !(n_table_size - 1)
 }
 
+/// PHP normalizes array keys that are canonical decimal integer strings
+/// (no leading zeros, fits in i64) to integer keys: `$a["1"]` stores under 1.
+pub fn numeric_string_key(s: &str) -> Option<i64> {
+    if s.is_empty() || s.len() > 20 {
+        return None;
+    }
+    let (neg, body) = match s.strip_prefix('-') {
+        Some(rest) => (true, rest),
+        None => (false, s),
+    };
+    if body.is_empty() || !body.bytes().all(|b| b.is_ascii_digit()) {
+        return None;
+    }
+    // Canonical form only: "0" and non-zero-leading digits; "-0" is not canonical
+    if body.len() > 1 && body.starts_with('0') {
+        return None;
+    }
+    if neg && body == "0" {
+        return None;
+    }
+    s.parse::<i64>().ok()
+}
+
 /// Initialize a hash table
 pub fn hash_init(ht: &mut PhpArray, n_size: u32) {
     ht.n_table_size = if n_size < 8 {
@@ -36,6 +59,13 @@ pub fn hash_add_or_update(
     p_data: Val,
     flag: u32,
 ) -> PhpResult {
+    // Normalize canonical integer strings to integer keys (PHP semantics)
+    if let Some(k) = key
+        && let Some(idx) = numeric_string_key(k.as_str())
+    {
+        return hash_add_or_update(ht, None, idx as u64, p_data, flag);
+    }
+
     // Check if we need to resize
     if ht.n_num_used >= ht.n_table_size {
         hash_do_resize(ht);
@@ -97,6 +127,10 @@ fn hash_do_resize(ht: &mut PhpArray) {
 
 /// Find an element in the hash table by string key
 pub fn hash_find<'a>(ht: &'a PhpArray, key: &PhpString) -> Option<&'a Val> {
+    // Integer-like string keys address integer slots (PHP semantics)
+    if let Some(idx) = numeric_string_key(key.as_str()) {
+        return hash_index_find(ht, idx as u64);
+    }
     let _hash = string_hash_func(key);
     ht.ar_data
         .iter()
@@ -120,6 +154,20 @@ pub fn hash_index_find(ht: &PhpArray, h: u64) -> Option<&Val> {
 
 /// Delete an element from the hash table
 pub fn hash_del(ht: &mut PhpArray, key: &PhpString) -> PhpResult {
+    // Integer-like string keys address integer slots (PHP semantics)
+    if let Some(idx) = numeric_string_key(key.as_str()) {
+        let pos = ht
+            .ar_data
+            .iter()
+            .position(|bucket| bucket.h == idx as u64 && bucket.key.is_none());
+        if let Some(pos) = pos {
+            ht.ar_data.remove(pos);
+            ht.n_num_of_elements -= 1;
+            return PhpResult::Success;
+        }
+        return PhpResult::Failure;
+    }
+
     let pos = ht.ar_data.iter().position(|bucket| {
         bucket
             .key

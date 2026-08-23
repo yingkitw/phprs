@@ -136,7 +136,7 @@ fn parse_null_coalesce_expr(
     lexer: &mut Lexer,
     context: &mut CompileContext,
 ) -> Result<(Val, Token), String> {
-    let (left, token) = parse_logical_or_expr(lexer, context)?;
+    let (left, token) = parse_logical_xor_expr(lexer, context)?;
     parse_null_coalesce_tail(lexer, context, left, token)
 }
 
@@ -145,8 +145,41 @@ fn parse_null_coalesce_expr_with_initial(
     context: &mut CompileContext,
     initial: Token,
 ) -> Result<(Val, Token), String> {
-    let (left, token) = parse_logical_or_expr_with_initial(lexer, context, initial)?;
+    let (left, token) = parse_logical_xor_expr_with_initial(lexer, context, initial)?;
     parse_null_coalesce_tail(lexer, context, left, token)
+}
+
+/// Parse `xor` expression (loose keyword operator, between `||` and `??`)
+fn parse_logical_xor_expr(
+    lexer: &mut Lexer,
+    context: &mut CompileContext,
+) -> Result<(Val, Token), String> {
+    let (left, token) = parse_logical_or_expr(lexer, context)?;
+    parse_logical_xor_tail(lexer, context, left, token)
+}
+
+fn parse_logical_xor_expr_with_initial(
+    lexer: &mut Lexer,
+    context: &mut CompileContext,
+    initial: Token,
+) -> Result<(Val, Token), String> {
+    let (left, token) = parse_logical_or_expr_with_initial(lexer, context, initial)?;
+    parse_logical_xor_tail(lexer, context, left, token)
+}
+
+fn parse_logical_xor_tail(
+    lexer: &mut Lexer,
+    context: &mut CompileContext,
+    mut left: Val,
+    mut token: Token,
+) -> Result<(Val, Token), String> {
+    while token_is_keyword(&token, "xor") {
+        let (right, next_token) = parse_logical_or_expr(lexer, context)?;
+        left = emit_logical_op(context, Opcode::BoolXor, left, right);
+        token = next_token;
+    }
+
+    Ok((left, token))
 }
 
 fn parse_null_coalesce_tail(
@@ -209,7 +242,7 @@ fn parse_logical_and_expr(
     lexer: &mut Lexer,
     context: &mut CompileContext,
 ) -> Result<(Val, Token), String> {
-    let (left, token) = parse_logical_not_expr(lexer, context)?;
+    let (left, token) = parse_bitwise_or_expr(lexer, context)?;
     parse_logical_and_tail(lexer, context, left, token)
 }
 
@@ -218,7 +251,7 @@ fn parse_logical_and_expr_with_initial(
     context: &mut CompileContext,
     initial: Token,
 ) -> Result<(Val, Token), String> {
-    let (left, token) = parse_logical_not_expr_with_initial(lexer, context, initial)?;
+    let (left, token) = parse_bitwise_or_expr_with_initial(lexer, context, initial)?;
     parse_logical_and_tail(lexer, context, left, token)
 }
 
@@ -229,8 +262,109 @@ fn parse_logical_and_tail(
     mut token: Token,
 ) -> Result<(Val, Token), String> {
     while token.token_type == TokenType::T_BOOLEAN_AND {
-        let (right, next_token) = parse_logical_not_expr(lexer, context)?;
+        let (right, next_token) = parse_bitwise_or_expr(lexer, context)?;
         left = emit_logical_op(context, Opcode::BoolAnd, left, right);
+        token = next_token;
+    }
+
+    Ok((left, token))
+}
+
+// --- Bitwise levels (PHP precedence: | > ^ > &, all looser than comparison) ---
+
+/// Parse bitwise OR expression (|)
+fn parse_bitwise_or_expr(
+    lexer: &mut Lexer,
+    context: &mut CompileContext,
+) -> Result<(Val, Token), String> {
+    let (left, token) = parse_bitwise_xor_expr(lexer, context)?;
+    parse_bitwise_or_tail(lexer, context, left, token)
+}
+
+fn parse_bitwise_or_expr_with_initial(
+    lexer: &mut Lexer,
+    context: &mut CompileContext,
+    initial: Token,
+) -> Result<(Val, Token), String> {
+    let (left, token) = parse_bitwise_xor_expr_with_initial(lexer, context, initial)?;
+    parse_bitwise_or_tail(lexer, context, left, token)
+}
+
+fn parse_bitwise_or_tail(
+    lexer: &mut Lexer,
+    context: &mut CompileContext,
+    mut left: Val,
+    mut token: Token,
+) -> Result<(Val, Token), String> {
+    while token_is_punct(&token, "|") {
+        let (right, next_token) = parse_bitwise_xor_expr(lexer, context)?;
+        left = emit_binary_op(context, Opcode::BwOr, left, right);
+        token = next_token;
+    }
+
+    Ok((left, token))
+}
+
+/// Parse bitwise XOR expression (^)
+fn parse_bitwise_xor_expr(
+    lexer: &mut Lexer,
+    context: &mut CompileContext,
+) -> Result<(Val, Token), String> {
+    let (left, token) = parse_bitwise_and_expr(lexer, context)?;
+    parse_bitwise_xor_tail(lexer, context, left, token)
+}
+
+fn parse_bitwise_xor_expr_with_initial(
+    lexer: &mut Lexer,
+    context: &mut CompileContext,
+    initial: Token,
+) -> Result<(Val, Token), String> {
+    let (left, token) = parse_bitwise_and_expr_with_initial(lexer, context, initial)?;
+    parse_bitwise_xor_tail(lexer, context, left, token)
+}
+
+fn parse_bitwise_xor_tail(
+    lexer: &mut Lexer,
+    context: &mut CompileContext,
+    mut left: Val,
+    mut token: Token,
+) -> Result<(Val, Token), String> {
+    while token_is_punct(&token, "^") {
+        let (right, next_token) = parse_bitwise_and_expr(lexer, context)?;
+        left = emit_binary_op(context, Opcode::BwXor, left, right);
+        token = next_token;
+    }
+
+    Ok((left, token))
+}
+
+/// Parse bitwise AND expression (&)
+fn parse_bitwise_and_expr(
+    lexer: &mut Lexer,
+    context: &mut CompileContext,
+) -> Result<(Val, Token), String> {
+    let (left, token) = parse_logical_not_expr(lexer, context)?;
+    parse_bitwise_and_tail(lexer, context, left, token)
+}
+
+fn parse_bitwise_and_expr_with_initial(
+    lexer: &mut Lexer,
+    context: &mut CompileContext,
+    initial: Token,
+) -> Result<(Val, Token), String> {
+    let (left, token) = parse_logical_not_expr_with_initial(lexer, context, initial)?;
+    parse_bitwise_and_tail(lexer, context, left, token)
+}
+
+fn parse_bitwise_and_tail(
+    lexer: &mut Lexer,
+    context: &mut CompileContext,
+    mut left: Val,
+    mut token: Token,
+) -> Result<(Val, Token), String> {
+    while token.token_type == TokenType::T_AMPERSAND_FOLLOWED_BY_VAR_OR_VARARG {
+        let (right, next_token) = parse_logical_not_expr(lexer, context)?;
+        left = emit_binary_op(context, Opcode::BwAnd, left, right);
         token = next_token;
     }
 
@@ -258,8 +392,54 @@ fn parse_logical_not_expr_with_initial(
         return Ok((result, next_token));
     }
 
+    // Bitwise NOT (~)
+    if token_is_punct(&token, "~") {
+        let (expr, next_token) = parse_logical_not_expr(lexer, context)?;
+        let zero = facade::zero_val();
+        let result = emit_binary_op(context, Opcode::BwNot, expr, zero);
+        return Ok((result, next_token));
+    }
+
     // Not a logical NOT — parse comparison with pre-consumed token
     parse_comparison_expr_with_token(lexer, context, Some(token))
+}
+
+/// Parse shift expression (<<, >>) — binds tighter than comparison, looser than additive
+pub(crate) fn parse_shift_expr(
+    lexer: &mut Lexer,
+    context: &mut CompileContext,
+) -> Result<(Val, Token), String> {
+    let (left, token) = parse_additive_expr(lexer, context)?;
+    shift_loop(lexer, context, left, token)
+}
+
+pub(crate) fn parse_shift_expr_with_initial(
+    lexer: &mut Lexer,
+    context: &mut CompileContext,
+    initial: Token,
+) -> Result<(Val, Token), String> {
+    let (left, token) = parse_additive_expr_with_initial(lexer, context, initial)?;
+    shift_loop(lexer, context, left, token)
+}
+
+fn shift_loop(
+    lexer: &mut Lexer,
+    context: &mut CompileContext,
+    mut left: Val,
+    mut token: Token,
+) -> Result<(Val, Token), String> {
+    loop {
+        let opcode = match token.token_type {
+            TokenType::T_SL => Opcode::Sl,
+            TokenType::T_SR => Opcode::Sr,
+            _ => break,
+        };
+        let (right, next_token) = parse_additive_expr(lexer, context)?;
+        left = emit_binary_op(context, opcode, left, right);
+        token = next_token;
+    }
+
+    Ok((left, token))
 }
 
 /// Parse comparison expression with optional pre-consumed token
@@ -269,9 +449,9 @@ pub(crate) fn parse_comparison_expr_with_token(
     initial_token: Option<Token>,
 ) -> Result<(Val, Token), String> {
     let (mut left, mut token) = if let Some(tok) = initial_token {
-        parse_additive_expr_with_initial(lexer, context, tok)?
+        parse_shift_expr_with_initial(lexer, context, tok)?
     } else {
-        parse_additive_expr(lexer, context)?
+        parse_shift_expr(lexer, context)?
     };
 
     loop {
@@ -286,13 +466,14 @@ pub(crate) fn parse_comparison_expr_with_token(
                 | TokenType::T_IS_GREATER_OR_EQUAL
                 | TokenType::T_IS_IDENTICAL
                 | TokenType::T_IS_NOT_IDENTICAL
+                | TokenType::T_SPACESHIP
         ) || is_lt
             || is_gt;
         if !is_cmp {
             break;
         }
 
-        let (right, next_token) = parse_additive_expr(lexer, context)?;
+        let (right, next_token) = parse_shift_expr(lexer, context)?;
         let (opcode, swap) = if is_lt {
             (Opcode::IsSmaller, false)
         } else if is_gt {
@@ -305,6 +486,7 @@ pub(crate) fn parse_comparison_expr_with_token(
                 TokenType::T_IS_GREATER_OR_EQUAL => (Opcode::IsSmallerOrEqual, true),
                 TokenType::T_IS_IDENTICAL => (Opcode::IsIdentical, false),
                 TokenType::T_IS_NOT_IDENTICAL => (Opcode::IsNotIdentical, false),
+                TokenType::T_SPACESHIP => (Opcode::Spaceship, false),
                 _ => unreachable!(),
             }
         };
@@ -341,6 +523,29 @@ fn parse_multiplicative_expr_with_initial(
     context: &mut CompileContext,
     initial_token: Token,
 ) -> Result<(Val, Token), String> {
+    // Unary minus / plus on the operand
+    if initial_token.token_type == TokenType::T_MINUS
+        || initial_token.token_type == TokenType::T_PLUS
+    {
+        let is_neg = initial_token.token_type == TokenType::T_MINUS;
+        let next = lexer.next_token()?;
+        let (operand, token) = parse_multiplicative_expr_with_initial(lexer, context, next)?;
+        let result = if is_neg {
+            emit_binary_op(context, Opcode::Sub, facade::zero_val(), operand)
+        } else {
+            operand
+        };
+        return multiplicative_loop(lexer, context, result, token);
+    }
+
+    // Bitwise NOT (~) in operand position
+    if token_is_punct(&initial_token, "~") {
+        let next = lexer.next_token()?;
+        let (operand, token) = parse_multiplicative_expr_with_initial(lexer, context, next)?;
+        let result = emit_binary_op(context, Opcode::BwNot, operand, facade::zero_val());
+        return multiplicative_loop(lexer, context, result, token);
+    }
+
     // Handle interpolated strings
     if initial_token.token_type == TokenType::T_CONSTANT_ENCAPSED_STRING
         && let Some(ref val) = initial_token.value

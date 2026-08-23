@@ -8,10 +8,69 @@ pub type ReadResult = Result<(TokenType, String), String>;
 /// Read a number (integer or float)
 pub fn read_number(input: &[u8], position: &mut usize) -> ReadResult {
     let start = *position;
+
+    // Prefixed literals: hex (0x), binary (0b), octal (0o)
+    if input.get(start) == Some(&b'0')
+        && matches!(
+            input.get(start + 1),
+            Some(b'x' | b'X' | b'b' | b'B' | b'o' | b'O')
+        )
+    {
+        let radix = match input[start + 1] {
+            b'x' | b'X' => 16,
+            b'b' | b'B' => 2,
+            _ => 8,
+        };
+        *position += 2;
+        let digits_start = *position;
+        while let Some(&ch) = input.get(*position) {
+            let valid = match radix {
+                16 => ch.is_ascii_hexdigit(),
+                8 => (b'0'..=b'7').contains(&ch),
+                _ => ch == b'0' || ch == b'1',
+            };
+            if valid {
+                *position += 1;
+            } else {
+                break;
+            }
+        }
+        let digits = &input[digits_start..*position];
+        if digits.is_empty() {
+            return Err("Invalid numeric literal: missing digits".to_string());
+        }
+        let text = String::from_utf8_lossy(digits).replace('_', "");
+        let value = i64::from_str_radix(&text, radix)
+            .map_err(|e| format!("Invalid numeric literal: {e}"))?
+            .to_string();
+        return Ok((TokenType::T_LNUMBER, value));
+    }
+
+    // Legacy octal: leading 0 followed by octal digits only
+    if input.get(start) == Some(&b'0')
+        && input
+            .get(start + 1)
+            .is_some_and(|&c| (b'0'..=b'7').contains(&c))
+    {
+        *position += 1;
+        while let Some(&ch) = input.get(*position) {
+            if (b'0'..=b'7').contains(&ch) {
+                *position += 1;
+            } else {
+                break;
+            }
+        }
+        let text = String::from_utf8_lossy(&input[start..*position])
+            .replace('_', "");
+        let value =
+            i64::from_str_radix(&text, 8).map_err(|e| format!("Invalid octal literal: {e}"))?;
+        return Ok((TokenType::T_LNUMBER, value.to_string()));
+    }
+
     let mut has_dot = false;
 
     while let Some(&ch) = input.get(*position) {
-        if ch.is_ascii_digit() {
+        if ch.is_ascii_digit() || ch == b'_' {
             *position += 1;
         } else if ch == b'.' && !has_dot {
             has_dot = true;
@@ -21,14 +80,14 @@ pub fn read_number(input: &[u8], position: &mut usize) -> ReadResult {
         }
     }
 
-    let value = String::from_utf8_lossy(&input[start..*position]).to_string();
+    let raw = String::from_utf8_lossy(&input[start..*position]).replace('_', "");
     let token_type = if has_dot {
         TokenType::T_DNUMBER
     } else {
         TokenType::T_LNUMBER
     };
 
-    Ok((token_type, value))
+    Ok((token_type, raw))
 }
 
 /// Read a string (single or double quoted)

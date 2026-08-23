@@ -7,7 +7,7 @@ Use phprs to run PHP CLI scripts, serve PHP pages locally, or experiment with ru
 [![Rust](https://img.shields.io/badge/rust-2024-orange.svg)](https://www.rust-lang.org/)
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
 [![Build Status](https://img.shields.io/badge/build-passing-brightgreen.svg)]()
-[![Tests](https://img.shields.io/badge/tests-485%2B%20passing-brightgreen.svg)]()
+[![Tests](https://img.shields.io/badge/tests-510%2B%20passing-brightgreen.svg)]()
 
 ---
 
@@ -36,7 +36,7 @@ phprs is a from-scratch **PHP runtime written in Rust**. It includes:
 
 - **PHP lexer and parser** — tokenizes PHP 7/8-style source into an abstract syntax tree.
 - **Compiler** — lowers PHP expressions, statements and functions into a typed opcode array.
-- **Virtual Machine (VM)** — executes opcodes via a direct dispatch table with 73 opcodes.
+- **Virtual Machine (VM)** — executes opcodes via a direct dispatch table with 74 opcodes.
 - **Built-in PHP functions** — 195+ standard library functions covering math, strings, arrays, files, streams, sessions, regex, hashing and more.
 - **Package manager** — Composer-compatible install/update workflows powered by `semver`.
 - **Development server** — `phprs serve` runs PHP pages locally.
@@ -51,7 +51,7 @@ The project is primarily a research and engineering playground: it proves PHP se
 - 🧩 **Standard PHP library** — `echo`, `array`, `function`, `class`, `try`/`catch`, `foreach`, closures, null coalescing, match expressions and more.
 - 🌐 **Web server for PHP** — `phprs serve` for local development.
 - 📦 **PHP package manager** — install packages from Packagist / private Composer repositories.
-- 🧪 **Extensive test suite** — 485+ workspace tests plus CI for root PHP examples and Rust demos.
+- 🧪 **Extensive test suite** — 510+ workspace tests plus CI for root PHP examples and Rust demos.
 - 🔌 **Embeddable library** — use `phprs` as a crate in Rust projects.
 
 ## Why phprs? The Rust Advantage
@@ -61,7 +61,7 @@ PHP powers much of the web; many production runtimes are implemented in C and C+
 - **Safer by construction (Rust)**: Memory errors that plague C/C++ code are largely ruled out in safe Rust; the interpreter still has correctness and parity work ahead.
 - **A performance-minded design**: Opcode dispatch, JIT hooks, and LLVM for the host binary — without promising a given speedup over Zend until we publish reproducible benchmarks.
 - **Concurrency-friendly host code**: Rust’s type system helps avoid data races in the engine itself; PHP’s shared mutable runtime model is still evolving in phprs.
-- **Test-backed**: 485+ workspace tests; every root `examples/*.php` runs in `tests/examples_runtime.rs`; Rust demos compile via `build_rust_examples`.
+- **Test-backed**: 510+ workspace tests; every root `examples/*.php` runs in `tests/examples_runtime.rs`; Rust demos compile via `build_rust_examples`.
 
 **phprs** brings PHP into the future by:
 
@@ -257,11 +257,11 @@ $stmt->execute();
 $user = $stmt->fetch();
 ```
 
-### Session-style state (simulated)
+### Session state
 ```php
 <?php
-// session_start() is not a builtin yet — use $_SESSION as a variable
-$_SESSION = [];
+// session_start() is a builtin (src/php/session/); storage is JSON files
+session_start();
 $_SESSION['user_id'] = 123;
 $_SESSION['username'] = 'john_doe';
 if (isset($_SESSION['user_id'])) {
@@ -289,7 +289,7 @@ See `examples/integration-test.php` for a short runnable script that exercises P
 - `examples/match_expression.php` - `match` expressions
 - `examples/regex-examples.php` - Regex patterns
 - `examples/http-stream-examples.php` - HTTP streams
-- `examples/session-examples.php` - Simulated `$_SESSION` patterns (no `session_*` builtins)
+- `examples/session-examples.php` - `session_start()` + `$_SESSION` patterns
 - `examples/pdo-examples.php` - PDO usage
 - `examples/integration-test.php` - Combined feature script
 - `examples/wordpress/` - WordPress integration
@@ -307,12 +307,12 @@ phprs/
 │   │   ├── vm/          # Virtual machine, opcodes, execution
 │   │   ├── jit.rs       # JIT compiler
 │   │   └── operators.rs # PHP operators implementation
-│   └── php/             # PHP runtime & standard library
+│   └── php/             # PHP runtime & standard library (21 modules)
 │       ├── regex.rs     # preg_* via Rust regex
 │       ├── http_stream.rs # HTTP/HTTPS streams
 │       ├── pdo.rs       # Database abstraction
-│       ├── streams.rs   # Stream wrappers
-│       └── filesystem.rs # File operations
+│       ├── streams/     # Stream wrappers
+│       └── filesystem/  # File operations
 ├── bin/phprs/           # CLI application
 ├── examples/            # Curated demos (WordPress, CI, Drupal, language features)
 │   ├── wordpress/       # WordPress integration
@@ -408,7 +408,7 @@ cargo run -p phprs-cli -- run examples/wordpress/index.php
 
 **Database (PDO)**: `new PDO()`, `query()`, `prepare()`, `execute()`, `fetch()`, `fetchAll()`
 
-**Sessions**: Not implemented as PHP extension; demo patterns in `session-examples.php` use `$_SESSION` as a variable
+**Sessions**: `session_start`, `session_destroy`, `session_id`, `session_name` builtins (JSON file storage; `phprs serve` sends `PHPSESSID` cookie)
 
 **JSON**: `json_encode`, `json_decode`
 
@@ -527,7 +527,7 @@ The workspace passes `cargo build --workspace` and `cargo test --workspace`. Som
 ### Core Documentation
 - **[SPEC.md](SPEC.md)** - Project specification and scope
 - **[ARCHITECTURE.md](ARCHITECTURE.md)** - Module structure and execution flow
-- **[TODO.md](TODO.md)** - Migration roadmap and statistics (195+ built-in functions, 16 PHP runtime modules)
+- **[TODO.md](TODO.md)** - Migration roadmap and statistics (195+ built-in functions, 21 PHP runtime modules)
 - **[PERFORMANCE.md](PERFORMANCE.md)** - Evidence policy and VM optimization notes (not benchmark marketing)
 
 ### Feature Documentation
@@ -544,7 +544,7 @@ The workspace passes `cargo build --workspace` and `cargo test --workspace`. Som
 ## Roadmap
 
 ### ✅ Completed (v0.1.x)
-- Core PHP engine with 73 opcodes (added FetchStaticProp, DoStaticCall, CloneObj, SendValNamed, BindGlobal, SendVarRef)
+- Core PHP engine with 74 opcodes (added FetchStaticProp, DoStaticCall, CloneObj, SendValNamed, BindGlobal, SendVarRef)
 - 195+ built-in functions (string, array, math, regex, hash, datetime, URL, mbstring, callbacks, serialize)
 - Regular expressions (`preg_*` via Rust `regex`)
 - HTTP/HTTPS stream wrappers
@@ -614,7 +614,7 @@ git push origin feature/my-feature
 
 - **Issues**: [GitHub Issues](https://github.com/yingkitw/phprs/issues)
 - **Discussions**: [GitHub Discussions](https://github.com/yingkitw/phprs/discussions)
-- **Documentation**: [docs/](docs/)
+- **Documentation**: [README.md](README.md), [SPEC.md](SPEC.md), [ARCHITECTURE.md](ARCHITECTURE.md), [TODO.md](TODO.md)
 
 ## License
 

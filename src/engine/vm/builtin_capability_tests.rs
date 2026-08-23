@@ -1234,7 +1234,9 @@ fn array_combine_flip_search_unique() {
     let src = array_from_str_keys(&[("x", "1"), ("y", "2")]);
     let flipped = run("array_flip", &[src], &mut ed).unwrap().unwrap();
     if let PhpValue::Array(f) = &flipped.value {
-        assert_eq!(f.ar_data[0].key.as_ref().unwrap().as_str(), "1");
+        // PHP: flipping normalizes integer-string values to integer keys
+        assert!(f.ar_data[0].key.is_none());
+        assert_eq!(f.ar_data[0].h, 1);
     } else {
         panic!("array_flip");
     }

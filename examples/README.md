@@ -1,6 +1,6 @@
 # phprs Examples
 
-Curated demos for language features, standard-library subsets, and minimal framework bootstraps. **21** root-level PHP scripts plus **9** Rust library examples.
+Curated demos for language features, standard-library subsets, and minimal framework bootstraps. **23** root-level PHP scripts plus **9** Rust library examples.
 
 ## Quick start
 
@@ -59,10 +59,12 @@ cargo run --example performance_demo
 | `mbstring.php` | `mb_*` subset |
 | `regex-examples.php` | `preg_*` demos (look-around via fancy-regex) |
 | `http-stream-examples.php` | HTTP stream patterns |
-| `session-examples.php` | **Simulated** `$_SESSION` (no `session_*` builtins) |
+| `session-examples.php` | `session_start()` + `$_SESSION` patterns |
 | `pdo-examples.php` | PDO stub API |
 | `integration-test.php` | Combined PDO/regex/password/json smoke script |
 | `test-streams-regex-pdo.php` | Streams/regex/PDO checklist |
+| `stdlib_callbacks.php` | Callback builtins, array/string/math helpers, Reflection API |
+| `strings_and_serialize.php` | String helpers, printf, base conversion, `serialize`/`unserialize` |
 
 ## Framework-style trees
 

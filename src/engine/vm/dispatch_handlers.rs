@@ -224,6 +224,93 @@ pub fn execute_bool_not(op: &Op, execute_data: &mut ExecuteData) -> Result<ExecR
 }
 
 #[inline]
+pub fn execute_bw_and(op: &Op, execute_data: &mut ExecuteData) -> Result<ExecResult, String> {
+    bitwise_binary(op, execute_data, |a, b| a & b)
+}
+
+#[inline]
+pub fn execute_bw_or(op: &Op, execute_data: &mut ExecuteData) -> Result<ExecResult, String> {
+    bitwise_binary(op, execute_data, |a, b| a | b)
+}
+
+#[inline]
+pub fn execute_bw_xor(op: &Op, execute_data: &mut ExecuteData) -> Result<ExecResult, String> {
+    bitwise_binary(op, execute_data, |a, b| a ^ b)
+}
+
+#[inline]
+fn bitwise_binary(
+    op: &Op,
+    execute_data: &mut ExecuteData,
+    f: impl Fn(i64, i64) -> i64,
+) -> Result<ExecResult, String> {
+    let op1 = resolve_operand(&op.op1, execute_data);
+    let op2 = resolve_operand(&op.op2, execute_data);
+    let result = Val::new(
+        PhpValue::Long(f(
+            crate::engine::operators::zval_get_long(&op1),
+            crate::engine::operators::zval_get_long(&op2),
+        )),
+        PhpType::Long,
+    );
+    if let Some(slot) = result_slot(op) {
+        execute_data.set_temp(slot, result);
+    }
+    Ok(ExecResult::Continue)
+}
+
+#[inline]
+pub fn execute_bw_not(op: &Op, execute_data: &mut ExecuteData) -> Result<ExecResult, String> {
+    let val = resolve_operand(&op.op1, execute_data);
+    let n = !crate::engine::operators::zval_get_long(&val);
+    let result = Val::new(PhpValue::Long(n), PhpType::Long);
+    if let Some(slot) = result_slot(op) {
+        execute_data.set_temp(slot, result);
+    }
+    Ok(ExecResult::Continue)
+}
+
+#[inline]
+pub fn execute_sl(op: &Op, execute_data: &mut ExecuteData) -> Result<ExecResult, String> {
+    shift(op, execute_data, |a, s| a.checked_shl(s as u32).unwrap_or(0))
+}
+
+#[inline]
+pub fn execute_spaceship(op: &Op, execute_data: &mut ExecuteData) -> Result<ExecResult, String> {
+    let op1 = resolve_operand(&op.op1, execute_data);
+    let op2 = resolve_operand(&op.op2, execute_data);
+    let cmp = crate::engine::operators::zval_compare(&op1, &op2).signum() as i64;
+    let result = Val::new(PhpValue::Long(cmp), PhpType::Long);
+    if let Some(slot) = result_slot(op) {
+        execute_data.set_temp(slot, result);
+    }
+    Ok(ExecResult::Continue)
+}
+
+#[inline]
+pub fn execute_sr(op: &Op, execute_data: &mut ExecuteData) -> Result<ExecResult, String> {
+    // Arithmetic shift right (sign-preserving); PHP masks the shift count
+    shift(op, execute_data, |a, s| a >> (s & 63))
+}
+
+#[inline]
+fn shift(
+    op: &Op,
+    execute_data: &mut ExecuteData,
+    f: impl Fn(i64, i64) -> i64,
+) -> Result<ExecResult, String> {
+    let op1 = resolve_operand(&op.op1, execute_data);
+    let op2 = resolve_operand(&op.op2, execute_data);
+    let a = crate::engine::operators::zval_get_long(&op1);
+    let s = crate::engine::operators::zval_get_long(&op2) & 63; // PHP masks shift count on 64-bit
+    let result = Val::new(PhpValue::Long(f(a, s)), PhpType::Long);
+    if let Some(slot) = result_slot(op) {
+        execute_data.set_temp(slot, result);
+    }
+    Ok(ExecResult::Continue)
+}
+
+#[inline]
 pub fn execute_bool_and(op: &Op, execute_data: &mut ExecuteData) -> Result<ExecResult, String> {
     let op1 = resolve_operand(&op.op1, execute_data);
     let op2 = resolve_operand(&op.op2, execute_data);
@@ -280,9 +367,19 @@ pub fn execute_jmp(op: &Op, _execute_data: &mut ExecuteData) -> Result<ExecResul
 pub fn execute_pow(op: &Op, execute_data: &mut ExecuteData) -> Result<ExecResult, String> {
     let op1 = resolve_operand(&op.op1, execute_data);
     let op2 = resolve_operand(&op.op2, execute_data);
-    let v1 = crate::engine::operators::zval_get_double(&op1);
-    let v2 = crate::engine::operators::zval_get_double(&op2);
-    let result = Val::new(PhpValue::Double(v1.powf(v2)), PhpType::Double);
+    // int ** non-negative int stays int (PHP semantics)
+    let result = if let (PhpValue::Long(base), PhpValue::Long(exp)) = (&op1.value, &op2.value)
+        && (0..=63).contains(exp)
+    {
+        Val::new(
+            PhpValue::Long(base.wrapping_pow(*exp as u32)),
+            PhpType::Long,
+        )
+    } else {
+        let v1 = crate::engine::operators::zval_get_double(&op1);
+        let v2 = crate::engine::operators::zval_get_double(&op2);
+        Val::new(PhpValue::Double(v1.powf(v2)), PhpType::Double)
+    };
     if let Some(slot) = result_slot(op) {
         execute_data.set_temp(slot, result);
     }
@@ -359,6 +456,10 @@ pub fn execute_assign_dim(op: &Op, execute_data: &mut ExecuteData) -> Result<Exe
             match &key.value {
                 PhpValue::Long(i) => {
                     let _ = crate::engine::hash::hash_add_or_update(arr, None, *i as u64, val, 0);
+                }
+                PhpValue::Double(d) if d.fract() == 0.0 => {
+                    let _ =
+                        crate::engine::hash::hash_add_or_update(arr, None, *d as i64 as u64, val, 0);
                 }
                 PhpValue::String(ks) => {
                     let key_zs = Box::new(crate::engine::string::string_init(ks.as_str(), false));
@@ -1219,18 +1320,25 @@ pub fn execute_add_array_element(
 pub fn execute_fetch_dim(op: &Op, execute_data: &mut ExecuteData) -> Result<ExecResult, String> {
     let arr_val = resolve_operand(&op.op1, execute_data);
     let idx_val = resolve_operand(&op.op2, execute_data);
+    // Missing keys read as null (PHP emits a notice but continues)
+    let missing = || Val::new(PhpValue::Long(0), PhpType::Null);
     let result_val = if let PhpValue::Array(ref arr) = arr_val.value {
         match &idx_val.value {
             PhpValue::Long(i) => crate::engine::hash::hash_index_find(arr, *i as u64)
                 .map(clone_val)
-                .unwrap_or_else(|| Val::new(PhpValue::Long(0), PhpType::Null)),
+                .unwrap_or_else(missing),
+            PhpValue::Double(d) if d.fract() == 0.0 => {
+                crate::engine::hash::hash_index_find(arr, *d as i64 as u64)
+                    .map(clone_val)
+                    .unwrap_or_else(missing)
+            }
             PhpValue::String(s) => crate::engine::hash::hash_find(arr, s)
                 .map(clone_val)
-                .unwrap_or_else(|| Val::new(PhpValue::Long(0), PhpType::Null)),
-            _ => Val::new(PhpValue::Long(0), PhpType::Null),
+                .unwrap_or_else(missing),
+            _ => missing(),
         }
     } else {
-        Val::new(PhpValue::Long(0), PhpType::Null)
+        missing()
     };
     if let Some(slot) = result_slot(op) {
         execute_data.set_temp(slot, result_val);
@@ -2483,6 +2591,13 @@ pub fn dispatch_opcode(op: &Op, execute_data: &mut ExecuteData) -> Result<ExecRe
         Opcode::Div => execute_div(op, execute_data),
         Opcode::Mod => execute_mod(op, execute_data),
         Opcode::Pow => execute_pow(op, execute_data),
+        Opcode::BwAnd => execute_bw_and(op, execute_data),
+        Opcode::BwOr => execute_bw_or(op, execute_data),
+        Opcode::BwXor => execute_bw_xor(op, execute_data),
+        Opcode::BwNot => execute_bw_not(op, execute_data),
+        Opcode::Sl => execute_sl(op, execute_data),
+        Opcode::Sr => execute_sr(op, execute_data),
+        Opcode::Spaceship => execute_spaceship(op, execute_data),
         Opcode::BoolNot => execute_bool_not(op, execute_data),
         Opcode::BoolAnd => execute_bool_and(op, execute_data),
         Opcode::BoolOr => execute_bool_or(op, execute_data),

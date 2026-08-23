@@ -4,14 +4,14 @@ Overview of how examples and tests relate in phprs.
 
 ## Workspace tests
 
-Roughly **376+** tests across:
+Roughly **510+** tests across:
 
-- **296** library unit tests (`cargo test --lib`)
-- Integration crates: `examples_runtime` (14), `php_examples` (16), `comprehensive_tests` (25), `edge_cases` (13), `error_handling` (4), `integration_tests` (4), `example_verification` (7), `build_rust_examples` (1)
+- **378** library unit tests (`cargo test --lib`)
+- Integration crates: `array_key_normalization` (5), `bitwise_operators` (9), `build_rust_examples` (1), `compound_assignment` (10), `comprehensive_tests` (25), `edge_cases` (13), `error_handling` (4), `example_verification` (7), `examples_runtime` (15), `integer_arithmetic` (3), `integration_tests` (4), `php8x_features` (15), `php_examples` (16)
 
 ## Example entrypoints
 
-### Root PHP (`examples/*.php`) — 21 files
+### Root PHP (`examples/*.php`) — 23 files
 
 **Enforced by** `examples_root_php_scripts_all_run` in `tests/examples_runtime.rs`:
 
@@ -37,7 +37,7 @@ Roughly **376+** tests across:
 |--------|--------|----------------|
 | `regex-examples.php` | `preg_*` | look-around via fancy-regex |
 | `http-stream-examples.php` | HTTP streams | `reqwest` + blocking wrapper |
-| `session-examples.php` | Session **patterns** | No `session_*` builtins; simulated `$_SESSION` |
+| `session-examples.php` | Session API | `session_start()` builtin + `$_SESSION` |
 | `pdo-examples.php` | PDO API shape | In-memory stub |
 | `integration-test.php` | Combined smoke | Runnable under phprs |
 | `test-streams-regex-pdo.php` | Checklist | Runnable under phprs |
@@ -48,7 +48,7 @@ Roughly **376+** tests across:
 
 ## What “100%” does not mean here
 
-- Sessions are **not** the PHP session extension.
+- Sessions are implemented as engine builtins (`session_start`, `session_destroy`, `session_id`, `session_name`) with JSON file storage; not the full Zend session extension (no `session_set_save_handler`, custom save handlers, etc.).
 - PDO is **not** a real database driver.
 - Regex is **not** full PCRE.
 - WordPress demo is **not** production WordPress.

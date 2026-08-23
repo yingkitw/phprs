@@ -6,14 +6,19 @@ This directory contains integration and workspace-level tests for phprs. Unit te
 
 | File / directory | Role |
 |------------------|------|
-| `examples_runtime.rs` | End-to-end: compile + VM + stdout for **every root** `examples/*.php` (`examples_root_php_scripts_all_run`) plus curated framework entrypoints (CodeIgniter, Drupal) |
+| `array_key_normalization.rs` | Numeric-string array key normalization (PHP `"1"` ↔ `1` semantics) |
+| `bitwise_operators.rs` | Bitwise operator compilation and execution |
 | `build_rust_examples.rs` | `cargo build --examples` for all `examples/rust/*.rs` |
-| `php_examples.rs` | Compile checks and existence tests for tutorial PHP files |
-| `example_verification.rs` | Rust `examples/rust/` smoke tests |
+| `compound_assignment.rs` | Compound assignment operators (`+=`, `.=`, `??=`, etc.) |
 | `comprehensive_tests.rs` | Lexer, stream, and factory integration tests |
 | `edge_cases.rs` | Boundary and stress cases |
 | `error_handling.rs` | Error handlers and reporting |
+| `example_verification.rs` | Rust `examples/rust/` smoke tests |
+| `examples_runtime.rs` | End-to-end: compile + VM + stdout for **every root** `examples/*.php` (`examples_root_php_scripts_all_run`) plus curated framework entrypoints (CodeIgniter, Drupal) |
+| `integer_arithmetic.rs` | Integer arithmetic edge cases (overflow, division, modulo) |
 | `integration_tests.rs` | Cross-module integration |
+| `php8x_features.rs` | PHP 8.x language feature tests (match, enums, readonly, etc.) |
+| `php_examples.rs` | Compile checks and existence tests for tutorial PHP files |
 
 ## Engine unit tests (highlights)
 

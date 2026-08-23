@@ -41,9 +41,9 @@ cd examples && chmod +x run-all-tests.sh && ./run-all-tests.sh
 - Live network calls depend on connectivity; demos are mostly illustrative
 
 ### session-examples.php
-- **Does not call `session_start()`** — PHP session extension is not implemented in the engine
-- Demonstrates patterns with `$_SESSION` as a **plain array** (assign `$_SESSION = []` first)
-- Avoid `$arr[] = …`, `$x += $y['z']`, and chained `$a['b']['c'] = …` (compiler limits)
+- Calls `session_start()` (engine builtin in `src/php/session/`); storage is JSON files
+- Demonstrates patterns with the `$_SESSION` superglobal
+- `$arr[] = …`, `$x += $y['z']`, and chained `$a['b']['c'] = …` are supported (compound assignment, append, and chained dim assignment all work)
 
 ### pdo-examples.php
 - Exercises **PDO stub** (`src/php/pdo.rs`) — no real MySQL/PostgreSQL connections

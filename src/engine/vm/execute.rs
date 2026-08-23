@@ -8,15 +8,15 @@ use crate::engine::types::{PhpResult, PhpType, PhpValue, Val};
 use std::sync::OnceLock;
 
 // Performance-optimized dispatch table
-static DISPATCH_TABLE: OnceLock<[fn(&Op, &mut ExecuteData) -> Result<ExecResult, String>; 73]> =
+static DISPATCH_TABLE: OnceLock<[fn(&Op, &mut ExecuteData) -> Result<ExecResult, String>; 74]> =
     OnceLock::new();
 
 /// Initialize the dispatch table for computed goto style dispatch
 #[inline]
 fn init_dispatch_table() {
     DISPATCH_TABLE.get_or_init(|| {
-        let mut table: [fn(&Op, &mut ExecuteData) -> Result<ExecResult, String>; 73] =
-            [default_handler; 73];
+        let mut table: [fn(&Op, &mut ExecuteData) -> Result<ExecResult, String>; 74] =
+            [default_handler; 74];
 
         // Import optimized handlers
         use super::dispatch_handlers::*;
@@ -28,6 +28,12 @@ fn init_dispatch_table() {
         table[Opcode::Div as usize] = execute_div;
         table[Opcode::Mod as usize] = execute_mod;
         table[Opcode::Pow as usize] = execute_pow;
+        table[Opcode::BwAnd as usize] = execute_bw_and;
+        table[Opcode::BwOr as usize] = execute_bw_or;
+        table[Opcode::BwXor as usize] = execute_bw_xor;
+        table[Opcode::BwNot as usize] = execute_bw_not;
+        table[Opcode::Sl as usize] = execute_sl;
+        table[Opcode::Sr as usize] = execute_sr;
         table[Opcode::BoolNot as usize] = execute_bool_not;
         table[Opcode::BoolAnd as usize] = execute_bool_and;
         table[Opcode::BoolOr as usize] = execute_bool_or;
@@ -46,6 +52,7 @@ fn init_dispatch_table() {
         table[Opcode::SendVal as usize] = execute_send_val;
         table[Opcode::SendValNamed as usize] = execute_send_val_named;
         table[Opcode::SendVarRef as usize] = execute_send_var_ref;
+        table[Opcode::Spaceship as usize] = execute_spaceship;
         table[Opcode::BindGlobal as usize] = execute_bind_global;
         table[Opcode::Include as usize] = execute_include;
         table[Opcode::InitArray as usize] = execute_init_array;

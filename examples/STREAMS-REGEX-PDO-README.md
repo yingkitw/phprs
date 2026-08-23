@@ -77,23 +77,26 @@ $content = file_get_contents("local_file.txt");
 - Error handling for network failures
 - Supports GET requests
 
-### 3. Session handling (not the PHP session extension)
+### 3. Session handling
 
-The Zend **session extension** (`session_start`, `session_id`, file-backed session storage, etc.) is **not implemented** in the phprs engine today.
+phprs implements the core session builtins in `src/php/session/`:
 
-What works:
+- `session_start()` — initializes the `$_SESSION` superglobal from the save path, generates a session id if needed
+- `session_destroy()` — clears session state and the stored file
+- `session_id()` — get or set the current session id
+- `session_name()` — get or set the session name
 
-- Treat **`$_SESSION` as an ordinary variable** (assign `$_SESSION = []` and use array keys) — see `examples/session-examples.php`
-- WordPress-shaped **wp_session_*** stubs in `examples/wordpress/wp-includes/session.php` for the demo tree only
+Storage is JSON files under a configured save path. In `phprs serve`, a `PHPSESSID` cookie ties requests to a session id.
 
-What does **not** work:
+What is **not** implemented (vs the full Zend session extension):
 
-- Calling `session_start()` / `session_destroy()` as engine builtins (they are undefined unless you add stubs)
-- Persistent sessions across HTTP requests in `phprs serve` without custom code
+- `session_set_save_handler` and custom save handlers
+- `session_status`, `session_regenerate_id`, `session_unset`, `session_write_close` as user-facing builtins (the engine calls `session_write_close` internally)
+- Per-request cookie tuning beyond the default `PHPSESSID`
 
 ```php
-// Runnable pattern in phprs today
-$_SESSION = [];
+// Runnable in phprs today
+session_start();
 $_SESSION['user_id'] = 123;
 echo $_SESSION['user_id'];
 ```

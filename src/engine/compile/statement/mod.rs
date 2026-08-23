@@ -31,6 +31,26 @@ fn skip_semicolon(lexer: &mut Lexer, token: Token) -> Result<Token, String> {
     }
 }
 
+/// Map a compound-assignment token (`+=`, `-=`, `*=`, `/=`, `%=`, `.=`)
+/// to the binary opcode of the desugared operation.
+fn compound_assign_opcode(token_type: &TokenType) -> Option<Opcode> {
+    match token_type {
+        TokenType::T_PLUS_EQUAL => Some(Opcode::Add),
+        TokenType::T_MINUS_EQUAL => Some(Opcode::Sub),
+        TokenType::T_MUL_EQUAL => Some(Opcode::Mul),
+        TokenType::T_DIV_EQUAL => Some(Opcode::Div),
+        TokenType::T_MOD_EQUAL => Some(Opcode::Mod),
+        TokenType::T_CONCAT_EQUAL => Some(Opcode::Concat),
+        TokenType::T_COALESCE_EQUAL => Some(Opcode::Coalesce),
+        TokenType::T_AND_EQUAL => Some(Opcode::BwAnd),
+        TokenType::T_OR_EQUAL => Some(Opcode::BwOr),
+        TokenType::T_XOR_EQUAL => Some(Opcode::BwXor),
+        TokenType::T_SL_EQUAL => Some(Opcode::Sl),
+        TokenType::T_SR_EQUAL => Some(Opcode::Sr),
+        _ => None,
+    }
+}
+
 /// Parse a statement block (statements between braces)
 /// The opening brace should already be consumed
 pub fn parse_statement_block(
@@ -144,19 +164,25 @@ pub(crate) fn skip_attribute_block(lexer: &mut Lexer) -> Result<Token, String> {
     Ok(token)
 }
 
-/// Compile echo statement
+/// Compile echo statement (supports comma-separated expressions: echo $a, $b;)
 fn compile_echo(lexer: &mut Lexer, context: &mut CompileContext) -> Result<Token, String> {
-    let (echo_value, _) = parse_expression(lexer, context)?;
+    let (echo_value, mut token) = parse_expression(lexer, context)?;
+    emit_echo_value(context, echo_value);
+    while token_is_punct(&token, ",") {
+        let (next_value, next_token) = parse_expression(lexer, context)?;
+        emit_echo_value(context, next_value);
+        token = next_token;
+    }
+    skip_semicolon(lexer, token)
+}
+
+fn emit_echo_value(context: &mut CompileContext, echo_value: Val) {
     let zval_zero = zero_val();
     let zval_result = match &echo_value.value {
-        crate::engine::types::PhpValue::String(s) => {
-            string_val_copy(s.as_str(), echo_value.get_type())
-        }
+        crate::engine::types::PhpValue::String(s) => string_val_copy(s.as_str(), echo_value.get_type()),
         _ => result_val(echo_value.get_type()),
     };
     context.emit_opcode(Opcode::Echo, echo_value, zval_zero, zval_result);
-    let next = lexer.next_token()?;
-    skip_semicolon(lexer, next)
 }
 
 /// Compile variable statement ($var = expr, $var->method(), $var->prop = expr)
@@ -186,6 +212,22 @@ fn compile_variable_stmt(
         let value_zval_op2 = StdValFactory::clone_val(&value_zval);
         context.emit_opcode(Opcode::Assign, var_name_zval, value_zval, value_zval_op2);
         skip_semicolon(lexer, after_expr)
+    } else if let Some(bin_op) = compound_assign_opcode(&next_token.token_type) {
+        // Compound assignment: $var op= expr  →  $var = $var op expr
+        let (rhs, after_expr) = parse_expression(lexer, context)?;
+        let result = super::expression::helpers::emit_binary_op(
+            context,
+            bin_op,
+            var_ref(var_name),
+            rhs,
+        );
+        context.emit_opcode(
+            Opcode::Assign,
+            string_val(var_name),
+            result,
+            null_val(),
+        );
+        skip_semicolon(lexer, after_expr)
     } else if token_is_punct(&next_token, "[") {
         // $var[key] = value;  $var[a][b] = value;  $var[] = value;
         let (keys, after_target) = parse_dim_assign_keys(lexer, context, next_token)?;
@@ -200,6 +242,18 @@ fn compile_variable_stmt(
             emit_dim_inc_dec(context, var_name, &keys, is_inc)?;
             let next = lexer.next_token()?;
             skip_semicolon(lexer, next)
+        } else if let Some(bin_op) = compound_assign_opcode(&after_target.token_type) {
+            // Compound dim assignment: $var[k1][k2] op= expr
+            let (value_zval, after_value) = parse_expression(lexer, context)?;
+            let current_slot = emit_dim_fetch_chain(context, var_name, &keys)?;
+            let updated = super::expression::helpers::emit_binary_op(
+                context,
+                bin_op,
+                temp_var_ref(current_slot),
+                value_zval,
+            );
+            emit_dim_assignment(context, var_name, &keys, updated)?;
+            skip_semicolon(lexer, after_value)
         } else {
             Err("Expected '=' after array index assignment target".to_string())
         }
@@ -577,6 +631,26 @@ fn compile_object_stmt(
         let var_zval = crate::engine::vm::var_ref(var_name);
         let (value, _) = parse_expression(lexer, context)?;
         context.emit_opcode(Opcode::AssignObjProp, var_zval, member_zval, value);
+        let next = lexer.next_token()?;
+        skip_semicolon(lexer, next)
+    } else if let Some(bin_op) = compound_assign_opcode(&peek.token_type) {
+        // Compound property assignment: $var->prop op= expr
+        let var_zval = crate::engine::vm::var_ref(var_name);
+        let (value, _) = parse_expression(lexer, context)?;
+        let cur_slot = context.alloc_temp();
+        context.emit_opcode(
+            Opcode::FetchObjProp,
+            clone_val(&var_zval),
+            clone_val(&member_zval),
+            temp_var_ref(cur_slot),
+        );
+        let updated = super::expression::helpers::emit_binary_op(
+            context,
+            bin_op,
+            temp_var_ref(cur_slot),
+            value,
+        );
+        context.emit_opcode(Opcode::AssignObjProp, var_zval, member_zval, updated);
         let next = lexer.next_token()?;
         skip_semicolon(lexer, next)
     } else if token_is_punct(&peek, "[") {

@@ -188,7 +188,10 @@ impl Lexer {
             }
             b'*' => {
                 self.advance();
-                if self.current_char() == Some(b'=') {
+                if self.current_char() == Some(b'*') {
+                    self.advance();
+                    Ok((TokenType::T_POW, "**".to_string()))
+                } else if self.current_char() == Some(b'=') {
                     self.advance();
                     Ok((TokenType::T_MUL_EQUAL, "*=".to_string()))
                 } else {
@@ -248,10 +251,21 @@ impl Lexer {
                     }
                 } else if self.current_char() == Some(b'=') {
                     self.advance();
-                    Ok((TokenType::T_IS_SMALLER_OR_EQUAL, "<=".to_string()))
+                    // Check for spaceship <=> (three chars)
+                    if self.current_char() == Some(b'>') {
+                        self.advance();
+                        Ok((TokenType::T_SPACESHIP, "<=>".to_string()))
+                    } else {
+                        Ok((TokenType::T_IS_SMALLER_OR_EQUAL, "<=".to_string()))
+                    }
                 } else if self.current_char() == Some(b'<') {
                     self.advance();
-                    Ok((TokenType::T_SL, "<<".to_string()))
+                    if self.current_char() == Some(b'=') {
+                        self.advance();
+                        Ok((TokenType::T_SL_EQUAL, "<<=".to_string()))
+                    } else {
+                        Ok((TokenType::T_SL, "<<".to_string()))
+                    }
                 } else {
                     // Plain < character - not a token in PHP
                     Ok((TokenType::T_STRING, "<".to_string()))
@@ -264,7 +278,12 @@ impl Lexer {
                     Ok((TokenType::T_IS_GREATER_OR_EQUAL, ">=".to_string()))
                 } else if self.current_char() == Some(b'>') {
                     self.advance();
-                    Ok((TokenType::T_SR, ">>".to_string()))
+                    if self.current_char() == Some(b'=') {
+                        self.advance();
+                        Ok((TokenType::T_SR_EQUAL, ">>=".to_string()))
+                    } else {
+                        Ok((TokenType::T_SR, ">>".to_string()))
+                    }
                 } else {
                     // Plain > character - not a token in PHP
                     Ok((TokenType::T_STRING, ">".to_string()))
@@ -290,6 +309,9 @@ impl Lexer {
                 if self.current_char() == Some(b'&') {
                     self.advance();
                     Ok((TokenType::T_BOOLEAN_AND, "&&".to_string()))
+                } else if self.current_char() == Some(b'=') {
+                    self.advance();
+                    Ok((TokenType::T_AND_EQUAL, "&=".to_string()))
                 } else {
                     Ok((
                         TokenType::T_AMPERSAND_FOLLOWED_BY_VAR_OR_VARARG,
@@ -302,9 +324,25 @@ impl Lexer {
                 if self.current_char() == Some(b'|') {
                     self.advance();
                     Ok((TokenType::T_BOOLEAN_OR, "||".to_string()))
+                } else if self.current_char() == Some(b'=') {
+                    self.advance();
+                    Ok((TokenType::T_OR_EQUAL, "|=".to_string()))
                 } else {
-                    Ok((TokenType::T_OR_EQUAL, "|".to_string()))
+                    Ok((TokenType::T_STRING, "|".to_string()))
                 }
+            }
+            b'^' => {
+                self.advance();
+                if self.current_char() == Some(b'=') {
+                    self.advance();
+                    Ok((TokenType::T_XOR_EQUAL, "^=".to_string()))
+                } else {
+                    Ok((TokenType::T_STRING, "^".to_string()))
+                }
+            }
+            b'~' => {
+                self.advance();
+                Ok((TokenType::T_STRING, "~".to_string()))
             }
             b'.' => {
                 self.advance();

@@ -79,6 +79,7 @@ pub enum Opcode {
     SendValNamed = 70, // Push named argument for function call (op1=value, op2=param name string)
     BindGlobal = 71,   // Import a variable from script globals into function scope
     SendVarRef = 72,   // Push variable reference for by-ref parameter (op1=var name)
+    Spaceship = 73,    // Combined comparison: -1 / 0 / 1
 }
 
 /// Operation structure
@@ -186,6 +187,7 @@ pub fn get_opcode_name(opcode: Opcode) -> &'static str {
         Opcode::SendValNamed => "SEND_VAL_NAMED",
         Opcode::BindGlobal => "BIND_GLOBAL",
         Opcode::SendVarRef => "SEND_VAR_REF",
+        Opcode::Spaceship => "SPACESHIP",
         _ => "UNKNOWN",
     }
 }

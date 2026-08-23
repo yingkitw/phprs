@@ -631,6 +631,10 @@ pub(crate) fn multiplicative_loop(
     mut left: Val,
     mut token: Token,
 ) -> Result<(Val, Token), String> {
+    // Exponent (`**`) binds tighter than * / %
+    let (new_left, new_token) = pow_loop(lexer, context, left, token)?;
+    left = new_left;
+    token = new_token;
     while token.token_type == TokenType::T_MUL
         || token.token_type == TokenType::T_DIV
         || token.token_type == TokenType::T_MOD
@@ -645,6 +649,9 @@ pub(crate) fn multiplicative_loop(
         };
         left = emit_binary_op(context, opcode, left, right);
         token = next_token;
+        let (new_left, new_token) = pow_loop(lexer, context, left, token)?;
+        left = new_left;
+        token = new_token;
     }
     Ok((left, token))
 }
@@ -670,6 +677,22 @@ pub(crate) fn additive_loop(
         };
         left = emit_binary_op(context, opcode, left, right);
         token = next_token;
+    }
+    Ok((left, token))
+}
+
+/// Exponent chain (`**`, right-associative) — binds tighter than `*` / `/` / `%`
+pub(crate) fn pow_loop(
+    lexer: &mut Lexer,
+    context: &mut CompileContext,
+    mut left: Val,
+    mut token: Token,
+) -> Result<(Val, Token), String> {
+    while token.token_type == TokenType::T_POW {
+        // Exponent parses as a full primary expression (own pow chain → right-assoc)
+        let (right, next) = super::primary::parse_primary_expr(lexer, context)?;
+        left = emit_binary_op(context, Opcode::Pow, left, right);
+        token = next;
     }
     Ok((left, token))
 }

@@ -1,6 +1,6 @@
 # WordPress Theme and Plugin Support in phprs
 
-> **Status:** Demo stubs only — not production WordPress. Bootstrap may fail on `require` of `wp-includes/wp-db.php` until `array()` syntax is supported or the stub uses `[]`. See [README.md](README.md).
+> **Status:** Demo stubs only — not production WordPress. The `array()` constructor is supported by the compiler; bootstrap still fails on later includes (e.g. `plugin.php` uses assignment patterns the compiler does not support yet). See [README.md](README.md).
 
 This directory demonstrates a **WordPress-style** theme and plugin stub system for phprs (not production WordPress).
 
@@ -23,7 +23,7 @@ This directory demonstrates a **WordPress-style** theme and plugin stub system f
 
 ### Session Handling (WordPress demo stubs only)
 - **wp_session_*** helpers in `wp-includes/session.php` for the example tree
-- **Not** the PHP `session` extension in the main engine (`src/` has no `session_start` builtin)
+- The main engine also provides `session_start` / `session_destroy` / `session_id` / `session_name` builtins (see `src/php/session/`); the WordPress demo tree ships its own `wp_session_*` helpers for in-tree patterns
 
 ### Database Integration
 - **wpdb Class**: Full in-memory database abstraction

@@ -17,7 +17,7 @@ fn is_punct(token: &Token, ch: &str) -> bool {
 }
 
 fn is_union_sep(token: &Token) -> bool {
-    token.token_type == TokenType::T_OR_EQUAL
+    token.token_type == TokenType::T_STRING
         && token.value.as_ref().map(|s| s.as_str()) == Some("|")
 }
 

@@ -137,10 +137,9 @@ fn test_null_value() {
     let null_val = Val::new(PhpValue::Long(0), PhpType::Null);
     assert_eq!(null_val.get_type(), PhpType::Null);
 
-    // Null with Long(0) value converts to "0" string
+    // Null converts to empty string (PHP: (string)null === "")
     let str_result = zval_get_string(&null_val);
-    // The implementation converts Long(0) to "0" string
-    assert_eq!(str_result.as_str(), "0");
+    assert_eq!(str_result.as_str(), "");
 }
 
 #[test]

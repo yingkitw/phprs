@@ -34,7 +34,7 @@
 - [x] Control flow (if/else, while, for, foreach)
 - [x] Function compilation and calls
 - [x] Class compilation (properties, methods, constructors)
-- [x] VM execution (73 opcodes, dispatch table)
+- [x] VM execution (74 opcodes, dispatch table)
 - [x] Built-in functions (160+ functions — see Statistics)
 - [x] Legacy `array()` constructor syntax (`array()`, `array('k' => v)`, indexed elements)
 - [x] Foreach with key => value (`foreach ($a as $k => $v)`)
@@ -46,6 +46,17 @@
 - [x] Class property defaults with constant expressions (`public $data = array()`)
 - [x] try/catch/finally exception dispatch (single op-array scope; cross-function propagation pending)
 - [x] Direct subscripting of function-call results (`func()['key']`, `(func())['key']`)
+- [x] Compound assignment operators (`+=`, `-=`, `*=`, `/=`, `%=`, `.=`) on variables, array dims (`$a['k'] .= x`, chained), and object properties (`$obj->p += x`); `??=` on variables — compiler desugaring
+- [x] Bitwise operators (`&`, `|`, `^`, `~`, `<<`, `>>`) with PHP 8 precedence (`|` > `^` > `&`, shifts tighter than comparison); bitwise compound assigns (`&=`, `|=`, `^=`, `<<=`, `>>=`)
+- [x] Unary `+`/`-` in expressions (`$x = -5;`, `-~$n`)
+- [x] `xor` keyword operator (dispatched via `BoolXor`; note: `=` binds looser than `xor` in Zend — parenthesize when mixing)
+- [x] **Power operator `**`** (right-associative, binds tighter than `*`; int result for non-negative int exponents)
+- [x] **Spaceship `<=>`** (PHP 7) — new `Spaceship` opcode returning -1/0/1
+- [x] Integer literal bases — `0x`/`0X` hex, `0b` binary, `0o` octal, legacy `0777` octal, `_` separators (`1_000_000`)
+- [x] `echo $a, $b, $c;` (comma-separated arguments)
+- [x] `(string)null === ""` — `zval_get_string` checks type before payload; missing array keys read as null
+- [x] Numeric-string array key normalization — `$a["1"]` and `$a[1]` address the same slot (`hash_add_or_update`/`hash_find`/`hash_del` central; non-canonical `"01"`, `"-0"`, overflow stay strings)
+- [x] Integer arithmetic type preservation — `int-int`, `int*int` stay int; `int/int` yields int when evenly divisible (`10/2 === 5`, `10/4 === 2.5`); float keys with integral values truncate to int keys
 
 ### Tools
 - [x] Unified CLI (`bin/phprs`) with `run`, `serve`, `pkg` subcommands
@@ -161,14 +172,13 @@
 - **Engine**: types, string, hash, alloc, gc, operators, compile, vm, jit, benchmark, …
 - **PHP runtime**: modules under `src/php/` (regex, http_stream, pdo stub, math, hash, datetime, mbstring, …)
 - **Framework examples**: WordPress-shaped (partial), CodeIgniter 4 demo (CI-tested), Drupal demo (CI-tested)
-- **73 opcodes** (dispatch table)
+- **74 opcodes** (dispatch table)
 - **195+ built-in functions** — see `builtin_capability_tests.rs` for exercised surface
-- **485+ workspace tests** (`cargo test --workspace`)
+- **510+ workspace tests** (`cargo test --workspace`)
 - **23 root PHP examples** — all run via `examples_root_php_scripts_all_run`
 - **Known gaps** (verified during testing — tracked, not blocking):
-  - Un-dispatched opcodes (no-ops today): bitwise (`Sl`, `Sr`, `BwOr/And/Xor/Not`), `BoolXor`, `AssignOp` (compound `+=` etc. via opcode), `AssignObj`, `TypeCheck`, `Unset`, `IsSet`, `Empty`, `Count`, `Keys`, `Values`, `ArrayDiff`. Several are covered by their builtin equivalents (`isset`/`empty`/`count`/`unset` work as function calls), but the opcode-level forms do nothing.
+  - Un-dispatched opcodes (no-ops today): `AssignObj`, `TypeCheck`, `Unset`, `IsSet`, `Empty`, `Count`, `Keys`, `Values`, `ArrayDiff`. Several are covered by their builtin equivalents (`isset`/`empty`/`count`/`unset` work as function calls), but the opcode-level forms do nothing.
   - Exception dispatch is scoped to a single op-array; cross-function propagation (throw in a callee caught by a caller) is not yet supported.
-  - Numeric-string array keys are not normalized to integers (PHP stores `'1'` as integer key `1`); lookups by the other form may miss.
   - `Val::clone()` is shallow for arrays/objects (creates an empty/default copy); engine code must use `clone_val` (deep) — a frequent source of subtle bugs for contributors.
 
 ### Standard library (honest)
@@ -241,6 +251,7 @@ Rust is used for the **interpreter implementation** because of memory safety in 
 - [x] **Enums** (PHP 8.1) - Pure and backed enums (`enum Color: string { case Red = 'red'; }`)
 - [x] **First-class callable syntax** (PHP 8.1) - `strlen(...)`, `Class::method(...)`, `$obj->method(...)`
 - [x] **Foreach with key** — `foreach ($a as $k => $v)`
+- [ ] **Complex string interpolation** — `"{$arr['key']}"`, `"{$obj->prop}"`, `"{$var[0]}"` (simple `$var` interpolation works today)
 - [x] **Array append / chained dim assign** — `$arr[] = $x`, `$a['b']['c'] = $v`
 - [x] **User-defined functions in CLI scripts** — top-level `function foo()` callable from same file
 - [ ] **Fibers** (PHP 8.1) - Lightweight concurrency

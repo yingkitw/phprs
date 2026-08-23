@@ -51,6 +51,10 @@ pub fn zval_get_double(zval: &Val) -> f64 {
 
 /// Convert zval to string
 pub fn zval_get_string(zval: &Val) -> PhpString {
+    // Null-typed vals stringify to "" regardless of payload
+    if zval.get_type() == PhpType::Null {
+        return string_init("", false);
+    }
     match &zval.value {
         PhpValue::String(s) => {
             // Create a new PhpString from the existing one
@@ -61,14 +65,7 @@ pub fn zval_get_string(zval: &Val) -> PhpString {
         PhpValue::Bool(b) => string_init(if *b { "1" } else { "" }, false),
         PhpValue::Array(_) => string_init("Array", false),
         PhpValue::Object(_) => string_init("Object", false),
-        _ => {
-            // Check if it's null type
-            if zval.get_type() == PhpType::Null {
-                string_init("", false)
-            } else {
-                string_init("", false)
-            }
-        }
+        _ => string_init("", false),
     }
 }
 
@@ -148,6 +145,10 @@ pub fn zval_add(z1: &Val, z2: &Val) -> Val {
 
 /// Subtract two zvals
 pub fn zval_sub(z1: &Val, z2: &Val) -> Val {
+    // int - int stays int (PHP semantics)
+    if let (PhpValue::Long(a), PhpValue::Long(b)) = (&z1.value, &z2.value) {
+        return Val::new(PhpValue::Long(a.wrapping_sub(*b)), PhpType::Long);
+    }
     let d1 = zval_get_double(z1);
     let d2 = zval_get_double(z2);
     Val::new(PhpValue::Double(d1 - d2), PhpType::Double)
@@ -155,6 +156,10 @@ pub fn zval_sub(z1: &Val, z2: &Val) -> Val {
 
 /// Multiply two zvals
 pub fn zval_mul(z1: &Val, z2: &Val) -> Val {
+    // int * int stays int (PHP semantics)
+    if let (PhpValue::Long(a), PhpValue::Long(b)) = (&z1.value, &z2.value) {
+        return Val::new(PhpValue::Long(a.wrapping_mul(*b)), PhpType::Long);
+    }
     let d1 = zval_get_double(z1);
     let d2 = zval_get_double(z2);
     Val::new(PhpValue::Double(d1 * d2), PhpType::Double)
@@ -162,6 +167,13 @@ pub fn zval_mul(z1: &Val, z2: &Val) -> Val {
 
 /// Divide two zvals
 pub fn zval_div(z1: &Val, z2: &Val) -> Result<Val, String> {
+    // int / int yields int when evenly divisible (PHP: 10/2 === 5, 10/4 === 2.5)
+    if let (PhpValue::Long(a), PhpValue::Long(b)) = (&z1.value, &z2.value)
+        && *b != 0
+        && a % b == 0
+    {
+        return Ok(Val::new(PhpValue::Long(a / b), PhpType::Long));
+    }
     let d2 = zval_get_double(z2);
     if d2 == 0.0 {
         return Err("Division by zero".to_string());

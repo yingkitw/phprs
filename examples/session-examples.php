@@ -1,9 +1,11 @@
 <?php
 /**
- * Session-style state examples (phprs)
+ * Session examples (phprs)
  *
- * The PHP session extension (session_start, session_id, etc.) is not implemented in phprs.
- * This script mirrors common patterns using a plain $_SESSION array so the demo runs here.
+ * phprs implements session_start(), session_destroy(), session_id(), and
+ * session_name() as engine builtins (src/php/session/). Storage is JSON files
+ * under a configured save path; phprs serve sends a PHPSESSID cookie. This
+ * script exercises the $_SESSION superglobal through those builtins.
  */
 
 echo '=== Session Handling Examples ===' . "\n\n";

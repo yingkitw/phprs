@@ -3,7 +3,8 @@
 **Scope:** Rust PHP interpreter workspace (`/Users/yingkitw/Desktop/myproject/phprs`)  
 **Audited against:** `SPEC.md`, `ARCHITECTURE.md`, `README.md`, `TODO.md`, `AGENTS.md`, plus automated checks (`cargo build`, `cargo test --workspace`, `cargo clippy --workspace --all-targets`, `cargo fmt -- --check`).  
 **Date:** 2026-07-25  
-**Commit:** `5ede6a3` on `main` (with two uncommitted worktree changes).
+**Commit:** `5ede6a3` on `main` (with two uncommitted worktree changes).  
+**Note:** Counts and statuses below are as of the audit date; see `TODO.md` and `README.md` for current numbers.
 
 > **Update after fixes:** The critical/high issues below have been addressed. `cargo build --workspace`, `cargo test --workspace`, and `cargo fmt -- --check` now pass; `cargo clippy --workspace --all-targets` reports no errors and ~50 style warnings (down from ~210).
 
@@ -16,7 +17,7 @@ The project is now in a **green build/test/format state**. All workspace tests p
 | Check | Result |
 |-------|--------|
 | `cargo build --workspace` | ✅ Passes |
-| `cargo test --workspace` | ✅ Passes (485+ tests) |
+| `cargo test --workspace` | ✅ Passes (485+ at audit date; 510+ as of 2026-08-24) |
 | `cargo clippy --workspace --all-targets` | ✅ No errors; ~50 style warnings remain |
 | `cargo fmt -- --check` | ✅ Clean |
 | Documentation sync | ✅ Exception/opcode drift fixed |
@@ -223,7 +224,7 @@ The project is now in a **green build/test/format state**. All workspace tests p
 
 ## Positive Findings
 
-- **Broad test coverage:** 485+ unit tests and 15 integration tests for root `examples/*.php` and framework stubs. The integration suite (`tests/examples_runtime.rs`) is a strong pattern and should be maintained.
+- **Broad test coverage:** 485+ tests at audit date (510+ as of 2026-08-24), including 15 integration tests for root `examples/*.php` and framework stubs. The integration suite (`tests/examples_runtime.rs`) is a strong pattern and should be maintained.
 - **Honest performance claims:** `PERFORMANCE.md` and the README avoid fabricated speedup numbers and clearly state that PHP comparisons require reproducible benchmarks.
 - **Documentation-first culture:** `SPEC.md`, `ARCHITECTURE.md`, `TODO.md`, and `AGENTS.md` exist and are detailed. With the drift items fixed, they form a solid foundation.
 - **Incremental compatibility strategy:** The project correctly scopes framework support as demos and warns against treating them as production parity.

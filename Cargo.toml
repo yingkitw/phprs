@@ -1,12 +1,11 @@
 [package]
 name = "phprs"
-version = "0.1.15"
+version = "0.1.16"
 authors = ["Ying kit WONG"]
 license = "Apache-2.0"
 description = "PHP interpreter, compiler, runtime VM and package manager written in Rust. Memory-safe host code for running PHP scripts and popular PHP frameworks."
 readme = "README.md"
 edition = "2024"
-rust-version = "1.85.0"
 repository = "https://github.com/yingkitw/phprs"
 homepage = "https://github.com/yingkitw/phprs"
 documentation = "https://docs.rs/phprs"

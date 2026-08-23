@@ -37,7 +37,7 @@ phprs is a **PHP interpreter implemented in Rust**. It aims to execute PHP code 
 - **Tooling**: CLI (`run`, `serve`, `pkg`), Composer-style package manager (partial).
 - **Performance scaffolding**: JIT hooks, function optimizer, opcode cache, phprs-only benchmark export (no bundled PHP baseline).
 - **Framework demos**: Minimal trees under `examples/` for WordPress-shaped, CodeIgniter 4, and Drupal bootstraps (not full framework parity).
-- **Tests**: 376+ workspace tests including `examples_runtime` (all root `examples/*.php`), `build_rust_examples`, and broad builtin capability tests.
+- **Tests**: 510+ workspace tests including `examples_runtime` (all root `examples/*.php`), `build_rust_examples`, and broad builtin capability tests.
 
 ### Explicitly Limited or Not Implemented
 

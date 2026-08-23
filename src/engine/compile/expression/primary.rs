@@ -5,10 +5,19 @@ use crate::engine::compile::context::CompileContext;
 use crate::engine::facade::{self, StdValFactory, ValFactory};
 use crate::engine::lexer::{Lexer, Token, TokenType};
 use crate::engine::types::Val;
-use crate::engine::vm::var_ref;
+use crate::engine::vm::{Opcode, var_ref};
 
 /// Parse primary expression (numbers, variables, strings, new, arrays, function calls)
+/// including a trailing exponent chain (`**`, right-associative, binds tightest).
 pub(crate) fn parse_primary_expr(
+    lexer: &mut Lexer,
+    context: &mut CompileContext,
+) -> Result<(Val, Token), String> {
+    let (val, token) = parse_primary_inner(lexer, context)?;
+    pow_loop(lexer, context, val, token)
+}
+
+fn parse_primary_inner(
     lexer: &mut Lexer,
     context: &mut CompileContext,
 ) -> Result<(Val, Token), String> {
@@ -16,6 +25,20 @@ pub(crate) fn parse_primary_expr(
     context.set_line(token.lineno);
 
     match token.token_type {
+        // Unary minus / plus: fold sign into the following multiplicative operand
+        TokenType::T_MINUS | TokenType::T_PLUS => {
+            let (operand, next) = super::operators::parse_multiplicative_expr(lexer, context)?;
+            if token.token_type == TokenType::T_PLUS {
+                Ok((operand, next))
+            } else {
+                Ok((emit_binary_op(context, Opcode::Sub, facade::zero_val(), operand), next))
+            }
+        }
+        // Bitwise NOT (~)
+        TokenType::T_STRING if token_is_punct(&token, "~") => {
+            let (operand, next) = super::operators::parse_multiplicative_expr(lexer, context)?;
+            Ok((emit_binary_op(context, Opcode::BwNot, operand, facade::zero_val()), next))
+        }
         TokenType::T_LNUMBER => {
             let num_val = token
                 .value
