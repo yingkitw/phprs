@@ -4,14 +4,15 @@ Overview of how examples and tests relate in phprs.
 
 ## Workspace tests
 
-Roughly **510+** tests across:
+Roughly **531** tests across:
 
 - **378** library unit tests (`cargo test --lib`)
-- Integration crates: `array_key_normalization` (5), `bitwise_operators` (9), `build_rust_examples` (1), `compound_assignment` (10), `comprehensive_tests` (25), `edge_cases` (13), `error_handling` (4), `example_verification` (7), `examples_runtime` (15), `integer_arithmetic` (3), `integration_tests` (4), `php8x_features` (15), `php_examples` (16)
+- Integration crates: `array_key_normalization` (5), `bitwise_operators` (11), `build_rust_examples` (1), `compound_assignment` (10), `comprehensive_tests` (25), `edge_cases` (13), `error_handling` (4), `example_verification` (7), `examples_runtime` (15), `integer_arithmetic` (3), `integration_tests` (4), `php8x_features` (15), `php_examples` (16), `string_interpolation` (16)
+- CLI crate unit tests (`bin/phprs`): 8
 
 ## Example entrypoints
 
-### Root PHP (`examples/*.php`) — 23 files
+### Root PHP (`examples/*.php`) — 24 files
 
 **Enforced by** `examples_root_php_scripts_all_run` in `tests/examples_runtime.rs`:
 
@@ -28,8 +29,9 @@ Roughly **510+** tests across:
 |-------|----------------|
 | `codeigniter/public/index.php` | `example_codeigniter_public_index_runs` |
 | `drupal/index.php` | `example_drupal_index_runs` |
-| `wordpress/index.php` | Manual — `array()` in wp-db stub blocks compile today |
+| `wordpress/index.php` | `example_wordpress_index_runs` |
 | Nested includes under CI/Drupal/WP | Indirectly via entrypoint tests |
+| `wordpress/test-theme-plugin.php` | Manual — run via `cargo run -p phprs-cli` |
 
 ## Feature demo scripts
 

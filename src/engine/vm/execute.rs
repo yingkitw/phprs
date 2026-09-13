@@ -7,16 +7,20 @@ use crate::engine::string::string_init;
 use crate::engine::types::{PhpResult, PhpType, PhpValue, Val};
 use std::sync::OnceLock;
 
+/// One slot in the opcode dispatch table.
+type OpcodeHandler = fn(&Op, &mut ExecuteData) -> Result<ExecResult, String>;
+
+/// Table size derives from the `Opcode::Last` sentinel — no manual bumping.
+const OPCODE_COUNT: usize = Opcode::COUNT;
+
 // Performance-optimized dispatch table
-static DISPATCH_TABLE: OnceLock<[fn(&Op, &mut ExecuteData) -> Result<ExecResult, String>; 74]> =
-    OnceLock::new();
+static DISPATCH_TABLE: OnceLock<[OpcodeHandler; OPCODE_COUNT]> = OnceLock::new();
 
 /// Initialize the dispatch table for computed goto style dispatch
 #[inline]
 fn init_dispatch_table() {
     DISPATCH_TABLE.get_or_init(|| {
-        let mut table: [fn(&Op, &mut ExecuteData) -> Result<ExecResult, String>; 74] =
-            [default_handler; 74];
+        let mut table: [OpcodeHandler; OPCODE_COUNT] = [default_handler; OPCODE_COUNT];
 
         // Import optimized handlers
         use super::dispatch_handlers::*;
@@ -78,6 +82,9 @@ fn init_dispatch_table() {
         table[Opcode::FetchStaticProp as usize] = execute_fetch_static_prop;
         table[Opcode::DoStaticCall as usize] = execute_do_static_call;
         table[Opcode::CloneObj as usize] = execute_clone_obj;
+        table[Opcode::UnsetObjProp as usize] = execute_unset_obj_prop;
+        table[Opcode::Unset as usize] = execute_unset;
+        table[Opcode::UnsetDim as usize] = execute_unset_dim;
 
         // Exception handling
         table[Opcode::TryCatchBegin as usize] = execute_try_catch_begin;
@@ -85,7 +92,7 @@ fn init_dispatch_table() {
         table[Opcode::CatchBegin as usize] = execute_catch_marker;
         table[Opcode::CatchEnd as usize] = execute_catch_marker;
         table[Opcode::FinallyBegin as usize] = execute_catch_marker;
-        table[Opcode::FinallyEnd as usize] = execute_catch_marker;
+        table[Opcode::FinallyEnd as usize] = execute_finally_end;
         table[Opcode::Throw as usize] = execute_throw;
 
         table
@@ -95,6 +102,53 @@ fn init_dispatch_table() {
 #[inline]
 fn default_handler(_op: &Op, _execute_data: &mut ExecuteData) -> Result<ExecResult, String> {
     Ok(ExecResult::Continue)
+}
+
+#[cfg(test)]
+mod dispatch_table_tests {
+    use super::*;
+
+    /// Opcode indices that intentionally have no handler (documented no-ops;
+    /// their builtin equivalents work — see MEMORY.md §2). Any new entry here
+    /// must be justified; anything NOT listed here and not registered in
+    /// `init_dispatch_table` fails this test, so silent no-op drift is caught.
+    const DOCUMENTED_NO_OPS: &[usize] = &[
+        Opcode::AssignObj as usize,
+        Opcode::TypeCheck as usize,
+        Opcode::IsSet as usize,
+        Opcode::Empty as usize,
+        Opcode::Keys as usize,
+        Opcode::Values as usize,
+        Opcode::ArrayDiff as usize,
+    ];
+
+    #[test]
+    fn test_dispatch_table_covers_every_real_opcode() {
+        init_dispatch_table();
+        let table = DISPATCH_TABLE.get().expect("dispatch table initialized");
+        let mut unregistered: Vec<usize> = Vec::new();
+        for idx in 0..Opcode::COUNT {
+            if DOCUMENTED_NO_OPS.contains(&idx) {
+                continue;
+            }
+            // Pointer equality: registered handlers differ from the default.
+            if (table[idx] as *const () as usize) == (default_handler as *const () as usize) {
+                unregistered.push(idx);
+            }
+        }
+        assert!(
+            unregistered.is_empty(),
+            "opcode indices without a dispatch handler and not on the documented no-op list: {unregistered:?}"
+        );
+    }
+
+    #[test]
+    fn test_count_sentinel_covers_last_real_opcode() {
+        // The sentinel must be strictly greater than every real opcode so the
+        // table size always covers all dispatchable indices. Update when a
+        // new opcode is added (the compiler will point here).
+        assert_eq!(Opcode::COUNT, (Opcode::UnsetDim as usize) + 1);
+    }
 }
 
 /// Parent directory for relative includes. `None` keeps the caller's `current_script_dir`
@@ -160,6 +214,13 @@ pub fn execute_ex_returning(
     execute_data.current_op = 0;
     apply_script_path_constants(execute_data, op_array);
 
+    // Save the caller's try_stack; the callee starts with a fresh stack so
+    // its exception dispatch cannot accidentally match the caller's try
+    // entries (whose opcode indices refer to the caller's op_array, not the
+    // callee's).  Restored before returning so propagate_after_call sees the
+    // caller's entries again.
+    let saved_try_stack = std::mem::take(&mut execute_data.try_stack);
+
     // Optimized execution loop with direct dispatch
     let ops = &op_array.ops;
     let len = ops.len();
@@ -167,14 +228,21 @@ pub fn execute_ex_returning(
     let mut iteration_count = 0;
     let max_iterations = 1_000_000; // Safety limit to prevent infinite loops
 
-    while execute_data.current_op < len {
+    let result: (PhpResult, Option<crate::engine::types::Val>) = loop {
+        if execute_data.current_op >= len {
+            finalize_request(execute_data);
+            if execute_data.pending_exception.is_some() {
+                break (PhpResult::Failure, None);
+            }
+            break (PhpResult::Success, None);
+        }
         iteration_count += 1;
         if iteration_count > max_iterations {
             eprintln!(
                 "VM execution exceeded maximum iterations ({}), possible infinite loop",
                 max_iterations
             );
-            return (PhpResult::Failure, None);
+            break (PhpResult::Failure, None);
         }
 
         let op = unsafe { ops.get_unchecked(execute_data.current_op) };
@@ -189,7 +257,12 @@ pub fn execute_ex_returning(
                 execute_data.current_op += 1;
                 if execute_data.exit_requested.is_some() {
                     finalize_request(execute_data);
-                    return (PhpResult::Success, None);
+                    break (PhpResult::Success, None);
+                }
+                // Fiber::suspend() requested — break out of the loop.
+                // The fiber dispatch code saves the VM state after this returns.
+                if execute_data.fiber_suspend_requested.is_some() {
+                    break (PhpResult::Success, None);
                 }
             }
             Ok(ExecResult::Jump(target)) => {
@@ -197,16 +270,91 @@ pub fn execute_ex_returning(
             }
             Ok(ExecResult::Return(value)) => {
                 finalize_request(execute_data);
-                return (PhpResult::Success, Some(value));
+                break (PhpResult::Success, Some(value));
             }
             Err(e) => {
                 eprintln!("Error executing opcode: {}", e);
-                return (PhpResult::Failure, None);
+                break (PhpResult::Failure, None);
             }
         }
-    }
-    finalize_request(execute_data);
-    (PhpResult::Success, None)
+    };
+
+    execute_data.try_stack = saved_try_stack;
+    result
+}
+
+/// Resume execution from the current VM state (for Fiber resume).
+/// Unlike `execute_ex_returning`, this does NOT reset `current_op` or clone
+/// the op_array — it continues from wherever `execute_data.current_op` points.
+pub fn execute_ex_resume(execute_data: &mut ExecuteData) -> (PhpResult, Option<crate::engine::types::Val>) {
+    init_dispatch_table();
+
+    // Use the op_array already installed in execute_data (set by the caller).
+    // Don't reset current_op — continue from where we left off.
+    let saved_try_stack = std::mem::take(&mut execute_data.try_stack);
+
+    // Get a reference to the ops slice from the installed op_array.
+    let ops: Vec<Op> = execute_data.op_array.as_ref()
+        .map(|oa| oa.ops.iter().map(|op| Op::new(
+            op.opcode,
+            clone_val(&op.op1),
+            clone_val(&op.op2),
+            clone_val(&op.result),
+            op.extended_value,
+        )).collect())
+        .unwrap_or_default();
+    let len = ops.len();
+
+    let mut iteration_count = 0;
+    let max_iterations = 1_000_000;
+
+    let result: (PhpResult, Option<crate::engine::types::Val>) = loop {
+        if execute_data.current_op >= len {
+            finalize_request(execute_data);
+            if execute_data.pending_exception.is_some() {
+                break (PhpResult::Failure, None);
+            }
+            break (PhpResult::Success, None);
+        }
+        iteration_count += 1;
+        if iteration_count > max_iterations {
+            break (PhpResult::Failure, None);
+        }
+
+        let op = unsafe { ops.get_unchecked(execute_data.current_op) };
+        let result = unsafe {
+            let dispatch_table = DISPATCH_TABLE.get().unwrap_unchecked();
+            let handler = dispatch_table.get(op.opcode as usize).unwrap_unchecked();
+            handler(op, execute_data)
+        };
+
+        match result {
+            Ok(ExecResult::Continue) => {
+                execute_data.current_op += 1;
+                if execute_data.exit_requested.is_some() {
+                    finalize_request(execute_data);
+                    break (PhpResult::Success, None);
+                }
+                if execute_data.fiber_suspend_requested.is_some() {
+                    break (PhpResult::Success, None);
+                }
+            }
+            Ok(ExecResult::Jump(target)) => {
+                execute_data.current_op = target as usize;
+            }
+            Ok(ExecResult::Return(value)) => {
+                finalize_request(execute_data);
+                break (PhpResult::Success, Some(value));
+            }
+            Err(e) => {
+                eprintln!("Error executing opcode: {}", e);
+                break (PhpResult::Failure, None);
+            }
+        }
+    };
+
+    execute_data.try_stack = saved_try_stack;
+    result
 }
 
 /// Execute op array (compiled script) - optimized
@@ -268,6 +416,9 @@ pub fn execute_ex(execute_data: &mut ExecuteData, op_array: &OpArray) -> PhpResu
                     .constants
                     .insert(const_name.clone(), clone_val(const_val));
             }
+            for const_name in &ce.final_constants {
+                new_ce.final_constants.insert(const_name.clone());
+            }
             for (method_name, method) in &ce.methods {
                 let method_file = method
                     .op_array
@@ -305,6 +456,13 @@ pub fn execute_ex(execute_data: &mut ExecuteData, op_array: &OpArray) -> PhpResu
         }
     }
 
+    // Save the caller's try_stack; the callee starts with a fresh stack so
+    // its exception dispatch cannot accidentally match the caller's try
+    // entries (whose opcode indices refer to the caller's op_array, not the
+    // callee's).  Restored before returning so propagate_after_call sees the
+    // caller's entries again.
+    let saved_try_stack = std::mem::take(&mut execute_data.try_stack);
+
     // Optimized execution loop with direct dispatch
     let ops = &op_array.ops;
     let len = ops.len();
@@ -312,14 +470,21 @@ pub fn execute_ex(execute_data: &mut ExecuteData, op_array: &OpArray) -> PhpResu
     let mut iteration_count = 0;
     let max_iterations = 1_000_000; // Safety limit to prevent infinite loops
 
-    while execute_data.current_op < len {
+    let result: PhpResult = loop {
+        if execute_data.current_op >= len {
+            finalize_request(execute_data);
+            if execute_data.pending_exception.is_some() {
+                break PhpResult::Failure;
+            }
+            break PhpResult::Success;
+        }
         iteration_count += 1;
         if iteration_count > max_iterations {
             eprintln!(
                 "VM execution exceeded maximum iterations ({}), possible infinite loop",
                 max_iterations
             );
-            return PhpResult::Failure;
+            break PhpResult::Failure;
         }
 
         let op = unsafe { ops.get_unchecked(execute_data.current_op) };
@@ -334,7 +499,7 @@ pub fn execute_ex(execute_data: &mut ExecuteData, op_array: &OpArray) -> PhpResu
                 execute_data.current_op += 1;
                 if execute_data.exit_requested.is_some() {
                     finalize_request(execute_data);
-                    return PhpResult::Success;
+                    break PhpResult::Success;
                 }
             }
             Ok(ExecResult::Jump(target)) => {
@@ -342,17 +507,20 @@ pub fn execute_ex(execute_data: &mut ExecuteData, op_array: &OpArray) -> PhpResu
             }
             Ok(ExecResult::Return(_value)) => {
                 finalize_request(execute_data);
-                return PhpResult::Success;
+                if execute_data.pending_exception.is_some() {
+                    break PhpResult::Failure;
+                }
+                break PhpResult::Success;
             }
             Err(e) => {
                 eprintln!("Error executing opcode: {}", e);
-                return PhpResult::Failure;
+                break PhpResult::Failure;
             }
         }
-    }
+    };
 
-    finalize_request(execute_data);
-    PhpResult::Success
+    execute_data.try_stack = saved_try_stack;
+    result
 }
 
 fn finalize_request(execute_data: &mut ExecuteData) {

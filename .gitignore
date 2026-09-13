@@ -71,3 +71,7 @@ criterion/
 perf.data*
 flamegraph.svg
 
+# Agent memory and workflow files (local-only)
+AGENTS.md
+MEMORY.md
+

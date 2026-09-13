@@ -17,8 +17,7 @@ fn is_punct(token: &Token, ch: &str) -> bool {
 }
 
 fn is_union_sep(token: &Token) -> bool {
-    token.token_type == TokenType::T_STRING
-        && token.value.as_ref().map(|s| s.as_str()) == Some("|")
+    token.token_type == TokenType::T_STRING && token.value.as_ref().map(|s| s.as_str()) == Some("|")
 }
 
 fn is_intersection_sep(token: &Token) -> bool {
@@ -50,12 +49,17 @@ fn is_type_hint(token: &Token) -> bool {
     token.token_type == TokenType::T_ARRAY || token.token_type == TokenType::T_CALLABLE
 }
 
+/// Parsed parameter list for a user-defined function: `param_names`,
+/// `variadic_param_name` (`...$rest`), and `ref_flags` (pass-by-reference
+/// for each param).
+pub(crate) type ParamList = (Vec<String>, Option<String>, Vec<bool>);
+
 /// Parse parameter list (the opening '(' has already been consumed)
 /// Returns (param_names, variadic_param_name, ref_flags).
 pub(crate) fn parse_params(
     lexer: &mut Lexer,
     context: &mut CompileContext,
-) -> Result<(Vec<String>, Option<String>, Vec<bool>), String> {
+) -> Result<ParamList, String> {
     let mut params = Vec::new();
     let mut ref_flags = Vec::new();
     let mut variadic = None;

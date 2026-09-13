@@ -15,11 +15,7 @@ pub fn temp_var_ref(index: u32) -> Val {
 
 /// Create a Val that references a named variable ($name)
 pub fn var_ref(name: &str) -> Val {
-    let clean = if name.starts_with('$') {
-        &name[1..]
-    } else {
-        name
-    };
+    let clean = name.strip_prefix('$').unwrap_or(name);
     Val::new(
         PhpValue::String(Box::new(crate::engine::string::string_init(clean, false))),
         TEMP_VAR_TYPE,
@@ -49,7 +45,7 @@ pub(crate) fn resolve_operand(operand: &Val, execute_data: &ExecuteData) -> Val 
         && let PhpValue::String(name) = &operand.value
     {
         let n = name.as_str();
-        let clean = if n.starts_with('$') { &n[1..] } else { n };
+        let clean = n.strip_prefix('$').unwrap_or(n);
         return execute_data.get_var(clean);
     }
     // Bare identifier constants are emitted as ConstantAst (not real string literals)
@@ -141,13 +137,39 @@ pub struct ExecuteData {
     pub session_id: String,
     /// Session cookie/name (default PHPSESSID).
     pub session_name: String,
-    /// Stack of active `try` regions: opcode indices of `TryCatchBegin` ops.
-    /// Pushed by TryCatchBegin, popped by TryCatchEnd (normal exit) or by Throw
-    /// while searching for a matching catch.
-    pub try_stack: Vec<usize>,
+    /// Stack of active `try` regions: `(TryCatchBegin opcode index, op_array filename)`
+    /// pairs. Pushed by TryCatchBegin, popped by TryCatchEnd (normal exit) or by
+    /// Throw while searching for a matching catch. The filename disambiguates
+    /// entries across frames so dispatch only considers catches in the current
+    /// op_array.
+    pub try_stack: Vec<(usize, Option<String>)>,
     /// The currently in-flight uncaught exception object (set by Throw until a
     /// catch claims it).
     pub pending_exception: Option<Val>,
+    /// Set by `Fiber::suspend()` to break out of `execute_ex_returning`.
+    /// Cleared by the fiber dispatch code after saving the fiber frame.
+    pub fiber_suspend_requested: Option<Val>,
+    /// Saved fiber execution frames, indexed by the `__frame_index` property
+    /// on Fiber objects. Only one fiber can run at a time (synchronous VM).
+    pub fiber_frames: Vec<FiberFrame>,
+}
+
+/// Captured VM state for a suspended Fiber, allowing resume to continue
+/// execution from the point of suspension.
+#[derive(Debug)]
+pub struct FiberFrame {
+    pub op_array: super::opcodes::OpArray,
+    pub current_op: usize,
+    pub temp_vars: Vec<Val>,
+    pub symbol_table: Option<crate::engine::types::PhpArray>,
+    pub call_args: Vec<Val>,
+    pub call_arg_stack: Vec<(usize, usize)>,
+    pub call_arg_names: Vec<Option<String>>,
+    pub call_arg_by_ref: Vec<bool>,
+    pub ref_caller_scope: Option<crate::engine::types::PhpArray>,
+    pub ref_param_bindings: std::collections::HashMap<String, String>,
+    pub global_imports: std::collections::HashSet<String>,
+    pub try_stack: Vec<(usize, Option<String>)>,
 }
 
 impl Default for ExecuteData {
@@ -188,6 +210,8 @@ impl ExecuteData {
             session_name: String::new(),
             try_stack: Vec::new(),
             pending_exception: None,
+            fiber_suspend_requested: None,
+            fiber_frames: Vec::new(),
         };
         ed.register_reflection_classes();
         ed
@@ -274,6 +298,30 @@ impl ExecuteData {
             let key = crate::engine::string::string_init(name, false);
             let key_box = Box::new(key);
             let _ = crate::engine::hash::hash_add_or_update(st, Some(&*key_box), 0, val, 0);
+        }
+    }
+
+    /// Remove a variable from the symbol table (PHP `unset($var)`).
+    /// Mirrors `set_var`'s scope resolution: ref-param bindings, globals, local.
+    pub fn unset_var(&mut self, name: &str) {
+        if let Some(caller_var) = self.ref_param_bindings.get(name).cloned() {
+            if let Some(ref mut scope) = self.ref_caller_scope {
+                let key = crate::engine::string::string_init(&caller_var, false);
+                let _ = crate::engine::hash::hash_del(scope, &key);
+            }
+            return;
+        }
+        if self.global_imports.contains(name) {
+            self.ensure_global_script_table();
+            if let Some(ref mut global) = self.global_script_table {
+                let key = crate::engine::string::string_init(name, false);
+                let _ = crate::engine::hash::hash_del(global, &key);
+            }
+            return;
+        }
+        if let Some(ref mut st) = self.symbol_table {
+            let key = crate::engine::string::string_init(name, false);
+            let _ = crate::engine::hash::hash_del(st, &key);
         }
     }
 

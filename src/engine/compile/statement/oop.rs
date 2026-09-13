@@ -38,6 +38,14 @@ pub(crate) fn parse_class_body(
             continue;
         }
 
+        // Parse optional `final` (PHP 8.1 final class constants) before visibility
+        let mut is_final_const = if next.token_type == TokenType::T_FINAL {
+            next = lexer.next_token()?;
+            true
+        } else {
+            false
+        };
+
         // Parse visibility modifier
         let visibility = match next.token_type {
             TokenType::T_PUBLIC => {
@@ -54,6 +62,12 @@ pub(crate) fn parse_class_body(
             }
             _ => Visibility::Public,
         };
+
+        // `final` may also appear after visibility: `public final const X`
+        if !is_final_const && next.token_type == TokenType::T_FINAL {
+            next = lexer.next_token()?;
+            is_final_const = true;
+        }
 
         // Check for readonly (PHP 8.1)
         let is_readonly = if next.token_type == TokenType::T_READONLY {
@@ -73,7 +87,7 @@ pub(crate) fn parse_class_body(
 
         // Check for const
         if next.token_type == TokenType::T_CONST {
-            next = compile_class_const(lexer, context, ce, visibility)?;
+            next = compile_class_const(lexer, context, ce, visibility, is_final_const)?;
             continue;
         }
 
@@ -214,8 +228,45 @@ pub(crate) fn compile_class(
     }
 
     parse_class_body(lexer, context, &mut ce)?;
+    check_final_const_override(context, &ce)?;
     context.register_class(ce);
     lexer.next_token()
+}
+
+/// Enforce PHP 8.1 final class constants: a child class may not redeclare a
+/// constant that any ancestor declared `final`. Walks the parent chain in the
+/// compile-time class table (parents must be defined before children, as in Zend).
+fn check_final_const_override(context: &CompileContext, ce: &ClassEntry) -> Result<(), String> {
+    let Some(parent_name) = &ce.parent_name else {
+        return Ok(());
+    };
+    if ce.constants.is_empty() {
+        return Ok(());
+    }
+    let mut current = Some(parent_name.clone());
+    let mut hops = 0;
+    while let Some(cur) = current {
+        if hops > 64 {
+            break;
+        }
+        if let Some(parent_ce) = context.class_table.get(&cur) {
+            for const_name in ce.constants.keys() {
+                if parent_ce.final_constants.contains(const_name)
+                    && parent_ce.constants.contains_key(const_name)
+                {
+                    return Err(format!(
+                        "Cannot override final constant {}::{} in class {}",
+                        parent_ce.name, const_name, ce.name
+                    ));
+                }
+            }
+            current = parent_ce.parent_name.clone();
+        } else {
+            break;
+        }
+        hops += 1;
+    }
+    Ok(())
 }
 
 /// Compile a trait definition: trait Foo { public function bar() { ... } }
@@ -351,13 +402,7 @@ fn compile_class_method(
     let (param_names, variadic, ref_flags) = parse_params(lexer, context)?;
     let params: Vec<String> = param_names
         .iter()
-        .map(|p| {
-            if p.starts_with('$') {
-                p[1..].to_string()
-            } else {
-                p.to_string()
-            }
-        })
+        .map(|p| p.strip_prefix('$').unwrap_or(p).to_string())
         .collect();
 
     // Parse method body: { ... }
@@ -413,12 +458,7 @@ fn compile_class_property(
     visibility: Visibility,
 ) -> Result<Token, String> {
     let prop_name = token.value.as_ref().unwrap().as_str();
-    let prop_name = if prop_name.starts_with('$') {
-        &prop_name[1..]
-    } else {
-        prop_name
-    };
-    let prop_name = prop_name.to_string();
+    let prop_name = prop_name.strip_prefix('$').unwrap_or(prop_name).to_string();
 
     let peek = lexer.next_token()?;
     let mut next = if peek.token_type == TokenType::T_EQUAL {
@@ -461,6 +501,7 @@ fn compile_class_const(
     context: &mut CompileContext,
     ce: &mut ClassEntry,
     _visibility: Visibility,
+    is_final: bool,
 ) -> Result<Token, String> {
     let name_token = lexer.next_token()?;
     let const_name = name_token
@@ -476,7 +517,10 @@ fn compile_class_const(
     }
 
     let (value, after) = eval_class_default_expr(lexer, context)?;
-    ce.constants.insert(const_name, value);
+    ce.constants.insert(const_name.clone(), value);
+    if is_final {
+        ce.final_constants.insert(const_name);
+    }
 
     let mut next = after;
     if token_is_punct(&next, ";") {

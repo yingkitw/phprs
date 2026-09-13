@@ -2361,8 +2361,79 @@ pub(crate) fn execute_builtin_function(
         "mb_strimwidth" => crate::php::mbstring::mb_strimwidth(args).map(Some),
 
         // --- Serialization ---
-        "serialize" => crate::php::serialize::php_serialize(args).map(Some),
-        "unserialize" => crate::php::serialize::php_unserialize(args).map(Some),
+        "serialize" => {
+            // If the value is an object with __serialize, invoke it and use the
+            // returned array as the object's properties for serialization.
+            if !args.is_empty()
+                && let PhpValue::Object(ref obj) = args[0].value
+                && let Some(ce) = _execute_data.class_table.get(&obj.class_name)
+                && ce.methods.contains_key("__serialize")
+            {
+                let result = super::callable::invoke_magic_method(
+                    _execute_data,
+                    &args[0],
+                    "__serialize",
+                    &[],
+                )?;
+                if let Some(ret) = result
+                    && let PhpValue::Array(ref arr) = ret.value
+                {
+                    // Build a temporary object with the array entries as
+                    // properties, then serialize it.
+                    let mut tmp_obj =
+                        crate::engine::types::PhpObject::new(&obj.class_name);
+                    for bucket in &arr.ar_data {
+                        let key = bucket.key.as_ref().map(|s| s.as_str().to_string());
+                        if let Some(k) = key {
+                            tmp_obj.properties.insert(k, clone_val(&bucket.val));
+                        }
+                    }
+                    let tmp_val = Val::new(
+                        PhpValue::Object(Box::new(tmp_obj)),
+                        PhpType::Object,
+                    );
+                    return crate::php::serialize::php_serialize(&[tmp_val]).map(Some);
+                }
+            }
+            crate::php::serialize::php_serialize(args).map(Some)
+        }
+        "unserialize" => {
+            let result = crate::php::serialize::php_unserialize(args)?;
+            // If the result is an object with __unserialize, invoke it with
+            // the parsed properties as an array argument.
+            if let PhpValue::Object(ref obj) = result.value
+                && let Some(ce) = _execute_data.class_table.get(&obj.class_name)
+                && ce.methods.contains_key("__unserialize")
+            {
+                // Build the data array from the object's parsed properties.
+                let mut data_arr = crate::engine::types::PhpArray::new();
+                for (pname, pval) in &obj.properties {
+                    let key = crate::engine::string::string_init(pname, false);
+                    let _ = crate::engine::hash::hash_add_or_update(
+                        &mut data_arr,
+                        Some(&key),
+                        0,
+                        clone_val(pval),
+                        0,
+                    );
+                }
+                let data_val = Val::new(
+                    PhpValue::Array(Box::new(data_arr)),
+                    PhpType::Array,
+                );
+                let mr = super::callable::invoke_magic_method_with_this(
+                    _execute_data,
+                    &result,
+                    "__unserialize",
+                    &[data_val],
+                )?;
+                // Return the modified $this if available, else the original.
+                if let Some(this) = mr.this_val {
+                    return Ok(Some(this));
+                }
+            }
+            Ok(Some(result))
+        }
 
         // --- phprs: previously-listed string helpers (now implemented) ---
         "str_repeat" => {

@@ -1,6 +1,6 @@
 # Test Guide for Stream, Regex, PDO, and Example Demos
 
-How to run phprs example scripts and what CI enforces.
+How to run phprs example scripts and what the test suite enforces.
 
 ## Quick start (CI-equivalent)
 
@@ -34,7 +34,7 @@ cd examples && chmod +x run-all-tests.sh && ./run-all-tests.sh
 ### regex-examples.php
 - 15 practical `preg_*` scenarios
 - Uses **Rust `regex` + `fancy-regex`** — look-around supported; not full PCRE
-- No `foreach ($arr as $key => $value)` — use value-only foreach or separate variables
+- `foreach ($arr as $key => $value)` is supported by the engine
 
 ### http-stream-examples.php
 - Documents HTTP/HTTPS `file_get_contents` patterns

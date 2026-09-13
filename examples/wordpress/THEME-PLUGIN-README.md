@@ -1,6 +1,6 @@
 # WordPress Theme and Plugin Support in phprs
 
-> **Status:** Demo stubs only — not production WordPress. The `array()` constructor is supported by the compiler; bootstrap still fails on later includes (e.g. `plugin.php` uses assignment patterns the compiler does not support yet). See [README.md](README.md).
+> **Status:** Demo stubs only — not production WordPress. The bootstrap (`index.php` → `wp-settings.php` → plugins/theme hooks) runs successfully and is covered by `example_wordpress_index_runs` in `tests/examples_runtime.rs`. See [README.md](README.md).
 
 This directory demonstrates a **WordPress-style** theme and plugin stub system for phprs (not production WordPress).
 
@@ -131,16 +131,13 @@ function example_theme_scripts() {
 
 ## Test Script Output
 
-The `test-theme-plugin.php` script validates:
+`test-theme-plugin.php` runs under phprs, but it is **stale relative to the bootstrap demo** and currently reports a mix of pass/fail (as of 2026-09-12):
 
-1. ✓ Plugin loading and `plugins_loaded` action
-2. ✓ Theme loading and `after_setup_theme` action
-3. ✓ Custom action hooks execution
-4. ✓ Filter hooks with value modification
-5. ✓ Theme support features
-6. ✓ Session handling (set/get/delete)
-7. ✓ Database options API
-8. ✓ wpdb initialization
+- ✅ Options API (`get_option`/`update_option`) and wpdb initialization
+- ❌ `wp_session_*` helpers report "undefined function" — `wp-includes/session.php` exists but is not loaded by `wp-settings.php`
+- ❌ Plugin/action/filter and theme-support checks report "No" in this script, even though the same hooks fire correctly via `index.php` (covered by `example_wordpress_index_runs`)
+
+Treat this script as a manual scratch demo, not a pass/fail gate.
 
 ## Hooks System Implementation
 
@@ -167,7 +164,7 @@ For WordPress compatibility, the following built-in functions were added to phpr
 - `isset()`, `empty()`, `unset()` - Variable handling
 - `htmlspecialchars()`, `htmlentities()` - HTML escaping
 - `esc_html()`, `esc_attr()`, `esc_url()` - WordPress escaping
-- `preg_match()`, `preg_replace()` - Regex (stubs)
+- `preg_match()`, `preg_replace()` - Regex (Rust `regex` + `fancy-regex`; not full PCRE)
 - `shortcode_atts()` - Shortcode attribute merging
 - `array_merge()` - Array merging
 - `ucfirst()` - String capitalization
@@ -188,16 +185,14 @@ wp_session_destroy();
 
 ## Known Limitations
 
-1. **Constant Concatenation**: Direct constant concatenation (e.g., `ABSPATH . 'file.php'`) has issues. Use `constant()` function or variables as workaround.
-2. **Regex**: `preg_match()` and `preg_replace()` are stubs and don't perform actual regex operations.
-3. **Database**: wpdb uses in-memory storage, not a real database connection.
-4. **Sessions**: Session data is not persisted between script executions.
-5. **AJAX**: AJAX handlers are stubs and don't process actual HTTP requests.
+1. **Regex**: Real `preg_*` support via Rust `regex` + `fancy-regex`, but not full PCRE (no backreferences).
+2. **Database**: wpdb uses in-memory storage, not a real database connection.
+3. **Sessions**: `wp_session_*` demo helpers keep data in-memory per script run; the engine-level `session_*` builtins (JSON file storage) are a separate feature.
+4. **AJAX**: AJAX handlers are stubs and don't process actual HTTP requests.
 
 ## Future Enhancements
 
-- Real regex support with `preg_*` functions
-- Persistent session storage
+- Persistent `wp_session_*` storage for the demo tree
 - Database connection to MySQL/PostgreSQL
 - HTTP request handling for AJAX
 - Template rendering engine
@@ -207,12 +202,13 @@ wp_session_destroy();
 
 ## Testing
 
-Run the comprehensive test suite:
+Run the manual demo:
+
 ```bash
 cargo run -p phprs-cli -- run examples/wordpress/test-theme-plugin.php
 ```
 
-Expected output shows all tests passing with "Yes" confirmations for each feature.
+See "Test Script Output" above for the current (partially failing) status. The automated WordPress coverage is `example_wordpress_index_runs` in `tests/examples_runtime.rs`.
 
 ## Contributing
 

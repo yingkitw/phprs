@@ -1,6 +1,6 @@
 # phprs Examples
 
-Curated demos for language features, standard-library subsets, and minimal framework bootstraps. **23** root-level PHP scripts plus **9** Rust library examples.
+Curated demos for language features, standard-library subsets, and minimal framework bootstraps. **24** root-level PHP scripts plus **9** Rust library examples.
 
 ## Quick start
 
@@ -16,7 +16,7 @@ Or the release binary:
 
 ## Automated coverage
 
-CI runs:
+The test suite runs:
 
 - **`cargo test --test examples_runtime`** — every `examples/*.php` at this directory’s root (not recursive) must compile and exit `PhpResult::Success`
 - **`cargo test --test build_rust_examples`** — all `examples/rust/*.rs` examples build
@@ -46,10 +46,10 @@ cargo run --example performance_demo
 | `basic_types.php` | Scalars and null |
 | `variables.php` | Variables and `isset` / type checks |
 | `operators.php` | Arithmetic, concat, builtins |
-| `control_flow.php` | if/else, switch, for, while, foreach (value-only) |
+| `control_flow.php` | if/else, switch, for, while, foreach (key ⇒ value supported) |
 | `string_operations.php` | Concat, `strlen`, comparison |
 | `array_operations.php` | Arrays and foreach |
-| `functions.php` | Function syntax (UDF execution still limited in CLI) |
+| `functions.php` | Functions: defaults, recursion, closures, arrow fns |
 | `classes.php` | Classes and methods (partial parity) |
 | `error_handling.php` | Error handlers |
 | `filesystem.php` | File/dir helpers |
@@ -57,6 +57,7 @@ cargo run --example performance_demo
 | `attributes.php` | Attributes (partial) |
 | `generators.php` | `yield` (partial) |
 | `mbstring.php` | `mb_*` subset |
+| `interpolation.php` | String interpolation: `"$var"`, `"$arr[key]"`, `"{$arr['key']}"`, `"{$obj->prop}"` |
 | `regex-examples.php` | `preg_*` demos (look-around via fancy-regex) |
 | `http-stream-examples.php` | HTTP stream patterns |
 | `session-examples.php` | `session_start()` + `$_SESSION` patterns |
@@ -70,8 +71,8 @@ cargo run --example performance_demo
 
 | Entry | Test |
 |-------|------|
-| `wordpress/index.php` | Manual — nested stubs still need compiler-compatible rewrites (`plugin.php`, etc.) |
-| `wordpress/test-theme-plugin.php` | Manual — same constraints |
+| `wordpress/index.php` | `example_wordpress_index_runs` |
+| `wordpress/test-theme-plugin.php` | Manual — run via `cargo run -p phprs-cli` |
 | `codeigniter/public/index.php` | `example_codeigniter_public_index_runs` |
 | `drupal/index.php` | `example_drupal_index_runs` |
 

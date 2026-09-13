@@ -78,12 +78,20 @@ fn cmd_run(filename: &str) -> anyhow::Result<()> {
     let _ = php_output_start();
     let mut ed = ExecuteData::new();
     ed.function_table = Some(Arc::new(function_table));
-    let _result = execute_ex(&mut ed, &op_array);
+    let result = execute_ex(&mut ed, &op_array);
     let output = php_output_end().unwrap_or_default();
 
     print!("{}", output);
     if let Some(code) = ed.exit_requested {
         std::process::exit(code as i32);
+    }
+    if result == phprs::engine::types::PhpResult::Failure
+        && let Some(thrown) = ed.pending_exception.take()
+    {
+        let (class, message) =
+            phprs::engine::vm::exception_dispatch::thrown_class_and_message(&thrown);
+        eprintln!("PHP Fatal error:  Uncaught {}: {}", class, message);
+        std::process::exit(255);
     }
     Ok(())
 }

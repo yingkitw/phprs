@@ -60,8 +60,7 @@ pub fn read_number(input: &[u8], position: &mut usize) -> ReadResult {
                 break;
             }
         }
-        let text = String::from_utf8_lossy(&input[start..*position])
-            .replace('_', "");
+        let text = String::from_utf8_lossy(&input[start..*position]).replace('_', "");
         let value =
             i64::from_str_radix(&text, 8).map_err(|e| format!("Invalid octal literal: {e}"))?;
         return Ok((TokenType::T_LNUMBER, value.to_string()));

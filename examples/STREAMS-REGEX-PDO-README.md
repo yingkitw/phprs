@@ -204,7 +204,7 @@ The checklist script and examples validate:
 4. ✓ Pattern splitting
 5. ✓ Multiple match finding
 6. ✓ HTTP stream wrapper
-7. ✓ Simulated `$_SESSION` array usage (not `session_start()`)
+7. ✓ `session_start()` with the `$_SESSION` superglobal (engine builtins)
 8. ✓ Session-style variable storage in demos
 9. ✓ PDO connection
 10. ✓ Query execution
@@ -234,8 +234,8 @@ The checklist script and examples validate:
 
 ### Sessions
 
-- **Engine**: No PHP session extension module in `src/` yet
-- **Demos**: `examples/session-examples.php` uses a plain `$_SESSION` array
+- **Engine builtins**: `session_start`, `session_destroy`, `session_id`, `session_name` in `src/php/session/`
+- **Storage**: JSON files under a configured save path; `PHPSESSID` cookie in `phprs serve`
 - **WordPress demo**: wp_session_* / session_* stubs only under `examples/wordpress/`
 
 ### PDO
@@ -271,11 +271,10 @@ src/engine/vm/
 - Async I/O with Tokio for efficiency
 - Connection pooling via reqwest
 - Automatic decompression (gzip, deflate)
-
 ### Sessions
-- In-memory storage is O(1) for lookups
-- File-based storage uses serialization
-- Lazy loading of session data
+
+- Session data is loaded from JSON files when `session_start()` is called
+- Writes persist to the save path; lookups are keyed by session id
 
 ### PDO
 - Prepared statement caching
@@ -286,18 +285,18 @@ src/engine/vm/
 
 ### Current Implementation
 
-1. **Regex**: Look-around supported via `fancy-regex`; not full PCRE
+1. **Regex**: Look-around supported via `fancy-regex`; not full PCRE (no backreferences)
 2. **HTTP**: Primarily GET via `file_get_contents()` for remote URLs
-3. **Sessions**: No `session_*` builtins; no production session storage
+3. **Sessions**: Core builtins only — no `session_set_save_handler`, `session_status`, or `session_regenerate_id`
 4. **PDO**: Stub implementation, no real database connections
-5. **Compiler**: Some PHP syntax still missing (`array()`, `foreach ($k => $v)`, `$a[] =`, etc.) — see example scripts for supported patterns
+5. **Interpolation**: `"$var"`, `"$arr[key]"`, `"$obj->prop"`, and `"{$expr}"` work; an escaped `\$` inside `"..."` still interpolates, and single-quoted strings interpolate too (the lexer does not track quote type)
 
 ### Future Enhancements
 
 - [ ] Full PCRE compatibility with all features
 - [ ] POST/PUT/DELETE HTTP methods
 - [ ] Stream contexts for custom headers
-- [ ] FTP stream wrapper implementation
+- [ ] Real FTP stream wrapper implementation (a stub exists)
 - [ ] Real MySQL/PostgreSQL/SQLite drivers
 - [ ] Connection pooling for PDO
 - [ ] Distributed session storage (Redis, Memcached)
@@ -337,7 +336,7 @@ All functions follow PHP error semantics:
 
 ### Sessions
 - Secure session ID generation
-- Session fixation protection via regenerate_id()
+- Session fixation protection via `session_regenerate_id()` (planned — not implemented yet)
 - HttpOnly and Secure flags support (planned)
 
 ### PDO

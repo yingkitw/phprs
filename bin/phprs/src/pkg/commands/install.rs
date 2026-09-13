@@ -122,7 +122,7 @@ impl Install {
             .await?;
 
         // Copy to vendor directory
-        let target_dir = vendor_dir.join(package_name.replace('/', "/"));
+        let target_dir = vendor_dir.join(package_name);
         if !target_dir.exists() {
             // For zip files, the extracted content is usually in a subdirectory
             // We need to find it and copy to vendor
@@ -193,7 +193,7 @@ impl Install {
                         .into_iter()
                         .map(|p| {
                             vendor_dir
-                                .join(package.name.replace('/', "/"))
+                                .join(&package.name)
                                 .join(p)
                                 .to_string_lossy()
                                 .to_string()

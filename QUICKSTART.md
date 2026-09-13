@@ -52,9 +52,9 @@ cargo test --test examples_runtime examples_root_php_scripts_all_run
 Framework demos:
 
 ```bash
-phprs run examples/codeigniter/public/index.php   # tested in CI
-phprs run examples/drupal/index.php               # tested in CI
-phprs run examples/wordpress/index.php            # may fail on wp-db array() syntax
+phprs run examples/wordpress/index.php            # covered by example_wordpress_index_runs
+phprs run examples/codeigniter/public/index.php   # covered by example_codeigniter_public_index_runs
+phprs run examples/drupal/index.php               # covered by example_drupal_index_runs
 ```
 
 ## Expectations

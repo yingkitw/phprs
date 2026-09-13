@@ -497,6 +497,7 @@ pub fn compile_try_catch(lexer: &mut Lexer, context: &mut CompileContext) -> Res
     }
 
     // Check for finally block
+    let mut finally_begin_index: Option<usize> = None;
     if next_token.token_type == TokenType::T_FINALLY {
         let finally_brace = lexer.next_token()?;
         if finally_brace.token_type != TokenType::T_STRING
@@ -509,6 +510,7 @@ pub fn compile_try_catch(lexer: &mut Lexer, context: &mut CompileContext) -> Res
         let fin_z1 = zero_val();
         let fin_z2 = zero_val();
         let fin_r = zero_val();
+        finally_begin_index = Some(context.current_op_index());
         context.emit_opcode(Opcode::FinallyBegin, fin_z1, fin_z2, fin_r);
 
         // Parse finally body
@@ -524,11 +526,16 @@ pub fn compile_try_catch(lexer: &mut Lexer, context: &mut CompileContext) -> Res
         next_token = lexer.next_token()?;
     }
 
-    // Update the skip jump to point past all catch/finally blocks
+    // Update the skip jump to point past all catch/finally blocks.
+    // If there's a finally, route the try-body exit and catch-body exits
+    // through the finally block (PHP semantics: finally always runs).
     let skip_target = context.current_op_index() as u32;
-    context.update_jump_target(skip_jmp_index, skip_target);
+    let exit_target = finally_begin_index
+        .map(|i| i as u32)
+        .unwrap_or(skip_target);
+    context.update_jump_target(skip_jmp_index, exit_target);
     for &cj in &pending_catch_jmps {
-        context.update_jump_target(cj, skip_target);
+        context.update_jump_target(cj, exit_target);
     }
 
     // Update TryCatchBegin extended_value to point to first catch block

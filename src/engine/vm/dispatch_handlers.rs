@@ -12,7 +12,7 @@ use super::opcodes::{Op, OpArray, Opcode};
 use crate::engine::hash::hash_find;
 use crate::engine::jit::{increment_execution_counter, try_inline_operation};
 use crate::engine::string::string_init;
-use crate::engine::types::{PhpType, PhpValue, Val};
+use crate::engine::types::{PhpArray, PhpType, PhpValue, Val};
 
 /// Call __toString magic method on an object if it exists
 #[inline]
@@ -47,11 +47,13 @@ fn call_magic_tostring(
 
         let mut method_op_array = OpArray::new(format!("{}::__toString", obj.class_name));
         method_op_array.ops = ops;
+        let saved_try_depth = execute_data.try_stack.len();
         let (_status, return_val) =
             super::execute::execute_ex_returning(execute_data, &method_op_array);
         execute_data.op_array = saved_op_array;
         execute_data.current_op = saved_current_op;
         execute_data.called_class = saved_called_class;
+        execute_data.try_stack.truncate(saved_try_depth);
 
         if let Some(ret) = return_val {
             return Some(crate::engine::operators::zval_get_string(&ret));
@@ -171,11 +173,18 @@ pub fn execute_concat(op: &Op, execute_data: &mut ExecuteData) -> Result<ExecRes
     } else {
         crate::engine::operators::zval_get_string(&op1)
     };
+    if execute_data.pending_exception.is_some() {
+        // __toString threw: unwind the frame (propagation handled by callers).
+        return Ok(ExecResult::Return(op1.clone()));
+    }
     let s2 = if let Some(tostr) = call_magic_tostring(&op2, execute_data) {
         tostr
     } else {
         crate::engine::operators::zval_get_string(&op2)
     };
+    if execute_data.pending_exception.is_some() {
+        return Ok(ExecResult::Return(op1.clone()));
+    }
     let s1_len = s1.val.len();
     let s2_len = s2.val.len();
     let mut combined = String::with_capacity(s1_len + s2_len);
@@ -272,7 +281,9 @@ pub fn execute_bw_not(op: &Op, execute_data: &mut ExecuteData) -> Result<ExecRes
 
 #[inline]
 pub fn execute_sl(op: &Op, execute_data: &mut ExecuteData) -> Result<ExecResult, String> {
-    shift(op, execute_data, |a, s| a.checked_shl(s as u32).unwrap_or(0))
+    shift(op, execute_data, |a, s| {
+        a.checked_shl(s as u32).unwrap_or(0)
+    })
 }
 
 #[inline]
@@ -391,11 +402,7 @@ pub fn execute_assign(op: &Op, execute_data: &mut ExecuteData) -> Result<ExecRes
     let val = resolve_operand(&op.op2, execute_data);
     if let PhpValue::String(var_name) = &op.op1.value {
         let name = var_name.as_str();
-        let clean = if name.starts_with('$') {
-            &name[1..]
-        } else {
-            name
-        };
+        let clean = name.strip_prefix('$').unwrap_or(name);
         execute_data.set_var(clean, clone_val(&val));
     }
     if let Some(slot) = result_slot(op) {
@@ -421,11 +428,7 @@ pub fn execute_assign_dim(op: &Op, execute_data: &mut ExecuteData) -> Result<Exe
             }
         } else if let PhpValue::String(var_s) = &op1.value {
             let name = var_s.as_str();
-            let clean = if name.starts_with('$') {
-                &name[1..]
-            } else {
-                name
-            };
+            let clean = name.strip_prefix('$').unwrap_or(name);
             execute_data.set_var(clean, container);
         }
     };
@@ -434,11 +437,7 @@ pub fn execute_assign_dim(op: &Op, execute_data: &mut ExecuteData) -> Result<Exe
         resolve_operand(&op.op1, execute_data)
     } else if let PhpValue::String(var_s) = &op.op1.value {
         let name = var_s.as_str();
-        let clean = if name.starts_with('$') {
-            &name[1..]
-        } else {
-            name
-        };
+        let clean = name.strip_prefix('$').unwrap_or(name);
         execute_data.get_var(clean)
     } else {
         return Ok(ExecResult::Continue);
@@ -458,8 +457,13 @@ pub fn execute_assign_dim(op: &Op, execute_data: &mut ExecuteData) -> Result<Exe
                     let _ = crate::engine::hash::hash_add_or_update(arr, None, *i as u64, val, 0);
                 }
                 PhpValue::Double(d) if d.fract() == 0.0 => {
-                    let _ =
-                        crate::engine::hash::hash_add_or_update(arr, None, *d as i64 as u64, val, 0);
+                    let _ = crate::engine::hash::hash_add_or_update(
+                        arr,
+                        None,
+                        *d as i64 as u64,
+                        val,
+                        0,
+                    );
                 }
                 PhpValue::String(ks) => {
                     let key_zs = Box::new(crate::engine::string::string_init(ks.as_str(), false));
@@ -476,11 +480,16 @@ pub fn execute_assign_dim(op: &Op, execute_data: &mut ExecuteData) -> Result<Exe
 #[inline]
 pub fn execute_echo(op: &Op, execute_data: &mut ExecuteData) -> Result<ExecResult, String> {
     let val = resolve_operand(&op.op1, execute_data);
+    let had_pending_before = execute_data.pending_exception.is_some();
     let s = if let Some(tostr) = call_magic_tostring(&val, execute_data) {
         tostr
     } else {
         crate::engine::operators::zval_get_string(&val)
     };
+    if !had_pending_before && execute_data.pending_exception.is_some() {
+        // __toString threw: unwind the frame (propagation handled by callers).
+        return Ok(ExecResult::Return(val));
+    }
     let _ = crate::php::output::php_output_write(s.as_bytes());
     Ok(ExecResult::Continue)
 }
@@ -633,6 +642,7 @@ fn fcc_invoke_static_method(
         &arg_by_ref,
     );
 
+    let saved_try_depth = execute_data.try_stack.len();
     let mut method_op_array = OpArray::with_capacity(ops.len(), oparray_filename);
     method_op_array.ops = ops;
     let (_status, return_val) =
@@ -642,6 +652,10 @@ fn fcc_invoke_static_method(
     execute_data.current_op = saved_current_op;
     execute_data.current_script_dir = saved_script_dir;
     execute_data.called_class = saved_called_class;
+    // An uncaught throw in the callable's frame: drop its try frames and
+    // leave the exception pending — DoFCall re-dispatches it against this
+    // frame via propagate_after_call.
+    execute_data.try_stack.truncate(saved_try_depth);
 
     Ok(return_val.or_else(|| Some(Val::new(PhpValue::Long(0), PhpType::Null))))
 }
@@ -717,6 +731,7 @@ fn fcc_invoke_instance_method(
         &arg_by_ref,
     );
 
+    let saved_try_depth = execute_data.try_stack.len();
     let mut method_op_array = OpArray::with_capacity(ops.len(), oparray_filename);
     method_op_array.ops = ops;
     let (_status, return_val) =
@@ -726,6 +741,10 @@ fn fcc_invoke_instance_method(
     execute_data.current_op = saved_current_op;
     execute_data.current_script_dir = saved_script_dir;
     execute_data.called_class = saved_called_class;
+    // An uncaught throw in the callable's frame: drop its try frames and
+    // leave the exception pending — DoFCall re-dispatches it against this
+    // frame via propagate_after_call.
+    execute_data.try_stack.truncate(saved_try_depth);
 
     Ok(return_val.or_else(|| Some(Val::new(PhpValue::Long(0), PhpType::Null))))
 }
@@ -737,6 +756,7 @@ pub fn execute_do_fcall(op: &Op, execute_data: &mut ExecuteData) -> Result<ExecR
     } else {
         clone_val(&op.op1)
     };
+    let fcall_try_depth = execute_data.try_stack.len();
 
     // Magic method: __invoke for callable objects
     if let PhpValue::Object(ref obj) = resolved_op1.value
@@ -776,12 +796,19 @@ pub fn execute_do_fcall(op: &Op, execute_data: &mut ExecuteData) -> Result<ExecR
 
         let mut method_op_array = OpArray::new(format!("{}::__invoke", obj.class_name));
         method_op_array.ops = ops;
+        let saved_try_depth = execute_data.try_stack.len();
         let (_status, return_val) =
             super::execute::execute_ex_returning(execute_data, &method_op_array);
         execute_data.op_array = saved_op_array;
         execute_data.current_op = saved_current_op;
         execute_data.current_script_dir = saved_script_dir;
         execute_data.called_class = saved_called_class;
+        if let Some(er) = crate::engine::vm::exception_dispatch::propagate_after_call(
+            execute_data,
+            saved_try_depth,
+        ) {
+            return Ok(er);
+        }
 
         if let Some(slot) = result_slot(op) {
             if let Some(ret) = return_val {
@@ -805,6 +832,13 @@ pub fn execute_do_fcall(op: &Op, execute_data: &mut ExecuteData) -> Result<ExecR
         arg_by_ref.clone(),
         execute_data,
     )? {
+        // A first-class callable (method string, closure, …) may have thrown.
+        if let Some(er) = crate::engine::vm::exception_dispatch::propagate_after_call(
+            execute_data,
+            fcall_try_depth,
+        ) {
+            return Ok(er);
+        }
         if let Some(slot) = result_slot(op) {
             execute_data.set_temp(slot, result);
         }
@@ -817,7 +851,17 @@ pub fn execute_do_fcall(op: &Op, execute_data: &mut ExecuteData) -> Result<ExecR
 
     increment_execution_counter(&func_name);
 
-    match execute_builtin_function(&func_name, &args, execute_data)? {
+    // Builtins may re-enter the VM for user callbacks (call_user_func,
+    // array_map, …). If such a callback threw uncaught, re-dispatch the
+    // pending exception against this frame.
+    let builtin_try_depth = execute_data.try_stack.len();
+    let fcall_result = execute_builtin_function(&func_name, &args, execute_data);
+    if let Some(er) =
+        crate::engine::vm::exception_dispatch::propagate_after_call(execute_data, builtin_try_depth)
+    {
+        return Ok(er);
+    }
+    match fcall_result? {
         Some(result) => {
             if let Some(slot) = result_slot(op) {
                 execute_data.set_temp(slot, result);
@@ -851,11 +895,7 @@ pub fn execute_do_fcall(op: &Op, execute_data: &mut ExecuteData) -> Result<ExecR
                             .map(|v| {
                                 if let PhpValue::String(ref s) = v.value {
                                     let name = s.as_str();
-                                    if name.starts_with('$') {
-                                        name[1..].to_string()
-                                    } else {
-                                        name.to_string()
-                                    }
+                                    name.strip_prefix('$').unwrap_or(name).to_string()
                                 } else {
                                     String::new()
                                 }
@@ -923,6 +963,7 @@ pub fn execute_do_fcall(op: &Op, execute_data: &mut ExecuteData) -> Result<ExecR
                 let saved_script_dir = execute_data.current_script_dir.clone();
                 let saved_magic_dir = execute_data.constants.get("__DIR__").map(clone_val);
                 let saved_magic_file = execute_data.constants.get("__FILE__").map(clone_val);
+                let saved_try_depth = execute_data.try_stack.len();
                 // Execute the function and capture return value
                 let (_status, return_val) =
                     super::execute::execute_ex_returning(execute_data, &func_op_array);
@@ -959,6 +1000,14 @@ pub fn execute_do_fcall(op: &Op, execute_data: &mut ExecuteData) -> Result<ExecR
                     None => {
                         execute_data.constants.remove("__FILE__");
                     }
+                }
+
+                // A throw in the callee with no local catch lands here.
+                if let Some(er) = crate::engine::vm::exception_dispatch::propagate_after_call(
+                    execute_data,
+                    saved_try_depth,
+                ) {
+                    return Ok(er);
                 }
 
                 // Store return value in result temp slot
@@ -1041,7 +1090,13 @@ pub fn execute_try_catch_begin(
     execute_data: &mut ExecuteData,
 ) -> Result<ExecResult, String> {
     let _ = op;
-    execute_data.try_stack.push(execute_data.current_op);
+    let filename = execute_data
+        .op_array
+        .as_ref()
+        .and_then(|o| o.filename.clone());
+    execute_data
+        .try_stack
+        .push((execute_data.current_op, filename));
     Ok(ExecResult::Continue)
 }
 
@@ -1051,7 +1106,9 @@ pub fn execute_try_catch_end(
     execute_data: &mut ExecuteData,
 ) -> Result<ExecResult, String> {
     // Normal exit from the try body: drop the matching frame if it is on top.
-    if execute_data.try_stack.last() == Some(&execute_data.current_op) {
+    if let Some((idx, _)) = execute_data.try_stack.last()
+        && *idx == execute_data.current_op
+    {
         execute_data.try_stack.pop();
     }
     Ok(ExecResult::Continue)
@@ -1060,7 +1117,8 @@ pub fn execute_try_catch_end(
 #[inline]
 pub fn execute_throw(op: &Op, execute_data: &mut ExecuteData) -> Result<ExecResult, String> {
     let thrown = resolve_operand(&op.op1, execute_data);
-    let (class, message) = crate::engine::vm::exception_dispatch::thrown_class_and_message(&thrown);
+    let (class, _message) =
+        crate::engine::vm::exception_dispatch::thrown_class_and_message(&thrown);
     execute_data.pending_exception = Some(clone_val(&thrown));
 
     match crate::engine::vm::exception_dispatch::dispatch_exception(execute_data, &class) {
@@ -1069,12 +1127,43 @@ pub fn execute_throw(op: &Op, execute_data: &mut ExecuteData) -> Result<ExecResu
             execute_data.set_var(&var, thrown);
             Ok(ExecResult::Jump(body_start))
         }
-        crate::engine::vm::exception_dispatch::ExceptionOutcome::Uncaught => {
-            // Print a PHP-style fatal and stop the script.
-            eprintln!("PHP Fatal error:  Uncaught {}: {}", class, message);
-            execute_data.pending_exception = None;
-            Err(format!("Uncaught {}: {}", class, message))
+        crate::engine::vm::exception_dispatch::ExceptionOutcome::FinallyRun { body_start } => {
+            // Jump to the finally body; exception stays pending for
+            // re-dispatch at FinallyEnd.
+            Ok(ExecResult::Jump(body_start))
         }
+        crate::engine::vm::exception_dispatch::ExceptionOutcome::Uncaught => {
+            // No enclosing catch in this frame: pending_exception is left set
+            // and the frame unwinds. The caller's propagate_after_call (or the
+            // top-level runner) catches or reports the fatal error.
+            Ok(ExecResult::Return(thrown))
+        }
+    }
+}
+
+#[inline]
+pub fn execute_finally_end(_op: &Op, execute_data: &mut ExecuteData) -> Result<ExecResult, String> {
+    // On the normal path (no pending exception), finally just falls through.
+    // During exception unwinding, re-dispatch the pending exception to either
+    // find an outer catch, an outer finally, or unwind the frame.
+    if let Some(thrown) = execute_data.pending_exception.take() {
+        let (class, _) = crate::engine::vm::exception_dispatch::thrown_class_and_message(&thrown);
+        match crate::engine::vm::exception_dispatch::dispatch_exception(execute_data, &class) {
+            crate::engine::vm::exception_dispatch::ExceptionOutcome::Caught { body_start, var } => {
+                execute_data.set_var(&var, thrown);
+                Ok(ExecResult::Jump(body_start))
+            }
+            crate::engine::vm::exception_dispatch::ExceptionOutcome::FinallyRun { body_start } => {
+                execute_data.pending_exception = Some(thrown);
+                Ok(ExecResult::Jump(body_start))
+            }
+            crate::engine::vm::exception_dispatch::ExceptionOutcome::Uncaught => {
+                execute_data.pending_exception = Some(clone_val(&thrown));
+                Ok(ExecResult::Return(thrown))
+            }
+        }
+    } else {
+        Ok(ExecResult::Continue)
     }
 }
 
@@ -1083,9 +1172,9 @@ pub fn execute_catch_marker(
     _op: &Op,
     _execute_data: &mut ExecuteData,
 ) -> Result<ExecResult, String> {
-    // CatchBegin / CatchEnd / FinallyBegin / FinallyEnd are structural markers
-    // that are no-ops during normal linear execution. Catch dispatch happens in
-    // the Throw handler; finally currently runs only on the normal path.
+    // CatchBegin / CatchEnd / FinallyBegin are structural markers that are
+    // no-ops during normal linear execution. Catch dispatch happens in the
+    // Throw handler; finally runs on both normal and exception paths.
     Ok(ExecResult::Continue)
 }
 
@@ -1128,6 +1217,7 @@ pub fn execute_include(op: &Op, execute_data: &mut ExecuteData) -> Result<ExecRe
             let saved_script_dir = execute_data.current_script_dir.clone();
             let saved_magic_dir = execute_data.constants.get("__DIR__").map(clone_val);
             let saved_magic_file = execute_data.constants.get("__FILE__").map(clone_val);
+            let saved_try_depth = execute_data.try_stack.len();
             let result = super::execute::execute_ex(execute_data, &included_op_array);
             execute_data.op_array = saved_op_array;
             execute_data.current_op = saved_current_op;
@@ -1147,6 +1237,13 @@ pub fn execute_include(op: &Op, execute_data: &mut ExecuteData) -> Result<ExecRe
                 None => {
                     execute_data.constants.remove("__FILE__");
                 }
+            }
+            // A throw inside the included file with no local catch lands here.
+            if let Some(er) = crate::engine::vm::exception_dispatch::propagate_after_call(
+                execute_data,
+                saved_try_depth,
+            ) {
+                return Ok(er);
             }
             if result == crate::engine::types::PhpResult::Failure {
                 return Err(format!("Failed to execute included file: {}", resolved));
@@ -1359,39 +1456,129 @@ pub fn execute_new_obj(op: &Op, execute_data: &mut ExecuteData) -> Result<ExecRe
                 .insert(prop_name.clone(), clone_val(prop_val));
         }
     }
-    // Built-in Throwable constructors: new Exception("msg", $code) stores
-    // message/code/file/line so $e->getMessage()/getCode() work. Constructor
-    // args are stashed on the call stack (SendVal before NewObj result is set).
-    if crate::engine::vm::exception_dispatch::is_standard_throwable(cn) {
-        let msg = execute_data
-            .call_args
-            .first()
-            .map(|v| {
-                crate::engine::operators::zval_get_string(v)
-                    .as_str()
-                    .to_string()
-            })
-            .unwrap_or_default();
-        let code = execute_data
-            .call_args
-            .get(1)
-            .map(crate::engine::operators::zval_get_long)
+    // Built-in DateTime: initialize with current timestamp (constructor
+    // args are applied later in execute_do_method_call for __construct).
+    if cn == "DateTime" || cn == "DateTimeImmutable" {
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs() as i64)
             .unwrap_or(0);
         obj.properties.insert(
-            "message".to_string(),
+            "timestamp".to_string(),
+            Val::new(PhpValue::Long(now), PhpType::Long),
+        );
+        obj.properties.insert(
+            "timezone_offset".to_string(),
+            Val::new(PhpValue::Long(0), PhpType::Long),
+        );
+        obj.properties.insert(
+            "timezone_name".to_string(),
             Val::new(
-                PhpValue::String(Box::new(crate::engine::string::string_init(&msg, false))),
+                PhpValue::String(Box::new(crate::engine::string::string_init("UTC", false))),
                 PhpType::String,
             ),
         );
-        obj.properties.insert(
-            "code".to_string(),
-            Val::new(PhpValue::Long(code), PhpType::Long),
-        );
-        if let Some(file) = execute_data.constants.get("__FILE__") {
-            obj.properties.insert("file".to_string(), clone_val(file));
-        }
     }
+    // Built-in DateTimeZone: store the timezone name. Constructor arg applied
+    // in execute_do_method_call for __construct.
+    if cn == "DateTimeZone" {
+        obj.properties.insert(
+            "name".to_string(),
+            Val::new(
+                PhpValue::String(Box::new(crate::engine::string::string_init("UTC", false))),
+                PhpType::String,
+            ),
+        );
+    }
+    // Built-in ArrayIterator: initialize with an empty array and index 0.
+    // The constructor argument (if any) is applied in execute_do_method_call.
+    if cn == "ArrayIterator" {
+        obj.properties.insert(
+            "__storage".to_string(),
+            Val::new(PhpValue::Array(Box::new(PhpArray::new())), PhpType::Array),
+        );
+        obj.properties.insert(
+            "__index".to_string(),
+            Val::new(PhpValue::Long(0), PhpType::Long),
+        );
+    }
+    // Built-in Fiber: initialize with state=pending(0), no frame, no return value.
+    // The constructor argument (callable) is applied in execute_do_method_call.
+    if cn == "Fiber" {
+        obj.properties.insert(
+            "__state".to_string(),
+            Val::new(PhpValue::Long(0), PhpType::Long), // 0=pending, 1=started, 2=suspended, 3=terminated
+        );
+        obj.properties.insert(
+            "__frame_index".to_string(),
+            Val::new(PhpValue::Long(-1), PhpType::Long),
+        );
+        obj.properties.insert(
+            "__return_value".to_string(),
+            Val::new(PhpValue::Long(0), PhpType::Null),
+        );
+        obj.properties.insert(
+            "__callable".to_string(),
+            Val::new(PhpValue::Long(0), PhpType::Null),
+        );
+    }
+    // Built-in SplStack/SplQueue: initialize with an empty array.
+    if cn == "SplStack" || cn == "SplQueue" {
+        obj.properties.insert(
+            "__storage".to_string(),
+            Val::new(PhpValue::Array(Box::new(PhpArray::new())), PhpType::Array),
+        );
+    }
+    // Built-in SplHeap/SplPriorityQueue: initialize with empty storage and index.
+    if cn == "SplHeap" || cn == "SplPriorityQueue" || cn == "SplMinHeap" || cn == "SplMaxHeap" {
+        obj.properties.insert(
+            "__storage".to_string(),
+            Val::new(PhpValue::Array(Box::new(PhpArray::new())), PhpType::Array),
+        );
+        obj.properties.insert(
+            "__index".to_string(),
+            Val::new(PhpValue::Long(0), PhpType::Long),
+        );
+    }
+    // Built-in DirectoryIterator: stores path, entries, and index.
+    if cn == "DirectoryIterator" {
+        obj.properties.insert(
+            "__path".to_string(),
+            Val::new(PhpValue::Long(0), PhpType::Null),
+        );
+        obj.properties.insert(
+            "__entries".to_string(),
+            Val::new(PhpValue::Array(Box::new(PhpArray::new())), PhpType::Array),
+        );
+        obj.properties.insert(
+            "__index".to_string(),
+            Val::new(PhpValue::Long(0), PhpType::Long),
+        );
+    }
+    // Built-in SplFileInfo/SplFileObject: stores path, content, and read position.
+    if cn == "SplFileInfo" || cn == "SplFileObject" {
+        obj.properties.insert(
+            "__path".to_string(),
+            Val::new(PhpValue::Long(0), PhpType::Null),
+        );
+        obj.properties.insert(
+            "__content".to_string(),
+            Val::new(PhpValue::Long(0), PhpType::Null),
+        );
+        obj.properties.insert(
+            "__pos".to_string(),
+            Val::new(PhpValue::Long(0), PhpType::Long),
+        );
+        obj.properties.insert(
+            "__mode".to_string(),
+            Val::new(PhpValue::Long(0), PhpType::Null),
+        );
+    }
+    // Built-in Throwable constructors (Exception, RuntimeException, …) store
+    // their `message`/`code`/`file` from the constructor call's args. Those
+    // args are not on `call_args` yet at NewObj time (SendVal runs after
+    // NewObj), so the actual write happens in `execute_do_method_call` for
+    // `__construct` when the class is a standard throwable.
 
     let obj_zval = Val::new(PhpValue::Object(Box::new(obj)), PhpType::Object);
     if let Some(slot) = result_slot(op) {
@@ -1474,6 +1661,7 @@ pub fn execute_fetch_obj_prop(
 
                 let mut method_op_array = OpArray::with_capacity(ops.len(), oparray_filename);
                 method_op_array.ops = ops;
+                let saved_try_depth = execute_data.try_stack.len();
                 let (_status, isset_result) =
                     super::execute::execute_ex_returning(execute_data, &method_op_array);
                 execute_data.op_array = saved_op_array;
@@ -1495,6 +1683,12 @@ pub fn execute_fetch_obj_prop(
                     None => {
                         execute_data.constants.remove("__FILE__");
                     }
+                }
+                if let Some(er) = crate::engine::vm::exception_dispatch::propagate_after_call(
+                    execute_data,
+                    saved_try_depth,
+                ) {
+                    return Ok(er);
                 }
 
                 let is_true = isset_result
@@ -1575,6 +1769,7 @@ pub fn execute_fetch_obj_prop(
 
                 let mut method_op_array = OpArray::with_capacity(ops.len(), oparray_filename);
                 method_op_array.ops = ops;
+                let saved_try_depth = execute_data.try_stack.len();
                 let (_status, return_val) =
                     super::execute::execute_ex_returning(execute_data, &method_op_array);
                 execute_data.op_array = saved_op_array;
@@ -1596,6 +1791,12 @@ pub fn execute_fetch_obj_prop(
                     None => {
                         execute_data.constants.remove("__FILE__");
                     }
+                }
+                if let Some(er) = crate::engine::vm::exception_dispatch::propagate_after_call(
+                    execute_data,
+                    saved_try_depth,
+                ) {
+                    return Ok(er);
                 }
 
                 return_val.unwrap_or_else(|| Val::new(PhpValue::Long(0), PhpType::Null))
@@ -1628,11 +1829,7 @@ pub fn execute_assign_obj_prop(
         let obj_val = if is_var_ref(var_name_val) {
             if let PhpValue::String(ref s) = var_name_val.value {
                 let vname = s.as_str();
-                let name = if vname.starts_with('$') {
-                    &vname[1..]
-                } else {
-                    vname
-                };
+                let name = vname.strip_prefix('$').unwrap_or(vname);
                 execute_data.get_var(name)
             } else {
                 Val::new(PhpValue::Long(0), PhpType::Null)
@@ -1701,11 +1898,7 @@ pub fn execute_assign_obj_prop(
             let obj_val = if is_var_ref(var_name_val) {
                 if let PhpValue::String(ref s) = var_name_val.value {
                     let vname = s.as_str();
-                    let name = if vname.starts_with('$') {
-                        &vname[1..]
-                    } else {
-                        vname
-                    };
+                    let name = vname.strip_prefix('$').unwrap_or(vname);
                     execute_data.get_var(name)
                 } else {
                     Val::new(PhpValue::Long(0), PhpType::Null)
@@ -1748,6 +1941,7 @@ pub fn execute_assign_obj_prop(
 
             let mut method_op_array = OpArray::with_capacity(ops.len(), oparray_filename);
             method_op_array.ops = ops;
+            let saved_try_depth = execute_data.try_stack.len();
             let (_status, _return_val) =
                 super::execute::execute_ex_returning(execute_data, &method_op_array);
             execute_data.op_array = saved_op_array;
@@ -1770,6 +1964,12 @@ pub fn execute_assign_obj_prop(
                     execute_data.constants.remove("__FILE__");
                 }
             }
+            if let Some(er) = crate::engine::vm::exception_dispatch::propagate_after_call(
+                execute_data,
+                saved_try_depth,
+            ) {
+                return Ok(er);
+            }
             return Ok(ExecResult::Continue);
         }
     }
@@ -1778,11 +1978,7 @@ pub fn execute_assign_obj_prop(
     if is_var_ref(var_name_val) {
         if let PhpValue::String(ref s) = var_name_val.value {
             let vname = s.as_str();
-            let name = if vname.starts_with('$') {
-                &vname[1..]
-            } else {
-                vname
-            };
+            let name = vname.strip_prefix('$').unwrap_or(vname);
             let mut obj_val = execute_data.get_var(name);
             if let PhpValue::Object(ref mut obj) = obj_val.value {
                 obj.properties.insert(prop_name.as_str().to_string(), value);
@@ -1817,11 +2013,7 @@ pub fn execute_assign_static_prop(
     let prop_name_val = resolve_operand(&op.op2, execute_data);
     let prop_name_raw = crate::engine::operators::zval_get_string(&prop_name_val);
     let prop_name_str = prop_name_raw.as_str();
-    let prop_name = if prop_name_str.starts_with('$') {
-        &prop_name_str[1..]
-    } else {
-        prop_name_str
-    };
+    let prop_name = prop_name_str.strip_prefix('$').unwrap_or(prop_name_str);
     let value = resolve_operand(&op.result, execute_data);
 
     if let Some(ce) = execute_data.class_table.get_mut(&class_name) {
@@ -1853,6 +2045,26 @@ pub fn execute_do_method_call(
 
     if let PhpValue::Object(ref obj) = obj_val.value {
         let class_name = obj.class_name.clone();
+
+        // Built-in Throwable getters: $e->getMessage(), getCode(), …
+        if crate::engine::vm::exception_dispatch::is_standard_throwable(&class_name)
+            && crate::engine::vm::exception_dispatch::execute_throwable_getter(
+                &class_name,
+                method_name.as_str(),
+                &obj_val,
+            )
+            .map(|getter_result| {
+                if let Some(slot) = result_slot(op) {
+                    execute_data.set_temp(slot, getter_result);
+                }
+                true
+            })
+            .unwrap_or(false)
+        {
+            let (base, _names_base) = execute_data.call_arg_stack.pop().unwrap_or((0, 0));
+            execute_data.call_args.drain(base..);
+            return Ok(ExecResult::Continue);
+        }
 
         // Handle built-in reflection classes
         if class_name == "ReflectionClass"
@@ -1909,11 +2121,7 @@ pub fn execute_do_method_call(
                 && let PhpValue::String(ref s) = op.op2.value
             {
                 let vname = s.as_str();
-                let name = if vname.starts_with('$') {
-                    &vname[1..]
-                } else {
-                    vname
-                };
+                let name = vname.strip_prefix('$').unwrap_or(vname);
                 execute_data.set_var(name, this_val);
             }
 
@@ -1925,6 +2133,1648 @@ pub fn execute_do_method_call(
                 }
             }
             return Ok(ExecResult::Continue);
+        }
+
+        // Built-in DateTime methods: format(), __construct()
+        if class_name == "DateTime" || class_name == "DateTimeImmutable" {
+            let (base, _names_base) = execute_data.call_arg_stack.pop().unwrap_or((0, 0));
+            let args: Vec<Val> = execute_data.call_args.drain(base..).collect();
+            let mn = method_name.as_str();
+            if mn == "__construct" {
+                // DateTime constructor: parse time string, store timestamp
+                let time_str = args
+                    .first()
+                    .map(crate::engine::operators::zval_get_string)
+                    .unwrap_or_else(|| crate::engine::string::string_init("now", false));
+                let ts = crate::php::datetime::parse_datetime_string(time_str.as_str())
+                    .unwrap_or_else(|| {
+                        std::time::SystemTime::now()
+                            .duration_since(std::time::UNIX_EPOCH)
+                            .map(|d| d.as_secs() as i64)
+                            .unwrap_or(0)
+                    });
+                // Second argument: DateTimeZone object or timezone string
+                let (tz_offset, tz_name) = if let Some(tz_arg) = args.get(1) {
+                    if let PhpValue::Object(ref o) = tz_arg.value {
+                        let name = o.properties.get("name")
+                            .map(crate::engine::operators::zval_get_string)
+                            .map(|s| s.as_str().to_string())
+                            .unwrap_or_else(|| "UTC".to_string());
+                        (crate::php::datetime::timezone_offset_at(&name, ts), name)
+                    } else {
+                        let name = crate::engine::operators::zval_get_string(tz_arg).as_str().to_string();
+                        (crate::php::datetime::timezone_offset_at(&name, ts), name)
+                    }
+                } else {
+                    (0, "UTC".to_string())
+                };
+                let mut updated = clone_val(&obj_val);
+                if let PhpValue::Object(ref mut o) = updated.value {
+                    o.properties.insert(
+                        "timestamp".to_string(),
+                        Val::new(PhpValue::Long(ts), PhpType::Long),
+                    );
+                    o.properties.insert(
+                        "timezone_offset".to_string(),
+                        Val::new(PhpValue::Long(tz_offset), PhpType::Long),
+                    );
+                    o.properties.insert(
+                        "timezone_name".to_string(),
+                        Val::new(
+                            PhpValue::String(Box::new(crate::engine::string::string_init(&tz_name, false))),
+                            PhpType::String,
+                        ),
+                    );
+                }
+                if is_temp_ref(&op.op2) {
+                    if let PhpValue::Long(slot_idx) = op.op2.value {
+                        execute_data.set_temp(slot_idx as usize, updated);
+                    }
+                } else if is_var_ref(&op.op2)
+                    && let PhpValue::String(ref s) = op.op2.value
+                {
+                    let vname = s.as_str();
+                    let name = vname.strip_prefix('$').unwrap_or(vname);
+                    execute_data.set_var(name, updated);
+                }
+                if let Some(slot) = result_slot(op) {
+                    execute_data.set_temp(slot, Val::new(PhpValue::Long(0), PhpType::Null));
+                }
+                return Ok(ExecResult::Continue);
+            }
+            if mn == "format" {
+                let fmt = args
+                    .first()
+                    .map(crate::engine::operators::zval_get_string)
+                    .unwrap_or_else(|| crate::engine::string::string_init("", false));
+                let ts = obj
+                    .properties
+                    .get("timestamp")
+                    .map(crate::engine::operators::zval_get_long)
+                    .unwrap_or(0);
+                let tz_offset = obj
+                    .properties
+                    .get("timezone_offset")
+                    .map(crate::engine::operators::zval_get_long)
+                    .unwrap_or(0);
+                let tz_name = obj
+                    .properties
+                    .get("timezone_name")
+                    .map(crate::engine::operators::zval_get_string)
+                    .map(|s| s.as_str().to_string())
+                    .unwrap_or_else(|| "UTC".to_string());
+                // Apply timezone offset to the timestamp before formatting
+                let dt = crate::php::datetime::timestamp_to_datetime_struct((ts + tz_offset) as u64);
+                let formatted = crate::php::datetime::format_datetime_tz(fmt.as_str(), &dt, tz_offset, &tz_name);
+                let result = Val::new(
+                    PhpValue::String(Box::new(crate::engine::string::string_init(
+                        &formatted, false,
+                    ))),
+                    PhpType::String,
+                );
+                if let Some(slot) = result_slot(op) {
+                    execute_data.set_temp(slot, result);
+                }
+                return Ok(ExecResult::Continue);
+            }
+            if mn == "getTimestamp" || mn == "getTimeStamp" {
+                let ts = obj
+                    .properties
+                    .get("timestamp")
+                    .map(clone_val)
+                    .unwrap_or_else(|| Val::new(PhpValue::Long(0), PhpType::Long));
+                if let Some(slot) = result_slot(op) {
+                    execute_data.set_temp(slot, ts);
+                }
+                return Ok(ExecResult::Continue);
+            }
+            if mn == "getTimezone" || mn == "getTimeZone" {
+                let tz_name = obj
+                    .properties
+                    .get("timezone_name")
+                    .map(crate::engine::operators::zval_get_string)
+                    .map(|s| s.as_str().to_string())
+                    .unwrap_or_else(|| "UTC".to_string());
+                let mut tz_obj = crate::engine::types::PhpObject::new("DateTimeZone");
+                tz_obj.properties.insert(
+                    "name".to_string(),
+                    Val::new(
+                        PhpValue::String(Box::new(crate::engine::string::string_init(&tz_name, false))),
+                        PhpType::String,
+                    ),
+                );
+                let result = Val::new(PhpValue::Object(Box::new(tz_obj)), PhpType::Object);
+                if let Some(slot) = result_slot(op) {
+                    execute_data.set_temp(slot, result);
+                }
+                return Ok(ExecResult::Continue);
+            }
+            if mn == "setTimezone" {
+                let tz_name = args
+                    .first()
+                    .and_then(|v| {
+                        if let PhpValue::Object(ref o) = v.value {
+                            o.properties.get("name").map(crate::engine::operators::zval_get_string)
+                        } else {
+                            Some(crate::engine::operators::zval_get_string(v))
+                        }
+                    })
+                    .map(|s| s.as_str().to_string())
+                    .unwrap_or_else(|| "UTC".to_string());
+                let tz_offset = {
+                    let ts = obj.properties.get("timestamp")
+                        .map(crate::engine::operators::zval_get_long)
+                        .unwrap_or(0);
+                    crate::php::datetime::timezone_offset_at(&tz_name, ts)
+                };
+                let mut updated = clone_val(&obj_val);
+                if let PhpValue::Object(ref mut o) = updated.value {
+                    o.properties.insert(
+                        "timezone_offset".to_string(),
+                        Val::new(PhpValue::Long(tz_offset), PhpType::Long),
+                    );
+                    o.properties.insert(
+                        "timezone_name".to_string(),
+                        Val::new(
+                            PhpValue::String(Box::new(crate::engine::string::string_init(&tz_name, false))),
+                            PhpType::String,
+                        ),
+                    );
+                }
+                if is_temp_ref(&op.op2) {
+                    if let PhpValue::Long(slot_idx) = op.op2.value {
+                        execute_data.set_temp(slot_idx as usize, updated);
+                    }
+                } else if is_var_ref(&op.op2)
+                    && let PhpValue::String(ref s) = op.op2.value
+                {
+                    let vname = s.as_str();
+                    let name = vname.strip_prefix('$').unwrap_or(vname);
+                    execute_data.set_var(name, updated);
+                }
+                if let Some(slot) = result_slot(op) {
+                    execute_data.set_temp(slot, Val::new(PhpValue::Long(0), PhpType::Null));
+                }
+                return Ok(ExecResult::Continue);
+            }
+            if mn == "diff" {
+                // DateTime::diff(DateTime $other): DateInterval
+                let ts1 = obj
+                    .properties
+                    .get("timestamp")
+                    .map(crate::engine::operators::zval_get_long)
+                    .unwrap_or(0);
+                let ts2 = args
+                    .first()
+                    .and_then(|v| {
+                        if let PhpValue::Object(ref o) = v.value {
+                            o.properties.get("timestamp")
+                        } else {
+                            None
+                        }
+                    })
+                    .map(crate::engine::operators::zval_get_long)
+                    .unwrap_or(0);
+                let (y, m, d, h, i, s, days, invert) = crate::php::datetime::compute_diff(ts1, ts2);
+                let mut interval_obj = crate::engine::types::PhpObject::new("DateInterval");
+                interval_obj
+                    .properties
+                    .insert("y".to_string(), Val::new(PhpValue::Long(y), PhpType::Long));
+                interval_obj
+                    .properties
+                    .insert("m".to_string(), Val::new(PhpValue::Long(m), PhpType::Long));
+                interval_obj
+                    .properties
+                    .insert("d".to_string(), Val::new(PhpValue::Long(d), PhpType::Long));
+                interval_obj
+                    .properties
+                    .insert("h".to_string(), Val::new(PhpValue::Long(h), PhpType::Long));
+                interval_obj
+                    .properties
+                    .insert("i".to_string(), Val::new(PhpValue::Long(i), PhpType::Long));
+                interval_obj
+                    .properties
+                    .insert("s".to_string(), Val::new(PhpValue::Long(s), PhpType::Long));
+                interval_obj.properties.insert(
+                    "days".to_string(),
+                    Val::new(PhpValue::Long(days), PhpType::Long),
+                );
+                interval_obj.properties.insert(
+                    "invert".to_string(),
+                    Val::new(PhpValue::Long(if invert { 1 } else { 0 }), PhpType::Long),
+                );
+                let result = Val::new(PhpValue::Object(Box::new(interval_obj)), PhpType::Object);
+                if let Some(slot) = result_slot(op) {
+                    execute_data.set_temp(slot, result);
+                }
+                return Ok(ExecResult::Continue);
+            }
+        }
+
+        // Built-in DateTimeZone methods
+        if class_name == "DateTimeZone" {
+            let (base, _names_base) = execute_data.call_arg_stack.pop().unwrap_or((0, 0));
+            let args: Vec<Val> = execute_data.call_args.drain(base..).collect();
+            let mn = method_name.as_str();
+            if mn == "__construct" {
+                let tz_name = args
+                    .first()
+                    .map(crate::engine::operators::zval_get_string)
+                    .map(|s| s.as_str().to_string())
+                    .unwrap_or_else(|| "UTC".to_string());
+                let mut updated = clone_val(&obj_val);
+                if let PhpValue::Object(ref mut o) = updated.value {
+                    o.properties.insert(
+                        "name".to_string(),
+                        Val::new(
+                            PhpValue::String(Box::new(crate::engine::string::string_init(&tz_name, false))),
+                            PhpType::String,
+                        ),
+                    );
+                }
+                if is_temp_ref(&op.op2) {
+                    if let PhpValue::Long(slot_idx) = op.op2.value {
+                        execute_data.set_temp(slot_idx as usize, updated);
+                    }
+                } else if is_var_ref(&op.op2)
+                    && let PhpValue::String(ref s) = op.op2.value
+                {
+                    let vname = s.as_str();
+                    let name = vname.strip_prefix('$').unwrap_or(vname);
+                    execute_data.set_var(name, updated);
+                }
+                if let Some(slot) = result_slot(op) {
+                    execute_data.set_temp(slot, Val::new(PhpValue::Long(0), PhpType::Null));
+                }
+                return Ok(ExecResult::Continue);
+            }
+            if mn == "getName" {
+                let name = obj
+                    .properties
+                    .get("name")
+                    .map(clone_val)
+                    .unwrap_or_else(|| Val::new(PhpValue::Long(0), PhpType::Null));
+                if let Some(slot) = result_slot(op) {
+                    execute_data.set_temp(slot, name);
+                }
+                return Ok(ExecResult::Continue);
+            }
+        }
+
+        // Built-in Fiber methods: __construct, start, resume, getReturn,
+        // isStarted, isSuspended, isTerminated, isRunning
+        if class_name == "Fiber" {
+            let (base, _names_base) = execute_data.call_arg_stack.pop().unwrap_or((0, 0));
+            let args: Vec<Val> = execute_data.call_args.drain(base..).collect();
+            let mn = method_name.as_str();
+
+            if mn == "__construct" {
+                let callable = args.first().map(clone_val).unwrap_or_else(|| Val::new(PhpValue::Long(0), PhpType::Null));
+                let mut updated = clone_val(&obj_val);
+                if let PhpValue::Object(ref mut o) = updated.value {
+                    o.properties.insert("__callable".to_string(), callable);
+                }
+                if is_temp_ref(&op.op2) {
+                    if let PhpValue::Long(slot_idx) = op.op2.value {
+                        execute_data.set_temp(slot_idx as usize, updated);
+                    }
+                } else if is_var_ref(&op.op2)
+                    && let PhpValue::String(ref s) = op.op2.value
+                {
+                    let vname = s.as_str();
+                    let name = vname.strip_prefix('$').unwrap_or(vname);
+                    execute_data.set_var(name, updated);
+                }
+                if let Some(slot) = result_slot(op) {
+                    execute_data.set_temp(slot, Val::new(PhpValue::Long(0), PhpType::Null));
+                }
+                return Ok(ExecResult::Continue);
+            }
+
+            // State query methods
+            if mn == "isStarted" || mn == "isSuspended" || mn == "isTerminated" || mn == "isRunning" {
+                let state = obj.properties.get("__state")
+                    .map(crate::engine::operators::zval_get_long)
+                    .unwrap_or(0);
+                let result = match mn {
+                    "isStarted" => Val::new(PhpValue::Long(if state >= 1 { 1 } else { 0 }), if state >= 1 { PhpType::True } else { PhpType::False }),
+                    "isSuspended" => Val::new(PhpValue::Long(if state == 2 { 1 } else { 0 }), if state == 2 { PhpType::True } else { PhpType::False }),
+                    "isTerminated" => Val::new(PhpValue::Long(if state == 3 { 1 } else { 0 }), if state == 3 { PhpType::True } else { PhpType::False }),
+                    "isRunning" => Val::new(PhpValue::Long(0), PhpType::False),
+                    _ => unreachable!(),
+                };
+                if let Some(slot) = result_slot(op) {
+                    execute_data.set_temp(slot, result);
+                }
+                return Ok(ExecResult::Continue);
+            }
+
+            if mn == "getReturn" {
+                let ret = obj.properties.get("__return_value")
+                    .map(clone_val)
+                    .unwrap_or_else(|| Val::new(PhpValue::Long(0), PhpType::Null));
+                if let Some(slot) = result_slot(op) {
+                    execute_data.set_temp(slot, ret);
+                }
+                return Ok(ExecResult::Continue);
+            }
+
+            if mn == "start" || mn == "resume" {
+                let state = obj.properties.get("__state")
+                    .map(crate::engine::operators::zval_get_long)
+                    .unwrap_or(0);
+                // start: state must be pending(0); resume: state must be suspended(2)
+                if (mn == "start" && state != 0) || (mn == "resume" && state != 2) {
+                    if let Some(slot) = result_slot(op) {
+                        execute_data.set_temp(slot, Val::new(PhpValue::Long(0), PhpType::Null));
+                    }
+                    return Ok(ExecResult::Continue);
+                }
+
+                let callable = obj.properties.get("__callable")
+                    .map(clone_val)
+                    .unwrap_or_else(|| Val::new(PhpValue::Long(0), PhpType::Null));
+                let frame_index = obj.properties.get("__frame_index")
+                    .map(crate::engine::operators::zval_get_long)
+                    .unwrap_or(-1);
+
+                // Save caller VM state (mirrors invoke_user_function)
+                let saved_op = execute_data.current_op;
+                let saved_op_array = execute_data.op_array.take();
+                let saved_temps = std::mem::take(&mut execute_data.temp_vars);
+                let saved_ref_caller_scope = execute_data.ref_caller_scope.take();
+                let mut saved_symbol_table = execute_data.symbol_table.take();
+                let saved_call_arg_stack = std::mem::take(&mut execute_data.call_arg_stack);
+                let saved_call_args = std::mem::take(&mut execute_data.call_args);
+                let saved_call_arg_names = std::mem::take(&mut execute_data.call_arg_names);
+                let saved_call_arg_by_ref = std::mem::take(&mut execute_data.call_arg_by_ref);
+                let mut saved_global_imports = std::mem::take(&mut execute_data.global_imports);
+                let mut saved_ref_bindings = std::mem::take(&mut execute_data.ref_param_bindings);
+                let saved_script_dir = execute_data.current_script_dir.clone();
+                let saved_try_depth = execute_data.try_stack.len();
+
+                if execute_data.global_script_table.is_none()
+                    && let Some(ref saved) = saved_symbol_table
+                {
+                    execute_data.global_script_table = Some(ExecuteData::clone_php_array(saved));
+                }
+
+                let suspend_value: Option<Val>;
+                // Updated fiber object — written back AFTER caller state restoration
+                // to avoid being overwritten by saved_temps.
+                let mut fiber_updated: Option<Val> = None;
+
+                if mn == "start" {
+                    // Set up the callable for the first time
+                    let cb_name = crate::engine::vm::callable::callable_name(&callable);
+                    let func_data: Option<(Vec<String>, Option<String>, super::opcodes::OpArray)> =
+                        execute_data.function_table.as_ref()
+                            .and_then(|ft| ft.downcast_ref::<crate::engine::compile::function_table::FunctionTable>())
+                            .and_then(|ft| cb_name.as_deref().and_then(|n| ft.lookup_function(n)))
+                            .map(|func_op_array| {
+                                let param_names: Vec<String> = func_op_array.vars.iter()
+                                    .map(|v| match &v.value {
+                                        PhpValue::String(s) => s.as_str().strip_prefix('$').unwrap_or(s.as_str()).to_string(),
+                                        _ => String::new(),
+                                    })
+                                    .collect();
+                                let variadic = func_op_array.variadic_param.clone();
+                                let mut cloned = super::opcodes::OpArray::with_capacity(
+                                    func_op_array.ops.len(),
+                                    func_op_array.filename.clone().unwrap_or_default(),
+                                );
+                                cloned.function_name = func_op_array.function_name.clone();
+                                cloned.ref_params = func_op_array.ref_params.clone();
+                                cloned.variadic_param = func_op_array.variadic_param.clone();
+                                for op in &func_op_array.ops {
+                                    cloned.add_op(super::opcodes::Op::new(
+                                        op.opcode, clone_val(&op.op1), clone_val(&op.op2),
+                                        clone_val(&op.result), op.extended_value,
+                                    ));
+                                }
+                                (param_names, variadic, cloned)
+                            });
+
+                    if let Some((param_names, variadic_param, func_op_array)) = func_data {
+                        execute_data.ref_caller_scope = saved_symbol_table.take();
+                        execute_data.symbol_table = Some(crate::engine::types::PhpArray::new());
+                        let arg_names: Vec<Option<String>> = vec![None; args.len()];
+                        let arg_by_ref: Vec<bool> = vec![false; args.len()];
+                        let ref_params = func_op_array.ref_params.clone();
+                        super::dispatch_handlers::bind_call_args(
+                            execute_data, &param_names, &args, &arg_names,
+                            &variadic_param, &ref_params, &arg_by_ref,
+                        );
+                        let (_status, return_val) = super::execute::execute_ex_returning(execute_data, &func_op_array);
+                        if execute_data.fiber_suspend_requested.is_some() {
+                            // Suspended: save the fiber frame
+                            // Note: ref_caller_scope, global_imports, and ref_param_bindings
+                            // belong to the CALLER, not the fiber — don't save them.
+                            let frame = crate::engine::vm::execute_data::FiberFrame {
+                                op_array: execute_data.op_array.take().unwrap_or(func_op_array),
+                                current_op: execute_data.current_op,
+                                temp_vars: std::mem::take(&mut execute_data.temp_vars),
+                                symbol_table: execute_data.symbol_table.take(),
+                                call_args: std::mem::take(&mut execute_data.call_args),
+                                call_arg_stack: std::mem::take(&mut execute_data.call_arg_stack),
+                                call_arg_names: std::mem::take(&mut execute_data.call_arg_names),
+                                call_arg_by_ref: std::mem::take(&mut execute_data.call_arg_by_ref),
+                                ref_caller_scope: None,
+                                ref_param_bindings: std::collections::HashMap::new(),
+                                global_imports: std::collections::HashSet::new(),
+                                try_stack: std::mem::take(&mut execute_data.try_stack),
+                            };
+                            let idx = execute_data.fiber_frames.len();
+                            execute_data.fiber_frames.push(frame);
+                            suspend_value = execute_data.fiber_suspend_requested.take();
+                            let mut updated = clone_val(&obj_val);
+                            if let PhpValue::Object(ref mut o) = updated.value {
+                                o.properties.insert("__state".to_string(), Val::new(PhpValue::Long(2), PhpType::Long));
+                                o.properties.insert("__frame_index".to_string(), Val::new(PhpValue::Long(idx as i64), PhpType::Long));
+                            }
+                            fiber_updated = Some(updated);
+                        } else {
+                            // Terminated: capture return value
+                            suspend_value = None;
+                            let mut updated = clone_val(&obj_val);
+                            if let PhpValue::Object(ref mut o) = updated.value {
+                                o.properties.insert("__state".to_string(), Val::new(PhpValue::Long(3), PhpType::Long));
+                                o.properties.insert("__return_value".to_string(), return_val.unwrap_or_else(|| Val::new(PhpValue::Long(0), PhpType::Null)));
+                            }
+                            fiber_updated = Some(updated);
+                        }
+                    } else {
+                        // Built-in callable or unresolved — run via invoke_callable
+                        execute_data.symbol_table = Some(crate::engine::types::PhpArray::new());
+                        let _ = crate::engine::vm::callable::invoke_callable(execute_data, &callable, &args);
+                        suspend_value = execute_data.fiber_suspend_requested.take();
+                        let mut updated = clone_val(&obj_val);
+                        if let PhpValue::Object(ref mut o) = updated.value {
+                            o.properties.insert("__state".to_string(), Val::new(PhpValue::Long(3), PhpType::Long));
+                        }
+                        fiber_updated = Some(updated);
+                    }
+                } else {
+                    // resume: restore the fiber frame and continue
+                    let idx = frame_index as usize;
+                    if idx >= execute_data.fiber_frames.len() {
+                        // Frame not found — can't resume
+                        suspend_value = None;
+                    } else {
+                        // Take ownership of the frame (no Clone needed)
+                        let empty_frame = crate::engine::vm::execute_data::FiberFrame {
+                            op_array: super::opcodes::OpArray::with_capacity(0, String::new()),
+                            current_op: 0,
+                            temp_vars: Vec::new(),
+                            symbol_table: None,
+                            call_args: Vec::new(),
+                            call_arg_stack: Vec::new(),
+                            call_arg_names: Vec::new(),
+                            call_arg_by_ref: Vec::new(),
+                            ref_caller_scope: None,
+                            ref_param_bindings: std::collections::HashMap::new(),
+                            global_imports: std::collections::HashSet::new(),
+                            try_stack: Vec::new(),
+                        };
+                        let frame_slot = std::mem::replace(&mut execute_data.fiber_frames[idx], empty_frame);
+                        let crate::engine::vm::execute_data::FiberFrame {
+                            op_array,
+                            current_op,
+                            temp_vars,
+                            symbol_table,
+                            call_args,
+                            call_arg_stack,
+                            call_arg_names,
+                            call_arg_by_ref,
+                            ref_caller_scope: _ref_caller_scope,
+                            ref_param_bindings: _ref_param_bindings,
+                            global_imports: _global_imports,
+                            try_stack,
+                        } = frame_slot;
+
+                        execute_data.op_array = Some(op_array);
+                        execute_data.current_op = current_op;
+                        execute_data.temp_vars = temp_vars;
+                        execute_data.symbol_table = symbol_table;
+                        execute_data.call_args = call_args;
+                        execute_data.call_arg_stack = call_arg_stack;
+                        execute_data.call_arg_names = call_arg_names;
+                        execute_data.call_arg_by_ref = call_arg_by_ref;
+                        // ref_caller_scope, ref_param_bindings, global_imports belong to
+                        // the caller — set from saved values, not the frame.
+                        execute_data.ref_caller_scope = saved_symbol_table.take();
+                        execute_data.ref_param_bindings = std::mem::take(&mut saved_ref_bindings);
+                        execute_data.global_imports = std::mem::take(&mut saved_global_imports);
+                        execute_data.try_stack = try_stack;
+
+                        // Place the resume value in the result slot of the DoFCall
+                        // that called Fiber::suspend() (at current_op - 1)
+                        let resume_value = args.first().map(clone_val)
+                            .unwrap_or_else(|| Val::new(PhpValue::Long(0), PhpType::Null));
+                        let op_array_ref = execute_data.op_array.as_ref().unwrap();
+                        if execute_data.current_op > 0 {
+                            let prev_op = &op_array_ref.ops[execute_data.current_op - 1];
+                            if (prev_op.opcode == super::opcodes::Opcode::DoFCall
+                                || prev_op.opcode == super::opcodes::Opcode::DoStaticCall)
+                                && let Some(slot) = super::execute_data::result_slot(prev_op)
+                            {
+                                execute_data.ensure_temp_slots(slot + 1);
+                                execute_data.temp_vars[slot] = resume_value;
+                            }
+                        }
+
+                        // Continue execution using execute_ex_resume (doesn't reset current_op)
+                        // execute_ex_resume reads from execute_data.op_array, so keep it installed.
+                        let (_status, return_val) = super::execute::execute_ex_resume(execute_data);
+                        let op_array_for_exec = execute_data.op_array.take().unwrap_or(super::opcodes::OpArray::with_capacity(0, String::new()));
+
+                        if execute_data.fiber_suspend_requested.is_some() {
+                            // Suspended again: save the updated frame
+                            // Note: ref_caller_scope, global_imports, ref_param_bindings
+                            // belong to the CALLER, not the fiber — don't save them.
+                            let new_frame = crate::engine::vm::execute_data::FiberFrame {
+                                op_array: execute_data.op_array.take().unwrap_or(op_array_for_exec),
+                                current_op: execute_data.current_op,
+                                temp_vars: std::mem::take(&mut execute_data.temp_vars),
+                                symbol_table: execute_data.symbol_table.take(),
+                                call_args: std::mem::take(&mut execute_data.call_args),
+                                call_arg_stack: std::mem::take(&mut execute_data.call_arg_stack),
+                                call_arg_names: std::mem::take(&mut execute_data.call_arg_names),
+                                call_arg_by_ref: std::mem::take(&mut execute_data.call_arg_by_ref),
+                                ref_caller_scope: None,
+                                ref_param_bindings: std::collections::HashMap::new(),
+                                global_imports: std::collections::HashSet::new(),
+                                try_stack: std::mem::take(&mut execute_data.try_stack),
+                            };
+                            execute_data.fiber_frames[idx] = new_frame;
+                            suspend_value = execute_data.fiber_suspend_requested.take();
+                            let mut updated = clone_val(&obj_val);
+                            if let PhpValue::Object(ref mut o) = updated.value {
+                                o.properties.insert("__state".to_string(), Val::new(PhpValue::Long(2), PhpType::Long));
+                            }
+                            fiber_updated = Some(updated);
+                        } else {
+                            // Terminated: capture return value, free the frame
+                            execute_data.fiber_frames[idx] = crate::engine::vm::execute_data::FiberFrame {
+                                op_array: super::opcodes::OpArray::with_capacity(0, String::new()),
+                                current_op: 0,
+                                temp_vars: Vec::new(),
+                                symbol_table: None,
+                                call_args: Vec::new(),
+                                call_arg_stack: Vec::new(),
+                                call_arg_names: Vec::new(),
+                                call_arg_by_ref: Vec::new(),
+                                ref_caller_scope: None,
+                                ref_param_bindings: std::collections::HashMap::new(),
+                                global_imports: std::collections::HashSet::new(),
+                                try_stack: Vec::new(),
+                            };
+                            suspend_value = None;
+                            let mut updated = clone_val(&obj_val);
+                            if let PhpValue::Object(ref mut o) = updated.value {
+                                o.properties.insert("__state".to_string(), Val::new(PhpValue::Long(3), PhpType::Long));
+                                o.properties.insert("__return_value".to_string(), return_val.unwrap_or_else(|| Val::new(PhpValue::Long(0), PhpType::Null)));
+                                o.properties.insert("__frame_index".to_string(), Val::new(PhpValue::Long(-1), PhpType::Long));
+                            }
+                            fiber_updated = Some(updated);
+                        }
+                    }
+                }
+
+                // Restore caller VM state
+                // ref_caller_scope still holds the caller's symbol table (not saved into frame)
+                execute_data.symbol_table = execute_data.ref_caller_scope.take();
+                if let Some(mut saved) = execute_data.symbol_table.take() {
+                    execute_data.merge_globals_into(&mut saved);
+                    execute_data.symbol_table = Some(saved);
+                }
+                execute_data.ref_caller_scope = saved_ref_caller_scope;
+                execute_data.global_imports = std::mem::take(&mut saved_global_imports);
+                execute_data.ref_param_bindings = std::mem::take(&mut saved_ref_bindings);
+                execute_data.temp_vars = saved_temps;
+                execute_data.op_array = saved_op_array;
+                execute_data.current_op = saved_op;
+                execute_data.call_arg_stack = saved_call_arg_stack;
+                execute_data.call_args = saved_call_args;
+                execute_data.call_arg_names = saved_call_arg_names;
+                execute_data.call_arg_by_ref = saved_call_arg_by_ref;
+                execute_data.current_script_dir = saved_script_dir;
+                execute_data.try_stack.truncate(saved_try_depth);
+
+                // Write back the updated fiber object AFTER restoring caller state
+                // (otherwise saved_temps restoration overwrites it)
+                if let Some(updated) = fiber_updated {
+                    if is_temp_ref(&op.op2) {
+                        if let PhpValue::Long(slot_idx) = op.op2.value {
+                            execute_data.set_temp(slot_idx as usize, updated);
+                        }
+                    } else if is_var_ref(&op.op2)
+                        && let PhpValue::String(ref s) = op.op2.value
+                    {
+                        let vname = s.as_str();
+                        let name = vname.strip_prefix('$').unwrap_or(vname);
+                        execute_data.set_var(name, updated);
+                    }
+                }
+
+                // Return the suspend value (or null if terminated)
+                let result = suspend_value.unwrap_or_else(|| Val::new(PhpValue::Long(0), PhpType::Null));
+                if let Some(slot) = result_slot(op) {
+                    execute_data.set_temp(slot, result);
+                }
+                return Ok(ExecResult::Continue);
+            }
+        }
+
+        // Built-in ArrayIterator methods
+        if class_name == "ArrayIterator" {
+            let (base, _names_base) = execute_data.call_arg_stack.pop().unwrap_or((0, 0));
+            let args: Vec<Val> = execute_data.call_args.drain(base..).collect();
+            let mn = method_name.as_str();
+            // Helper: get the storage array (clone-modify-set pattern)
+            let storage = obj
+                .properties
+                .get("__storage")
+                .map(clone_val)
+                .unwrap_or_else(|| {
+                    Val::new(PhpValue::Array(Box::new(PhpArray::new())), PhpType::Array)
+                });
+            let index = obj
+                .properties
+                .get("__index")
+                .map(crate::engine::operators::zval_get_long)
+                .unwrap_or(0);
+
+            if mn == "__construct" {
+                // Set storage from constructor argument (if provided)
+                if let Some(first) = args.first() {
+                    let new_storage = if let PhpValue::Array(_) = first.value {
+                        clone_val(first)
+                    } else {
+                        let mut arr = PhpArray::new();
+                        let _ = crate::engine::hash::hash_add_or_update(
+                            &mut arr,
+                            None,
+                            0,
+                            clone_val(first),
+                            0,
+                        );
+                        Val::new(PhpValue::Array(Box::new(arr)), PhpType::Array)
+                    };
+                    let mut updated = clone_val(&obj_val);
+                    if let PhpValue::Object(ref mut o) = updated.value {
+                        o.properties.insert("__storage".to_string(), new_storage);
+                        o.properties.insert(
+                            "__index".to_string(),
+                            Val::new(PhpValue::Long(0), PhpType::Long),
+                        );
+                    }
+                    if is_temp_ref(&op.op2) {
+                        if let PhpValue::Long(slot_idx) = op.op2.value {
+                            execute_data.set_temp(slot_idx as usize, updated);
+                        }
+                    } else if is_var_ref(&op.op2)
+                        && let PhpValue::String(ref s) = op.op2.value
+                    {
+                        let vname = s.as_str();
+                        let name = vname.strip_prefix('$').unwrap_or(vname);
+                        execute_data.set_var(name, updated);
+                    }
+                }
+                if let Some(slot) = result_slot(op) {
+                    execute_data.set_temp(
+                        slot,
+                        Val::new(PhpValue::Long(0), PhpType::Null),
+                    );
+                }
+                return Ok(ExecResult::Continue);
+            }
+
+            if mn == "count" {
+                let cnt = if let PhpValue::Array(ref arr) = storage.value {
+                    arr.ar_data.len() as i64
+                } else {
+                    0
+                };
+                if let Some(slot) = result_slot(op) {
+                    execute_data.set_temp(slot, Val::new(PhpValue::Long(cnt), PhpType::Long));
+                }
+                return Ok(ExecResult::Continue);
+            }
+
+            if mn == "valid" {
+                let valid = if let PhpValue::Array(ref arr) = storage.value {
+                    (index as usize) < arr.ar_data.len()
+                } else {
+                    false
+                };
+                if let Some(slot) = result_slot(op) {
+                    execute_data.set_temp(
+                        slot,
+                        Val::new(
+                            PhpValue::Long(if valid { 1 } else { 0 }),
+                            if valid { PhpType::True } else { PhpType::False },
+                        ),
+                    );
+                }
+                return Ok(ExecResult::Continue);
+            }
+
+            if mn == "current" {
+                let val = if let PhpValue::Array(ref arr) = storage.value {
+                    arr.ar_data.get(index as usize).map(|b| clone_val(&b.val))
+                } else {
+                    None
+                };
+                if let Some(slot) = result_slot(op) {
+                    execute_data.set_temp(
+                        slot,
+                        val.unwrap_or_else(|| Val::new(PhpValue::Long(0), PhpType::Null)),
+                    );
+                }
+                return Ok(ExecResult::Continue);
+            }
+
+            if mn == "key" {
+                let key = if let PhpValue::Array(ref arr) = storage.value {
+                    arr.ar_data.get(index as usize).and_then(|b| {
+                        b.key.as_ref().map(|s| {
+                            Val::new(
+                                PhpValue::String(Box::new(
+                                    crate::engine::string::string_init(s.as_str(), false),
+                                )),
+                                PhpType::String,
+                            )
+                        })
+                    })
+                } else {
+                    None
+                };
+                let key_val = key.unwrap_or_else(|| {
+                    if let PhpValue::Array(ref arr) = storage.value {
+                        arr.ar_data
+                            .get(index as usize)
+                            .map(|b| Val::new(PhpValue::Long(b.h as i64), PhpType::Long))
+                    } else {
+                        None
+                    }
+                    .unwrap_or_else(|| Val::new(PhpValue::Long(0), PhpType::Null))
+                });
+                if let Some(slot) = result_slot(op) {
+                    execute_data.set_temp(slot, key_val);
+                }
+                return Ok(ExecResult::Continue);
+            }
+
+            if mn == "next" {
+                let mut updated = clone_val(&obj_val);
+                if let PhpValue::Object(ref mut o) = updated.value {
+                    o.properties.insert(
+                        "__index".to_string(),
+                        Val::new(PhpValue::Long(index + 1), PhpType::Long),
+                    );
+                }
+                if is_temp_ref(&op.op2) {
+                    if let PhpValue::Long(slot_idx) = op.op2.value {
+                        execute_data.set_temp(slot_idx as usize, updated);
+                    }
+                } else if is_var_ref(&op.op2)
+                    && let PhpValue::String(ref s) = op.op2.value
+                {
+                    let vname = s.as_str();
+                    let name = vname.strip_prefix('$').unwrap_or(vname);
+                    execute_data.set_var(name, updated);
+                }
+                return Ok(ExecResult::Continue);
+            }
+
+            if mn == "rewind" {
+                let mut updated = clone_val(&obj_val);
+                if let PhpValue::Object(ref mut o) = updated.value {
+                    o.properties.insert(
+                        "__index".to_string(),
+                        Val::new(PhpValue::Long(0), PhpType::Long),
+                    );
+                }
+                if is_temp_ref(&op.op2) {
+                    if let PhpValue::Long(slot_idx) = op.op2.value {
+                        execute_data.set_temp(slot_idx as usize, updated);
+                    }
+                } else if is_var_ref(&op.op2)
+                    && let PhpValue::String(ref s) = op.op2.value
+                {
+                    let vname = s.as_str();
+                    let name = vname.strip_prefix('$').unwrap_or(vname);
+                    execute_data.set_var(name, updated);
+                }
+                return Ok(ExecResult::Continue);
+            }
+
+            // ArrayAccess methods
+            if mn == "offsetExists" {
+                let exists = if let PhpValue::Array(ref arr) = storage.value {
+                    if let Some(key_val) = args.first() {
+                        if let PhpValue::Long(k) = key_val.value {
+                            crate::engine::hash::hash_index_find(arr, k as u64).is_some()
+                        } else if let PhpValue::String(ref s) = key_val.value {
+                            let key = crate::engine::string::string_init(s.as_str(), false);
+                            crate::engine::hash::hash_find(arr, &key).is_some()
+                        } else {
+                            false
+                        }
+                    } else {
+                        false
+                    }
+                } else {
+                    false
+                };
+                if let Some(slot) = result_slot(op) {
+                    execute_data.set_temp(
+                        slot,
+                        Val::new(
+                            PhpValue::Long(if exists { 1 } else { 0 }),
+                            if exists { PhpType::True } else { PhpType::False },
+                        ),
+                    );
+                }
+                return Ok(ExecResult::Continue);
+            }
+
+            if mn == "offsetGet" {
+                let val = if let PhpValue::Array(ref arr) = storage.value {
+                    if let Some(key_val) = args.first() {
+                        if let PhpValue::Long(k) = key_val.value {
+                            crate::engine::hash::hash_index_find(arr, k as u64)
+                                .map(clone_val)
+                        } else if let PhpValue::String(ref s) = key_val.value {
+                            let key =
+                                crate::engine::string::string_init(s.as_str(), false);
+                            crate::engine::hash::hash_find(arr, &key).map(clone_val)
+                        } else {
+                            None
+                        }
+                    } else {
+                        None
+                    }
+                } else {
+                    None
+                };
+                if let Some(slot) = result_slot(op) {
+                    execute_data.set_temp(
+                        slot,
+                        val.unwrap_or_else(|| Val::new(PhpValue::Long(0), PhpType::Null)),
+                    );
+                }
+                return Ok(ExecResult::Continue);
+            }
+
+            if mn == "offsetSet" {
+                let key = args.first();
+                let value = args.get(1);
+                let mut updated = clone_val(&obj_val);
+                if let PhpValue::Object(ref mut o) = updated.value
+                    && let Some(storage_val) = o.properties.get_mut("__storage")
+                    && let PhpValue::Array(ref mut arr) = storage_val.value
+                    && let (Some(kv), Some(vv)) = (key, value)
+                {
+                    if let PhpValue::Long(k) = kv.value {
+                        let _ = crate::engine::hash::hash_add_or_update(
+                            arr,
+                            None,
+                            k as u64,
+                            clone_val(vv),
+                            0,
+                        );
+                    } else if let PhpValue::String(ref s) = kv.value {
+                        let key =
+                            crate::engine::string::string_init(s.as_str(), false);
+                        let _ = crate::engine::hash::hash_add_or_update(
+                            arr,
+                            Some(&key),
+                            0,
+                            clone_val(vv),
+                            0,
+                        );
+                    }
+                }
+                if is_temp_ref(&op.op2) {
+                    if let PhpValue::Long(slot_idx) = op.op2.value {
+                        execute_data.set_temp(slot_idx as usize, updated);
+                    }
+                } else if is_var_ref(&op.op2)
+                    && let PhpValue::String(ref s) = op.op2.value
+                {
+                    let vname = s.as_str();
+                    let name = vname.strip_prefix('$').unwrap_or(vname);
+                    execute_data.set_var(name, updated);
+                }
+                return Ok(ExecResult::Continue);
+            }
+
+            if mn == "offsetUnset" {
+                let mut updated = clone_val(&obj_val);
+                if let PhpValue::Object(ref mut o) = updated.value
+                    && let Some(storage_val) = o.properties.get_mut("__storage")
+                    && let PhpValue::Array(ref mut arr) = storage_val.value
+                    && let Some(kv) = args.first()
+                {
+                    if let PhpValue::String(ref s) = kv.value {
+                        let key = crate::engine::string::string_init(s.as_str(), false);
+                        let _ = crate::engine::hash::hash_del(arr, &key);
+                    } else {
+                        let k = crate::engine::operators::zval_get_long(kv) as u64;
+                        if let Some(pos) = arr
+                            .ar_data
+                            .iter()
+                            .position(|b| b.h == k && b.key.is_none())
+                        {
+                            arr.ar_data.remove(pos);
+                            arr.n_num_of_elements -= 1;
+                        }
+                    }
+                }
+                if is_temp_ref(&op.op2) {
+                    if let PhpValue::Long(slot_idx) = op.op2.value {
+                        execute_data.set_temp(slot_idx as usize, updated);
+                    }
+                } else if is_var_ref(&op.op2)
+                    && let PhpValue::String(ref s) = op.op2.value
+                {
+                    let vname = s.as_str();
+                    let name = vname.strip_prefix('$').unwrap_or(vname);
+                    execute_data.set_var(name, updated);
+                }
+                return Ok(ExecResult::Continue);
+            }
+        }
+
+        // Built-in SplStack/SplQueue methods (LIFO/FIFO backed by __storage array)
+        if class_name == "SplStack" || class_name == "SplQueue" {
+            let (base, _names_base) = execute_data.call_arg_stack.pop().unwrap_or((0, 0));
+            let args: Vec<Val> = execute_data.call_args.drain(base..).collect();
+            let mn = method_name.as_str();
+            let mut storage = obj.properties.get("__storage")
+                .map(clone_val)
+                .unwrap_or_else(|| Val::new(PhpValue::Array(Box::new(PhpArray::new())), PhpType::Array));
+
+            if mn == "push" || mn == "enqueue" {
+                let mut updated = clone_val(&obj_val);
+                if let PhpValue::Object(ref mut o) = updated.value {
+                    if let PhpValue::Array(ref mut arr) = storage.value {
+                        let next_idx = arr.ar_data.len() as u64;
+                        let _ = crate::engine::hash::hash_add_or_update(
+                            arr, None, next_idx,
+                            args.first().map(clone_val).unwrap_or_else(|| Val::new(PhpValue::Long(0), PhpType::Null)),
+                            0,
+                        );
+                    }
+                    o.properties.insert("__storage".to_string(), storage);
+                }
+                if is_temp_ref(&op.op2) {
+                    if let PhpValue::Long(slot_idx) = op.op2.value { execute_data.set_temp(slot_idx as usize, updated); }
+                } else if is_var_ref(&op.op2) && let PhpValue::String(ref s) = op.op2.value {
+                    let name = s.as_str().strip_prefix('$').unwrap_or(s.as_str());
+                    execute_data.set_var(name, updated);
+                }
+                if let Some(slot) = result_slot(op) { execute_data.set_temp(slot, Val::new(PhpValue::Long(0), PhpType::Null)); }
+                return Ok(ExecResult::Continue);
+            }
+
+            if mn == "pop" || mn == "dequeue" {
+                let result = if let PhpValue::Array(ref arr) = storage.value {
+                    if arr.ar_data.is_empty() {
+                        Val::new(PhpValue::Long(0), PhpType::Null)
+                    } else if mn == "pop" {
+                        clone_val(&arr.ar_data.last().unwrap().val)
+                    } else {
+                        clone_val(&arr.ar_data.first().unwrap().val)
+                    }
+                } else { Val::new(PhpValue::Long(0), PhpType::Null) };
+
+                let mut updated = clone_val(&obj_val);
+                if let PhpValue::Object(ref mut o) = updated.value
+                    && let PhpValue::Array(ref mut arr) = storage.value
+                {
+                    if !arr.ar_data.is_empty() {
+                        if mn == "pop" { arr.ar_data.pop(); }
+                        else { arr.ar_data.remove(0); }
+                    }
+                    o.properties.insert("__storage".to_string(), storage);
+                }
+                if is_temp_ref(&op.op2) {
+                    if let PhpValue::Long(slot_idx) = op.op2.value { execute_data.set_temp(slot_idx as usize, updated); }
+                } else if is_var_ref(&op.op2) && let PhpValue::String(ref s) = op.op2.value {
+                    let name = s.as_str().strip_prefix('$').unwrap_or(s.as_str());
+                    execute_data.set_var(name, updated);
+                }
+                if let Some(slot) = result_slot(op) { execute_data.set_temp(slot, result); }
+                return Ok(ExecResult::Continue);
+            }
+
+            if mn == "top" {
+                let result = if let PhpValue::Array(ref arr) = storage.value {
+                    if arr.ar_data.is_empty() { Val::new(PhpValue::Long(0), PhpType::Null) }
+                    else { clone_val(&arr.ar_data.last().unwrap().val) }
+                } else { Val::new(PhpValue::Long(0), PhpType::Null) };
+                if let Some(slot) = result_slot(op) { execute_data.set_temp(slot, result); }
+                return Ok(ExecResult::Continue);
+            }
+
+            if mn == "bottom" {
+                let result = if let PhpValue::Array(ref arr) = storage.value {
+                    if arr.ar_data.is_empty() { Val::new(PhpValue::Long(0), PhpType::Null) }
+                    else { clone_val(&arr.ar_data.first().unwrap().val) }
+                } else { Val::new(PhpValue::Long(0), PhpType::Null) };
+                if let Some(slot) = result_slot(op) { execute_data.set_temp(slot, result); }
+                return Ok(ExecResult::Continue);
+            }
+
+            if mn == "count" || mn == "isEmpty" {
+                let cnt = if let PhpValue::Array(ref arr) = storage.value { arr.ar_data.len() as i64 } else { 0 };
+                if mn == "count" {
+                    if let Some(slot) = result_slot(op) { execute_data.set_temp(slot, Val::new(PhpValue::Long(cnt), PhpType::Long)); }
+                } else {
+                    let empty = cnt == 0;
+                    if let Some(slot) = result_slot(op) {
+                        execute_data.set_temp(slot, Val::new(PhpValue::Long(if empty {1} else {0}), if empty {PhpType::True} else {PhpType::False}));
+                    }
+                }
+                return Ok(ExecResult::Continue);
+            }
+        }
+
+        // Built-in DirectoryIterator methods
+        if class_name == "DirectoryIterator" {
+            let (base, _names_base) = execute_data.call_arg_stack.pop().unwrap_or((0, 0));
+            let args: Vec<Val> = execute_data.call_args.drain(base..).collect();
+            let mn = method_name.as_str();
+
+            if mn == "__construct" {
+                let path = args.first().map(crate::engine::operators::zval_get_string)
+                    .unwrap_or_else(|| crate::engine::string::string_init(".", false));
+                let entries = crate::php::filesystem::php_scandir(path.as_str())
+                    .unwrap_or_default();
+                let mut arr = PhpArray::new();
+                for e in entries {
+                    let idx = arr.ar_data.len() as u64;
+                    let _ = crate::engine::hash::hash_add_or_update(
+                        &mut arr, None, idx,
+                        Val::new(PhpValue::String(Box::new(crate::engine::string::string_init(&e, false))), PhpType::String),
+                        0,
+                    );
+                }
+                let mut updated = clone_val(&obj_val);
+                if let PhpValue::Object(ref mut o) = updated.value {
+                    o.properties.insert("__path".to_string(),
+                        Val::new(PhpValue::String(Box::new(path)), PhpType::String));
+                    o.properties.insert("__entries".to_string(),
+                        Val::new(PhpValue::Array(Box::new(arr)), PhpType::Array));
+                    o.properties.insert("__index".to_string(),
+                        Val::new(PhpValue::Long(0), PhpType::Long));
+                }
+                if is_temp_ref(&op.op2) {
+                    if let PhpValue::Long(slot_idx) = op.op2.value { execute_data.set_temp(slot_idx as usize, updated); }
+                } else if is_var_ref(&op.op2) && let PhpValue::String(ref s) = op.op2.value {
+                    let name = s.as_str().strip_prefix('$').unwrap_or(s.as_str());
+                    execute_data.set_var(name, updated);
+                }
+                if let Some(slot) = result_slot(op) { execute_data.set_temp(slot, Val::new(PhpValue::Long(0), PhpType::Null)); }
+                return Ok(ExecResult::Continue);
+            }
+
+            let entries = obj.properties.get("__entries")
+                .map(clone_val)
+                .unwrap_or_else(|| Val::new(PhpValue::Array(Box::new(PhpArray::new())), PhpType::Array));
+            let index = obj.properties.get("__index")
+                .map(crate::engine::operators::zval_get_long)
+                .unwrap_or(0);
+            let path = obj.properties.get("__path")
+                .map(crate::engine::operators::zval_get_string)
+                .unwrap_or_else(|| crate::engine::string::string_init(".", false));
+
+            let get_current_filename = || -> Option<String> {
+                if let PhpValue::Array(ref arr) = entries.value
+                    && (index as usize) < arr.ar_data.len()
+                    && let PhpValue::String(ref s) = arr.ar_data[index as usize].val.value
+                {
+                    return Some(s.as_str().to_string());
+                }
+                None
+            };
+
+            if mn == "valid" {
+                let valid = if let PhpValue::Array(ref arr) = entries.value {
+                    (index as usize) < arr.ar_data.len()
+                } else { false };
+                if let Some(slot) = result_slot(op) {
+                    execute_data.set_temp(slot, Val::new(PhpValue::Long(if valid {1} else {0}), if valid {PhpType::True} else {PhpType::False}));
+                }
+                return Ok(ExecResult::Continue);
+            }
+
+            if mn == "current" || mn == "getFilename" {
+                let result = get_current_filename()
+                    .map(|s| Val::new(PhpValue::String(Box::new(crate::engine::string::string_init(&s, false))), PhpType::String))
+                    .unwrap_or_else(|| Val::new(PhpValue::Long(0), PhpType::Null));
+                if let Some(slot) = result_slot(op) { execute_data.set_temp(slot, result); }
+                return Ok(ExecResult::Continue);
+            }
+
+            if mn == "getPathname" {
+                let result = get_current_filename()
+                    .map(|f| {
+                        let full = if path.as_str().ends_with('/') {
+                            format!("{}{}", path.as_str(), f)
+                        } else {
+                            format!("{}/{}", path.as_str(), f)
+                        };
+                        Val::new(PhpValue::String(Box::new(crate::engine::string::string_init(&full, false))), PhpType::String)
+                    })
+                    .unwrap_or_else(|| Val::new(PhpValue::Long(0), PhpType::Null));
+                if let Some(slot) = result_slot(op) { execute_data.set_temp(slot, result); }
+                return Ok(ExecResult::Continue);
+            }
+
+            if mn == "key" {
+                if let Some(slot) = result_slot(op) { execute_data.set_temp(slot, Val::new(PhpValue::Long(index), PhpType::Long)); }
+                return Ok(ExecResult::Continue);
+            }
+
+            if mn == "next" || mn == "rewind" {
+                let new_index = if mn == "next" { index + 1 } else { 0 };
+                let mut updated = clone_val(&obj_val);
+                if let PhpValue::Object(ref mut o) = updated.value {
+                    o.properties.insert("__index".to_string(), Val::new(PhpValue::Long(new_index), PhpType::Long));
+                }
+                if is_temp_ref(&op.op2) {
+                    if let PhpValue::Long(slot_idx) = op.op2.value { execute_data.set_temp(slot_idx as usize, updated); }
+                } else if is_var_ref(&op.op2) && let PhpValue::String(ref s) = op.op2.value {
+                    let name = s.as_str().strip_prefix('$').unwrap_or(s.as_str());
+                    execute_data.set_var(name, updated);
+                }
+                if let Some(slot) = result_slot(op) { execute_data.set_temp(slot, Val::new(PhpValue::Long(0), PhpType::Null)); }
+                return Ok(ExecResult::Continue);
+            }
+
+            if mn == "getPath" {
+                if let Some(slot) = result_slot(op) {
+                    execute_data.set_temp(slot, Val::new(PhpValue::String(Box::new(path)), PhpType::String));
+                }
+                return Ok(ExecResult::Continue);
+            }
+        }
+
+        // Built-in SplHeap/SplPriorityQueue methods
+        if class_name == "SplHeap" || class_name == "SplPriorityQueue"
+            || class_name == "SplMinHeap" || class_name == "SplMaxHeap"
+        {
+            let (base, _names_base) = execute_data.call_arg_stack.pop().unwrap_or((0, 0));
+            let args: Vec<Val> = execute_data.call_args.drain(base..).collect();
+            let mn = method_name.as_str();
+            let mut storage = obj.properties.get("__storage")
+                .map(clone_val)
+                .unwrap_or_else(|| Val::new(PhpValue::Array(Box::new(PhpArray::new())), PhpType::Array));
+            let is_min_heap = class_name == "SplMinHeap";
+
+            // Helper: compare two values for heap ordering.
+            // Returns Ordering::Less if a should come before b (a has higher priority).
+            let compare_vals = |a: &Val, b: &Val| -> std::cmp::Ordering {
+                use crate::engine::operators::{zval_get_long, zval_get_string};
+                let ord = match (&a.value, &b.value) {
+                    (PhpValue::Long(x), PhpValue::Long(y)) => x.cmp(y),
+                    (PhpValue::Double(x), PhpValue::Double(y)) => x.partial_cmp(y).unwrap_or(std::cmp::Ordering::Equal),
+                    (PhpValue::Long(x), PhpValue::Double(y)) => (*x as f64).partial_cmp(y).unwrap_or(std::cmp::Ordering::Equal),
+                    (PhpValue::Double(x), PhpValue::Long(y)) => x.partial_cmp(&(*y as f64)).unwrap_or(std::cmp::Ordering::Equal),
+                    _ => {
+                        let as_l = zval_get_long(a);
+                        let bs_l = zval_get_long(b);
+                        if as_l != 0 || bs_l != 0 {
+                            as_l.cmp(&bs_l)
+                        } else {
+                            zval_get_string(a).as_str().cmp(zval_get_string(b).as_str())
+                        }
+                    }
+                };
+                // Reverse: higher value = higher priority = comes first (Less)
+                ord.reverse()
+            };
+
+            if mn == "insert" {
+                let mut updated = clone_val(&obj_val);
+                if let PhpValue::Object(ref mut _o) = updated.value
+                    && let PhpValue::Array(ref mut arr) = storage.value
+                {
+                    if class_name == "SplPriorityQueue" {
+                        // Store as nested array [value, priority]
+                        let value = args.first().map(clone_val).unwrap_or_else(|| Val::new(PhpValue::Long(0), PhpType::Null));
+                        let priority = args.get(1).map(clone_val).unwrap_or_else(|| Val::new(PhpValue::Long(0), PhpType::Long));
+                        let mut pair = PhpArray::new();
+                        let _ = crate::engine::hash::hash_add_or_update(&mut pair, None, 0, value, 0);
+                        let _ = crate::engine::hash::hash_add_or_update(&mut pair, None, 1, priority, 0);
+                        let idx = arr.ar_data.len() as u64;
+                        let _ = crate::engine::hash::hash_add_or_update(arr, None, idx,
+                            Val::new(PhpValue::Array(Box::new(pair)), PhpType::Array), 0);
+                    } else {
+                        let idx = arr.ar_data.len() as u64;
+                        let _ = crate::engine::hash::hash_add_or_update(arr, None, idx,
+                            args.first().map(clone_val).unwrap_or_else(|| Val::new(PhpValue::Long(0), PhpType::Null)), 0);
+                    }
+                }
+                // Write back the modified storage to the updated object
+                if let PhpValue::Object(ref mut o) = updated.value {
+                    o.properties.insert("__storage".to_string(), storage);
+                }
+                if is_temp_ref(&op.op2) {
+                    if let PhpValue::Long(slot_idx) = op.op2.value { execute_data.set_temp(slot_idx as usize, updated); }
+                } else if is_var_ref(&op.op2) && let PhpValue::String(ref s) = op.op2.value {
+                    let name = s.as_str().strip_prefix('$').unwrap_or(s.as_str());
+                    execute_data.set_var(name, updated);
+                }
+                if let Some(slot) = result_slot(op) { execute_data.set_temp(slot, Val::new(PhpValue::Long(0), PhpType::Null)); }
+                return Ok(ExecResult::Continue);
+            }
+
+            if mn == "extract" {
+                // Sort and extract the top element
+                let result = if let PhpValue::Array(ref mut arr) = storage.value {
+                    if arr.ar_data.is_empty() {
+                        Val::new(PhpValue::Long(0), PhpType::Null)
+                    } else {
+                        // Sort: for SplHeap/SplMaxHeap/SplPriorityQueue, max on top; for SplMinHeap, min on top
+                        if class_name == "SplPriorityQueue" {
+                            arr.ar_data.sort_by(|a, b| {
+                                let pa = if let PhpValue::Array(ref p) = a.val.value { p.ar_data.get(1).map(|b| &b.val).cloned() } else { None };
+                                let pb = if let PhpValue::Array(ref p) = b.val.value { p.ar_data.get(1).map(|b| &b.val).cloned() } else { None };
+                                match (pa, pb) {
+                                    (Some(pa), Some(pb)) => {
+                                        if is_min_heap { compare_vals(&pb, &pa) } else { compare_vals(&pa, &pb) }
+                                    }
+                                    _ => std::cmp::Ordering::Equal,
+                                }
+                            });
+                            // Extract first element's value (index 0 of the pair)
+                            if let PhpValue::Array(ref pair) = arr.ar_data[0].val.value {
+                                if let Some(v) = pair.ar_data.first() { clone_val(&v.val) } else { Val::new(PhpValue::Long(0), PhpType::Null) }
+                            } else { Val::new(PhpValue::Long(0), PhpType::Null) }
+                        } else {
+                            arr.ar_data.sort_by(|a, b| {
+                                if is_min_heap { compare_vals(&b.val, &a.val) } else { compare_vals(&a.val, &b.val) }
+                            });
+                            clone_val(&arr.ar_data[0].val)
+                        }
+                    }
+                } else { Val::new(PhpValue::Long(0), PhpType::Null) };
+
+                let mut updated = clone_val(&obj_val);
+                if let PhpValue::Object(ref mut _o) = updated.value
+                    && let PhpValue::Array(ref mut arr) = storage.value
+                    && !arr.ar_data.is_empty()
+                {
+                    arr.ar_data.remove(0);
+                }
+                if let PhpValue::Object(ref mut o) = updated.value {
+                    o.properties.insert("__storage".to_string(), storage);
+                }
+                if is_temp_ref(&op.op2) {
+                    if let PhpValue::Long(slot_idx) = op.op2.value { execute_data.set_temp(slot_idx as usize, updated); }
+                } else if is_var_ref(&op.op2) && let PhpValue::String(ref s) = op.op2.value {
+                    let name = s.as_str().strip_prefix('$').unwrap_or(s.as_str());
+                    execute_data.set_var(name, updated);
+                }
+                if let Some(slot) = result_slot(op) { execute_data.set_temp(slot, result); }
+                return Ok(ExecResult::Continue);
+            }
+
+            if mn == "top" {
+                let result = if let PhpValue::Array(ref mut arr) = storage.value {
+                    if arr.ar_data.is_empty() {
+                        Val::new(PhpValue::Long(0), PhpType::Null)
+                    } else {
+                        if class_name == "SplPriorityQueue" {
+                            arr.ar_data.sort_by(|a, b| {
+                                let pa = if let PhpValue::Array(ref p) = a.val.value { p.ar_data.get(1).map(|b| &b.val).cloned() } else { None };
+                                let pb = if let PhpValue::Array(ref p) = b.val.value { p.ar_data.get(1).map(|b| &b.val).cloned() } else { None };
+                                match (pa, pb) {
+                                    (Some(pa), Some(pb)) => {
+                                        if is_min_heap { compare_vals(&pb, &pa) } else { compare_vals(&pa, &pb) }
+                                    }
+                                    _ => std::cmp::Ordering::Equal,
+                                }
+                            });
+                            if let PhpValue::Array(ref pair) = arr.ar_data[0].val.value {
+                                if let Some(v) = pair.ar_data.first() { clone_val(&v.val) } else { Val::new(PhpValue::Long(0), PhpType::Null) }
+                            } else { Val::new(PhpValue::Long(0), PhpType::Null) }
+                        } else {
+                            arr.ar_data.sort_by(|a, b| {
+                                if is_min_heap { compare_vals(&b.val, &a.val) } else { compare_vals(&a.val, &b.val) }
+                            });
+                            clone_val(&arr.ar_data[0].val)
+                        }
+                    }
+                } else { Val::new(PhpValue::Long(0), PhpType::Null) };
+
+                let mut updated = clone_val(&obj_val);
+                if let PhpValue::Object(ref mut o) = updated.value {
+                    o.properties.insert("__storage".to_string(), storage);
+                }
+                if is_temp_ref(&op.op2) {
+                    if let PhpValue::Long(slot_idx) = op.op2.value { execute_data.set_temp(slot_idx as usize, updated); }
+                } else if is_var_ref(&op.op2) && let PhpValue::String(ref s) = op.op2.value {
+                    let name = s.as_str().strip_prefix('$').unwrap_or(s.as_str());
+                    execute_data.set_var(name, updated);
+                }
+                if let Some(slot) = result_slot(op) { execute_data.set_temp(slot, result); }
+                return Ok(ExecResult::Continue);
+            }
+
+            if mn == "count" || mn == "isEmpty" {
+                let cnt = if let PhpValue::Array(ref arr) = storage.value { arr.ar_data.len() as i64 } else { 0 };
+                if mn == "count" {
+                    if let Some(slot) = result_slot(op) { execute_data.set_temp(slot, Val::new(PhpValue::Long(cnt), PhpType::Long)); }
+                } else {
+                    let empty = cnt == 0;
+                    if let Some(slot) = result_slot(op) {
+                        execute_data.set_temp(slot, Val::new(PhpValue::Long(if empty {1} else {0}), if empty {PhpType::True} else {PhpType::False}));
+                    }
+                }
+                return Ok(ExecResult::Continue);
+            }
+
+            // Iterator interface
+            if mn == "rewind" {
+                let mut updated = clone_val(&obj_val);
+                if let PhpValue::Object(ref mut o) = updated.value {
+                    o.properties.insert("__index".to_string(), Val::new(PhpValue::Long(0), PhpType::Long));
+                }
+                if is_temp_ref(&op.op2) {
+                    if let PhpValue::Long(slot_idx) = op.op2.value { execute_data.set_temp(slot_idx as usize, updated); }
+                } else if is_var_ref(&op.op2) && let PhpValue::String(ref s) = op.op2.value {
+                    let name = s.as_str().strip_prefix('$').unwrap_or(s.as_str());
+                    execute_data.set_var(name, updated);
+                }
+                return Ok(ExecResult::Continue);
+            }
+            if mn == "valid" {
+                let index = obj.properties.get("__index").map(crate::engine::operators::zval_get_long).unwrap_or(0);
+                let cnt = if let PhpValue::Array(ref arr) = storage.value { arr.ar_data.len() as i64 } else { 0 };
+                let valid = index < cnt;
+                if let Some(slot) = result_slot(op) {
+                    execute_data.set_temp(slot, Val::new(PhpValue::Long(if valid {1} else {0}), if valid {PhpType::True} else {PhpType::False}));
+                }
+                return Ok(ExecResult::Continue);
+            }
+            if mn == "current" {
+                let index = obj.properties.get("__index").map(crate::engine::operators::zval_get_long).unwrap_or(0);
+                let result = if let PhpValue::Array(ref arr) = storage.value {
+                    if (index as usize) < arr.ar_data.len() {
+                        if class_name == "SplPriorityQueue" {
+                            if let PhpValue::Array(ref pair) = arr.ar_data[index as usize].val.value {
+                                pair.ar_data.first().map(|b| clone_val(&b.val)).unwrap_or_else(|| Val::new(PhpValue::Long(0), PhpType::Null))
+                            } else { Val::new(PhpValue::Long(0), PhpType::Null) }
+                        } else {
+                            clone_val(&arr.ar_data[index as usize].val)
+                        }
+                    } else { Val::new(PhpValue::Long(0), PhpType::Null) }
+                } else { Val::new(PhpValue::Long(0), PhpType::Null) };
+                if let Some(slot) = result_slot(op) { execute_data.set_temp(slot, result); }
+                return Ok(ExecResult::Continue);
+            }
+            if mn == "key" {
+                let index = obj.properties.get("__index").map(crate::engine::operators::zval_get_long).unwrap_or(0);
+                if let Some(slot) = result_slot(op) { execute_data.set_temp(slot, Val::new(PhpValue::Long(index), PhpType::Long)); }
+                return Ok(ExecResult::Continue);
+            }
+            if mn == "next" {
+                let index = obj.properties.get("__index").map(crate::engine::operators::zval_get_long).unwrap_or(0);
+                let mut updated = clone_val(&obj_val);
+                if let PhpValue::Object(ref mut o) = updated.value {
+                    o.properties.insert("__index".to_string(), Val::new(PhpValue::Long(index + 1), PhpType::Long));
+                }
+                if is_temp_ref(&op.op2) {
+                    if let PhpValue::Long(slot_idx) = op.op2.value { execute_data.set_temp(slot_idx as usize, updated); }
+                } else if is_var_ref(&op.op2) && let PhpValue::String(ref s) = op.op2.value {
+                    let name = s.as_str().strip_prefix('$').unwrap_or(s.as_str());
+                    execute_data.set_var(name, updated);
+                }
+                return Ok(ExecResult::Continue);
+            }
+        }
+
+        // Built-in SplFileInfo/SplFileObject methods
+        if class_name == "SplFileInfo" || class_name == "SplFileObject" {
+            let (base, _names_base) = execute_data.call_arg_stack.pop().unwrap_or((0, 0));
+            let args: Vec<Val> = execute_data.call_args.drain(base..).collect();
+            let mn = method_name.as_str();
+            let path = obj.properties.get("__path")
+                .map(crate::engine::operators::zval_get_string)
+                .unwrap_or_else(|| crate::engine::string::string_init("", false));
+
+            if mn == "__construct" {
+                let p = args.first().map(crate::engine::operators::zval_get_string)
+                    .unwrap_or_else(|| crate::engine::string::string_init("", false));
+                let mode = args.get(1).map(crate::engine::operators::zval_get_string)
+                    .unwrap_or_else(|| crate::engine::string::string_init("r", false));
+                let content = if class_name == "SplFileObject" {
+                    crate::php::filesystem::php_file_get_contents(p.as_str())
+                        .ok()
+                        .map(|c| Val::new(PhpValue::String(Box::new(crate::engine::string::string_init(&c, false))), PhpType::String))
+                        .unwrap_or_else(|| Val::new(PhpValue::Long(0), PhpType::Null))
+                } else {
+                    Val::new(PhpValue::Long(0), PhpType::Null)
+                };
+                let mut updated = clone_val(&obj_val);
+                if let PhpValue::Object(ref mut o) = updated.value {
+                    o.properties.insert("__path".to_string(),
+                        Val::new(PhpValue::String(Box::new(p)), PhpType::String));
+                    o.properties.insert("__content".to_string(), content);
+                    o.properties.insert("__pos".to_string(),
+                        Val::new(PhpValue::Long(0), PhpType::Long));
+                    o.properties.insert("__mode".to_string(),
+                        Val::new(PhpValue::String(Box::new(mode)), PhpType::String));
+                }
+                if is_temp_ref(&op.op2) {
+                    if let PhpValue::Long(slot_idx) = op.op2.value { execute_data.set_temp(slot_idx as usize, updated); }
+                } else if is_var_ref(&op.op2) && let PhpValue::String(ref s) = op.op2.value {
+                    let name = s.as_str().strip_prefix('$').unwrap_or(s.as_str());
+                    execute_data.set_var(name, updated);
+                }
+                if let Some(slot) = result_slot(op) { execute_data.set_temp(slot, Val::new(PhpValue::Long(0), PhpType::Null)); }
+                return Ok(ExecResult::Continue);
+            }
+
+            if mn == "getPath" {
+                let dir = crate::php::filesystem::php_dirname(path.as_str());
+                if let Some(slot) = result_slot(op) {
+                    execute_data.set_temp(slot, Val::new(PhpValue::String(Box::new(crate::engine::string::string_init(&dir, false))), PhpType::String));
+                }
+                return Ok(ExecResult::Continue);
+            }
+
+            if mn == "getFilename" {
+                let base = crate::php::filesystem::php_basename(path.as_str());
+                if let Some(slot) = result_slot(op) {
+                    execute_data.set_temp(slot, Val::new(PhpValue::String(Box::new(crate::engine::string::string_init(&base, false))), PhpType::String));
+                }
+                return Ok(ExecResult::Continue);
+            }
+
+            if mn == "getPathname" {
+                if let Some(slot) = result_slot(op) {
+                    execute_data.set_temp(slot, Val::new(PhpValue::String(Box::new(path)), PhpType::String));
+                }
+                return Ok(ExecResult::Continue);
+            }
+
+            if mn == "getRealPath" {
+                let rp = crate::php::filesystem::php_realpath(path.as_str()).unwrap_or_default();
+                if let Some(slot) = result_slot(op) {
+                    execute_data.set_temp(slot, Val::new(PhpValue::String(Box::new(crate::engine::string::string_init(&rp, false))), PhpType::String));
+                }
+                return Ok(ExecResult::Continue);
+            }
+
+            if mn == "getSize" {
+                let size = crate::php::filesystem::php_filesize(path.as_str()).unwrap_or(0);
+                if let Some(slot) = result_slot(op) {
+                    execute_data.set_temp(slot, Val::new(PhpValue::Long(size as i64), PhpType::Long));
+                }
+                return Ok(ExecResult::Continue);
+            }
+
+            if mn == "isFile" {
+                let is_f = crate::php::filesystem::php_is_file(path.as_str());
+                if let Some(slot) = result_slot(op) {
+                    execute_data.set_temp(slot, Val::new(PhpValue::Long(if is_f {1} else {0}), if is_f {PhpType::True} else {PhpType::False}));
+                }
+                return Ok(ExecResult::Continue);
+            }
+
+            if mn == "isDir" {
+                let is_d = crate::php::filesystem::php_is_dir(path.as_str());
+                if let Some(slot) = result_slot(op) {
+                    execute_data.set_temp(slot, Val::new(PhpValue::Long(if is_d {1} else {0}), if is_d {PhpType::True} else {PhpType::False}));
+                }
+                return Ok(ExecResult::Continue);
+            }
+
+            if mn == "isReadable" {
+                let r = crate::php::filesystem::php_is_readable(path.as_str());
+                if let Some(slot) = result_slot(op) {
+                    execute_data.set_temp(slot, Val::new(PhpValue::Long(if r {1} else {0}), if r {PhpType::True} else {PhpType::False}));
+                }
+                return Ok(ExecResult::Continue);
+            }
+
+            if mn == "isWritable" {
+                let w = crate::php::filesystem::php_is_writable(path.as_str());
+                if let Some(slot) = result_slot(op) {
+                    execute_data.set_temp(slot, Val::new(PhpValue::Long(if w {1} else {0}), if w {PhpType::True} else {PhpType::False}));
+                }
+                return Ok(ExecResult::Continue);
+            }
+
+            // SplFileObject-specific methods
+            if mn == "fgets" {
+                let content = obj.properties.get("__content")
+                    .map(crate::engine::operators::zval_get_string)
+                    .unwrap_or_else(|| crate::engine::string::string_init("", false));
+                let pos = obj.properties.get("__pos")
+                    .map(crate::engine::operators::zval_get_long)
+                    .unwrap_or(0);
+                let content_str = content.as_str();
+                let result = if (pos as usize) >= content_str.len() {
+                    Val::new(PhpValue::Long(0), PhpType::False)
+                } else {
+                    let remaining = &content_str[pos as usize..];
+                    let line_end = remaining.find('\n').map(|i| i + 1).unwrap_or(remaining.len());
+                    let line = &remaining[..line_end];
+                    let new_pos = pos + line_end as i64;
+                    let mut updated = clone_val(&obj_val);
+                    if let PhpValue::Object(ref mut o) = updated.value {
+                        o.properties.insert("__pos".to_string(), Val::new(PhpValue::Long(new_pos), PhpType::Long));
+                    }
+                    if is_temp_ref(&op.op2) {
+                        if let PhpValue::Long(slot_idx) = op.op2.value { execute_data.set_temp(slot_idx as usize, updated); }
+                    } else if is_var_ref(&op.op2) && let PhpValue::String(ref s) = op.op2.value {
+                        let name = s.as_str().strip_prefix('$').unwrap_or(s.as_str());
+                        execute_data.set_var(name, updated);
+                    }
+                    Val::new(PhpValue::String(Box::new(crate::engine::string::string_init(line, false))), PhpType::String)
+                };
+                if let Some(slot) = result_slot(op) { execute_data.set_temp(slot, result); }
+                return Ok(ExecResult::Continue);
+            }
+
+            if mn == "fread" {
+                let content = obj.properties.get("__content")
+                    .map(crate::engine::operators::zval_get_string)
+                    .unwrap_or_else(|| crate::engine::string::string_init("", false));
+                let pos = obj.properties.get("__pos")
+                    .map(crate::engine::operators::zval_get_long)
+                    .unwrap_or(0);
+                let length = args.first().map(crate::engine::operators::zval_get_long).unwrap_or(0) as usize;
+                let content_str = content.as_str();
+                let result = if (pos as usize) >= content_str.len() {
+                    Val::new(PhpValue::Long(0), PhpType::False)
+                } else {
+                    let remaining = &content_str[pos as usize..];
+                    let read_len = length.min(remaining.len());
+                    let data = &remaining[..read_len];
+                    let new_pos = pos + read_len as i64;
+                    let mut updated = clone_val(&obj_val);
+                    if let PhpValue::Object(ref mut o) = updated.value {
+                        o.properties.insert("__pos".to_string(), Val::new(PhpValue::Long(new_pos), PhpType::Long));
+                    }
+                    if is_temp_ref(&op.op2) {
+                        if let PhpValue::Long(slot_idx) = op.op2.value { execute_data.set_temp(slot_idx as usize, updated); }
+                    } else if is_var_ref(&op.op2) && let PhpValue::String(ref s) = op.op2.value {
+                        let name = s.as_str().strip_prefix('$').unwrap_or(s.as_str());
+                        execute_data.set_var(name, updated);
+                    }
+                    Val::new(PhpValue::String(Box::new(crate::engine::string::string_init(data, false))), PhpType::String)
+                };
+                if let Some(slot) = result_slot(op) { execute_data.set_temp(slot, result); }
+                return Ok(ExecResult::Continue);
+            }
+
+            if mn == "feof" {
+                let content = obj.properties.get("__content")
+                    .map(crate::engine::operators::zval_get_string)
+                    .unwrap_or_else(|| crate::engine::string::string_init("", false));
+                let pos = obj.properties.get("__pos")
+                    .map(crate::engine::operators::zval_get_long)
+                    .unwrap_or(0);
+                let eof = (pos as usize) >= content.as_str().len();
+                if let Some(slot) = result_slot(op) {
+                    execute_data.set_temp(slot, Val::new(PhpValue::Long(if eof {1} else {0}), if eof {PhpType::True} else {PhpType::False}));
+                }
+                return Ok(ExecResult::Continue);
+            }
+
+            if mn == "fwrite" || mn == "fputs" {
+                let data = args.first().map(crate::engine::operators::zval_get_string)
+                    .unwrap_or_else(|| crate::engine::string::string_init("", false));
+                let written = crate::php::filesystem::php_file_put_contents(path.as_str(), data.as_str())
+                    .unwrap_or(0);
+                if let Some(slot) = result_slot(op) {
+                    execute_data.set_temp(slot, Val::new(PhpValue::Long(written as i64), PhpType::Long));
+                }
+                return Ok(ExecResult::Continue);
+            }
+
+            if mn == "rewind" {
+                let mut updated = clone_val(&obj_val);
+                if let PhpValue::Object(ref mut o) = updated.value {
+                    o.properties.insert("__pos".to_string(), Val::new(PhpValue::Long(0), PhpType::Long));
+                }
+                if is_temp_ref(&op.op2) {
+                    if let PhpValue::Long(slot_idx) = op.op2.value { execute_data.set_temp(slot_idx as usize, updated); }
+                } else if is_var_ref(&op.op2) && let PhpValue::String(ref s) = op.op2.value {
+                    let name = s.as_str().strip_prefix('$').unwrap_or(s.as_str());
+                    execute_data.set_var(name, updated);
+                }
+                return Ok(ExecResult::Continue);
+            }
         }
 
         // Extract method info (owned copies to avoid borrow conflict)
@@ -1998,6 +3848,7 @@ pub fn execute_do_method_call(
             // Execute method
             let mut method_op_array = OpArray::with_capacity(ops.len(), oparray_filename);
             method_op_array.ops = ops;
+            let saved_try_depth = execute_data.try_stack.len();
             let (_status, return_val) =
                 super::execute::execute_ex_returning(execute_data, &method_op_array);
             execute_data.op_array = saved_op_array;
@@ -2020,6 +3871,12 @@ pub fn execute_do_method_call(
                     execute_data.constants.remove("__FILE__");
                 }
             }
+            if let Some(er) = crate::engine::vm::exception_dispatch::propagate_after_call(
+                execute_data,
+                saved_try_depth,
+            ) {
+                return Ok(er);
+            }
 
             // Copy modified $this back to the original object location (objects are reference-like in PHP)
             let this_val = execute_data.get_var("this");
@@ -2032,11 +3889,7 @@ pub fn execute_do_method_call(
                     && let PhpValue::String(ref s) = op.op2.value
                 {
                     let vname = s.as_str();
-                    let name = if vname.starts_with('$') {
-                        &vname[1..]
-                    } else {
-                        vname
-                    };
+                    let name = vname.strip_prefix('$').unwrap_or(vname);
                     execute_data.set_var(name, this_val);
                 }
             }
@@ -2053,11 +3906,6 @@ pub fn execute_do_method_call(
         }
 
         // Method not found — try __call magic method
-        let (base, names_base) = execute_data.call_arg_stack.pop().unwrap_or((0, 0));
-        let args: Vec<Val> = execute_data.call_args.drain(base..).collect();
-        let _arg_names: Vec<Option<String>> =
-            execute_data.call_arg_names.drain(names_base..).collect();
-
         let magic_info = execute_data
             .class_table
             .get(&class_name)
@@ -2097,6 +3945,12 @@ pub fn execute_do_method_call(
             execute_data.called_class = Some(class_name.clone());
             execute_data.set_var("this", clone_val(&obj_val));
 
+            // Drain args now that we know __call is going to consume them.
+            let (base, names_base) = execute_data.call_arg_stack.pop().unwrap_or((0, 0));
+            let args: Vec<Val> = execute_data.call_args.drain(base..).collect();
+            let _arg_names: Vec<Option<String>> =
+                execute_data.call_arg_names.drain(names_base..).collect();
+
             let name_val = Val::new(
                 PhpValue::String(Box::new(crate::engine::string::string_init(
                     method_name.as_str(),
@@ -2129,6 +3983,7 @@ pub fn execute_do_method_call(
 
             let mut method_op_array = OpArray::with_capacity(ops.len(), oparray_filename);
             method_op_array.ops = ops;
+            let saved_try_depth = execute_data.try_stack.len();
             let (_status, return_val) =
                 super::execute::execute_ex_returning(execute_data, &method_op_array);
             execute_data.op_array = saved_op_array;
@@ -2151,6 +4006,12 @@ pub fn execute_do_method_call(
                     execute_data.constants.remove("__FILE__");
                 }
             }
+            if let Some(er) = crate::engine::vm::exception_dispatch::propagate_after_call(
+                execute_data,
+                saved_try_depth,
+            ) {
+                return Ok(er);
+            }
 
             if let Some(slot) = result_slot(op) {
                 if let Some(ret) = return_val {
@@ -2163,8 +4024,46 @@ pub fn execute_do_method_call(
         }
     }
 
-    let _ = execute_data.call_arg_stack.pop();
-    if let Some(slot) = result_slot(op) {
+    let (base, _names_base) = execute_data.call_arg_stack.pop().unwrap_or((0, 0));
+    let args: Vec<Val> = execute_data.call_args.drain(base..).collect();
+    if let PhpValue::Object(ref obj) = obj_val.value
+        && method_name.as_str() == "__construct"
+        && crate::engine::vm::exception_dispatch::is_standard_throwable(&obj.class_name)
+    {
+        let msg = args
+            .first()
+            .map(|v| {
+                crate::engine::operators::zval_get_string(v)
+                    .as_str()
+                    .to_string()
+            })
+            .unwrap_or_default();
+        let code = args
+            .get(1)
+            .map(crate::engine::operators::zval_get_long)
+            .unwrap_or(0);
+        let mut updated = clone_val(&obj_val);
+        if let PhpValue::Object(ref mut o) = updated.value {
+            o.properties.insert(
+                "message".to_string(),
+                Val::new(
+                    PhpValue::String(Box::new(crate::engine::string::string_init(&msg, false))),
+                    PhpType::String,
+                ),
+            );
+            o.properties.insert(
+                "code".to_string(),
+                Val::new(PhpValue::Long(code), PhpType::Long),
+            );
+            if let Some(file) = execute_data.constants.get("__FILE__") {
+                o.properties.insert("file".to_string(), clone_val(file));
+            }
+        }
+        // Write back to the slot the NewObj result lives in.
+        if let PhpValue::Long(idx) = op.op2.value {
+            execute_data.set_temp(idx as usize, updated);
+        }
+    } else if let Some(slot) = result_slot(op) {
         execute_data.set_temp(slot, Val::new(PhpValue::Long(0), PhpType::Null));
     }
     Ok(ExecResult::Continue)
@@ -2187,11 +4086,7 @@ pub fn execute_fetch_static_prop(
     let prop_name_val = resolve_operand(&op.op2, execute_data);
     let prop_name_raw = crate::engine::operators::zval_get_string(&prop_name_val);
     let prop_name_str = prop_name_raw.as_str();
-    let prop_name = if prop_name_str.starts_with('$') {
-        &prop_name_str[1..]
-    } else {
-        prop_name_str
-    };
+    let prop_name = prop_name_str.strip_prefix('$').unwrap_or(prop_name_str);
 
     let result_val = if let Some(ce) = execute_data.class_table.get(&class_name) {
         if prop_name == "class" {
@@ -2203,11 +4098,25 @@ pub fn execute_fetch_static_prop(
                 PhpType::String,
             )
         } else {
-            ce.static_properties
-                .get(prop_name)
-                .map(clone_val)
-                .or_else(|| ce.constants.get(prop_name).map(clone_val))
-                .unwrap_or_else(|| Val::new(PhpValue::Long(0), PhpType::Null))
+            // Walk the class and its parent chain for static properties
+            // and constants (PHP inherits both from parent classes).
+            let mut found: Option<Val> = None;
+            let mut current_ce = Some(ce);
+            while let Some(cur) = current_ce {
+                if let Some(v) = cur.static_properties.get(prop_name) {
+                    found = Some(clone_val(v));
+                    break;
+                }
+                if let Some(v) = cur.constants.get(prop_name) {
+                    found = Some(clone_val(v));
+                    break;
+                }
+                current_ce = cur
+                    .parent_name
+                    .as_ref()
+                    .and_then(|p| execute_data.class_table.get(p));
+            }
+            found.unwrap_or_else(|| Val::new(PhpValue::Long(0), PhpType::Null))
         }
     } else {
         Val::new(PhpValue::Long(0), PhpType::Null)
@@ -2237,6 +4146,50 @@ pub fn execute_do_static_call(
     }
 
     let resolved_class = class_name.clone();
+
+    // Built-in DateTime::createFromFormat() static method
+    if (resolved_class == "DateTime" || resolved_class == "DateTimeImmutable")
+        && method_name.as_str() == "createFromFormat"
+    {
+        let (base, _names_base) = execute_data.call_arg_stack.pop().unwrap_or((0, 0));
+        let args: Vec<Val> = execute_data.call_args.drain(base..).collect();
+        let fmt = args
+            .first()
+            .map(crate::engine::operators::zval_get_string)
+            .unwrap_or_else(|| crate::engine::string::string_init("", false));
+        let dt_str = args
+            .get(1)
+            .map(crate::engine::operators::zval_get_string)
+            .unwrap_or_else(|| crate::engine::string::string_init("", false));
+        let ts = crate::php::datetime::parse_from_format(fmt.as_str(), dt_str.as_str());
+        let mut obj = crate::engine::types::PhpObject::new(&resolved_class);
+        obj.properties.insert(
+            "timestamp".to_string(),
+            Val::new(PhpValue::Long(ts.unwrap_or(0)), PhpType::Long),
+        );
+        let result_val = Val::new(PhpValue::Object(Box::new(obj)), PhpType::Object);
+        if let Some(slot) = result_slot(op) {
+            execute_data.set_temp(slot, result_val);
+        }
+        return Ok(ExecResult::Continue);
+    }
+
+    // Built-in Fiber::suspend() static method — sets the suspend flag so the
+    // execution loop breaks. Returns the suspend value as a placeholder; the
+    // actual return value (from resume()) is placed in the DoFCall result slot
+    // by the resume handler.
+    if resolved_class == "Fiber" && method_name.as_str() == "suspend" {
+        let (base, _names_base) = execute_data.call_arg_stack.pop().unwrap_or((0, 0));
+        let args: Vec<Val> = execute_data.call_args.drain(base..).collect();
+        let suspend_val = args.first().map(clone_val)
+            .unwrap_or_else(|| Val::new(PhpValue::Long(0), PhpType::Null));
+        execute_data.fiber_suspend_requested = Some(suspend_val);
+        // Return null as placeholder — resume() overwrites the result slot
+        if let Some(slot) = result_slot(op) {
+            execute_data.set_temp(slot, Val::new(PhpValue::Long(0), PhpType::Null));
+        }
+        return Ok(ExecResult::Continue);
+    }
 
     let method_info: Option<(Vec<String>, Vec<Op>, String)> = execute_data
         .class_table
@@ -2304,6 +4257,7 @@ pub fn execute_do_static_call(
 
         let mut method_op_array = OpArray::with_capacity(ops.len(), oparray_filename);
         method_op_array.ops = ops;
+        let saved_try_depth = execute_data.try_stack.len();
         let (_status, return_val) =
             super::execute::execute_ex_returning(execute_data, &method_op_array);
         execute_data.op_array = saved_op_array;
@@ -2325,6 +4279,12 @@ pub fn execute_do_static_call(
             None => {
                 execute_data.constants.remove("__FILE__");
             }
+        }
+        if let Some(er) = crate::engine::vm::exception_dispatch::propagate_after_call(
+            execute_data,
+            saved_try_depth,
+        ) {
+            return Ok(er);
         }
 
         if let Some(slot) = result_slot(op) {
@@ -2455,6 +4415,179 @@ pub fn execute_clone_obj(op: &Op, execute_data: &mut ExecuteData) -> Result<Exec
     Ok(ExecResult::Continue)
 }
 
+/// Unset a variable: `unset($var)`.  Removes the variable from the symbol
+/// table (or the appropriate scope — global, ref-param, local).
+#[inline]
+pub fn execute_unset(op: &Op, execute_data: &mut ExecuteData) -> Result<ExecResult, String> {
+    if let PhpValue::String(ref s) = op.op1.value {
+        let vname = s.as_str();
+        let name = vname.strip_prefix('$').unwrap_or(vname);
+        execute_data.unset_var(name);
+    }
+    Ok(ExecResult::Continue)
+}
+
+/// Unset an array element: `unset($arr[$key])`.
+/// Removes the element at the given key from the array stored in op1.
+#[inline]
+pub fn execute_unset_dim(op: &Op, execute_data: &mut ExecuteData) -> Result<ExecResult, String> {
+    let key_val = resolve_operand(&op.op2, execute_data);
+
+    // Get the container, remove the key, write it back (clone-modify-set).
+    if is_var_ref(&op.op1) {
+        if let PhpValue::String(ref s) = op.op1.value {
+            let vname = s.as_str();
+            let name = vname.strip_prefix('$').unwrap_or(vname);
+            let mut container = execute_data.get_var(name);
+            if let PhpValue::Array(ref mut arr) = container.value {
+                let key_str = crate::engine::operators::zval_get_string(&key_val);
+                let key = crate::engine::string::string_init(key_str.as_str(), false);
+                let _ = crate::engine::hash::hash_del(arr, &key);
+            }
+            execute_data.set_var(name, container);
+        }
+    } else if is_temp_ref(&op.op1)
+        && let PhpValue::Long(slot_idx) = op.op1.value
+    {
+        let slot = slot_idx as usize;
+        let mut container = execute_data.get_temp(slot);
+        if let PhpValue::Array(ref mut arr) = container.value {
+            let key_str = crate::engine::operators::zval_get_string(&key_val);
+            let key = crate::engine::string::string_init(key_str.as_str(), false);
+            let _ = crate::engine::hash::hash_del(arr, &key);
+        }
+        execute_data.set_temp(slot, container);
+    }
+    Ok(ExecResult::Continue)
+}
+
+/// Unset an object property: `unset($obj->prop)`.
+/// If the property exists, remove it. If it doesn't exist and the class
+/// defines `__unset`, invoke the magic method with the property name.
+#[inline]
+pub fn execute_unset_obj_prop(
+    op: &Op,
+    execute_data: &mut ExecuteData,
+) -> Result<ExecResult, String> {
+    let obj_val = resolve_operand(&op.op1, execute_data);
+    let prop_name_val = resolve_operand(&op.op2, execute_data);
+    let prop_name = crate::engine::operators::zval_get_string(&prop_name_val);
+
+    if let PhpValue::Object(ref obj) = obj_val.value {
+        let class_name = obj.class_name.clone();
+        let has_prop = obj.properties.contains_key(prop_name.as_str());
+
+        if has_prop {
+            // Property exists: remove it (clone-modify-set pattern, same as AssignObjProp).
+            if is_var_ref(&op.op1) {
+                if let PhpValue::String(ref s) = op.op1.value {
+                    let vname = s.as_str();
+                    let name = vname.strip_prefix('$').unwrap_or(vname);
+                    let mut obj_val = execute_data.get_var(name);
+                    if let PhpValue::Object(ref mut obj) = obj_val.value {
+                        obj.properties.remove(prop_name.as_str());
+                    }
+                    execute_data.set_var(name, obj_val);
+                }
+            } else if is_temp_ref(&op.op1)
+                && let PhpValue::Long(slot_idx) = op.op1.value
+            {
+                let slot = slot_idx as usize;
+                let mut obj_val = execute_data.get_temp(slot);
+                if let PhpValue::Object(ref mut obj) = obj_val.value {
+                    obj.properties.remove(prop_name.as_str());
+                }
+                execute_data.set_temp(slot, obj_val);
+            }
+        } else if let Some(ce) = execute_data.class_table.get(&class_name) {
+            // Property doesn't exist: check for __unset magic method.
+            if let Some(m) = ce.methods.get("__unset") {
+                let params = m.params.clone();
+                let ops: Vec<Op> = m
+                    .op_array
+                    .ops
+                    .iter()
+                    .map(|op| {
+                        Op::new(
+                            op.opcode,
+                            clone_val(&op.op1),
+                            clone_val(&op.op2),
+                            clone_val(&op.result),
+                            op.extended_value,
+                        )
+                    })
+                    .collect();
+                let file_label = m
+                    .op_array
+                    .filename
+                    .clone()
+                    .filter(|f| !f.is_empty())
+                    .unwrap_or_else(|| format!("{}::__unset", class_name));
+
+                let saved_current_op = execute_data.current_op;
+                let saved_op_array = execute_data.op_array.take();
+                let saved_script_dir = execute_data.current_script_dir.clone();
+                let saved_magic_dir = execute_data.constants.get("__DIR__").map(clone_val);
+                let saved_magic_file = execute_data.constants.get("__FILE__").map(clone_val);
+                let saved_called_class = execute_data.called_class.clone();
+                execute_data.called_class = Some(class_name.clone());
+                execute_data.set_var("this", clone_val(&obj_val));
+
+                let name_val = Val::new(
+                    PhpValue::String(Box::new(crate::engine::string::string_init(
+                        prop_name.as_str(),
+                        false,
+                    ))),
+                    PhpType::String,
+                );
+                bind_call_args(
+                    execute_data,
+                    &params,
+                    &[name_val],
+                    &[None],
+                    &None,
+                    &[],
+                    &[false],
+                );
+
+                let mut method_op_array = OpArray::with_capacity(ops.len(), file_label);
+                method_op_array.ops = ops;
+                let saved_try_depth = execute_data.try_stack.len();
+                let (_status, _result) =
+                    super::execute::execute_ex_returning(execute_data, &method_op_array);
+                execute_data.op_array = saved_op_array;
+                execute_data.current_op = saved_current_op;
+                execute_data.current_script_dir = saved_script_dir;
+                execute_data.called_class = saved_called_class;
+                match saved_magic_dir {
+                    Some(v) => {
+                        execute_data.constants.insert("__DIR__".to_string(), v);
+                    }
+                    None => {
+                        execute_data.constants.remove("__DIR__");
+                    }
+                }
+                match saved_magic_file {
+                    Some(v) => {
+                        execute_data.constants.insert("__FILE__".to_string(), v);
+                    }
+                    None => {
+                        execute_data.constants.remove("__FILE__");
+                    }
+                }
+                if let Some(er) = crate::engine::vm::exception_dispatch::propagate_after_call(
+                    execute_data,
+                    saved_try_depth,
+                ) {
+                    return Ok(er);
+                }
+            }
+        }
+    }
+
+    Ok(ExecResult::Continue)
+}
+
 /// Bind call arguments to parameters, supporting named args, variadic, and by-ref params
 #[inline]
 pub(crate) fn bind_call_args(
@@ -2482,11 +4615,7 @@ pub(crate) fn bind_call_args(
                 && let PhpValue::String(ref s) = arg.value
             {
                 let caller = s.as_str();
-                let caller_clean = if caller.starts_with('$') {
-                    &caller[1..]
-                } else {
-                    caller
-                };
+                let caller_clean = caller.strip_prefix('$').unwrap_or(caller);
                 execute_data
                     .ref_param_bindings
                     .insert(clean.to_string(), caller_clean.to_string());
@@ -2498,22 +4627,13 @@ pub(crate) fn bind_call_args(
     // First pass: bind named arguments
     for (i, name_opt) in arg_names.iter().enumerate() {
         if let Some(name) = name_opt
-            && let Some(pos) = param_names[..regular_count].iter().position(|p| {
-                let clean = if p.starts_with('$') {
-                    &p[1..]
-                } else {
-                    p.as_str()
-                };
-                clean == name.as_str()
-            })
+            && let Some(pos) = param_names[..regular_count]
+                .iter()
+                .position(|p| p.strip_prefix('$').unwrap_or(p) == name.as_str())
             && let Some(arg) = args.get(i)
         {
             let p = &param_names[pos];
-            let clean = if p.starts_with('$') {
-                &p[1..]
-            } else {
-                p.as_str()
-            };
+            let clean = p.strip_prefix('$').unwrap_or(p);
             bind_one(execute_data, pos, clean, arg, i);
             bound[pos] = true;
         }
@@ -2530,11 +4650,7 @@ pub(crate) fn bind_call_args(
                 && let Some(arg) = args.get(i)
             {
                 let p = &param_names[param_idx];
-                let clean = if p.starts_with('$') {
-                    &p[1..]
-                } else {
-                    p.as_str()
-                };
+                let clean = p.strip_prefix('$').unwrap_or(p);
                 bind_one(execute_data, param_idx, clean, arg, i);
                 bound[param_idx] = true;
                 param_idx += 1;
@@ -2551,14 +4667,7 @@ pub(crate) fn bind_call_args(
                 // Named arg is extra if not matched to a regular param
                 param_names[..regular_count]
                     .iter()
-                    .position(|p| {
-                        let clean = if p.starts_with('$') {
-                            &p[1..]
-                        } else {
-                            p.as_str()
-                        };
-                        clean == name.as_str()
-                    })
+                    .position(|p| p.strip_prefix('$').unwrap_or(p) == name.as_str())
                     .is_none()
             } else {
                 // Positional arg is extra if beyond regular_count
@@ -2572,11 +4681,7 @@ pub(crate) fn bind_call_args(
             }
         }
         let arr_val = Val::new(PhpValue::Array(Box::new(arr)), PhpType::Array);
-        let clean = if var_name.starts_with('$') {
-            &var_name[1..]
-        } else {
-            var_name.as_str()
-        };
+        let clean = var_name.strip_prefix('$').unwrap_or(var_name);
         execute_data.set_var(clean, arr_val);
     }
 }

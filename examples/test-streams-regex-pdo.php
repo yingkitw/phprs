@@ -190,7 +190,7 @@ echo "  - File streams (existing)\n\n";
 echo "Session Features:\n";
 echo "  - session_start(), session_destroy()\n";
 echo "  - session_id(), session_name()\n";
-echo "  - \$_SESSION superglobal\n";
+echo "  - {'$'}_SESSION superglobal\n";
 echo "  - In-memory storage (can be extended to file/database)\n\n";
 
 echo "PDO Features:\n";

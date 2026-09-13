@@ -53,9 +53,10 @@ For optimization introspection (API surface may change—refer to source):
 ```rust
 use phprs::engine::{jit, opcode_cache, function_optimizer};
 
-let jit_stats = jit::get_jit_compiler().get_stats();
+// jit and function_optimizer are behind RwLock; the opcode cache is not
+let jit_stats = jit::get_jit_compiler().read().unwrap().get_stats();
 let cache_stats = opcode_cache::get_opcode_cache().get_stats();
-let func_stats = function_optimizer::get_function_optimizer().get_stats();
+let func_stats = function_optimizer::get_function_optimizer().read().unwrap().get_stats();
 ```
 
 ## Publishing a real phprs vs PHP comparison

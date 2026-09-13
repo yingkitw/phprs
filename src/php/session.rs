@@ -16,6 +16,9 @@ use std::sync::OnceLock;
 
 static SAVE_PATH: OnceLock<PathBuf> = OnceLock::new();
 
+/// Default session cookie/name (php.ini `session.name` default).
+pub const DEFAULT_SESSION_NAME: &str = "PHPSESSID";
+
 /// Configure directory for session files (used by `phprs serve`).
 pub fn configure_save_path(path: PathBuf) {
     let _ = SAVE_PATH.set(path);
@@ -191,7 +194,7 @@ pub fn session_start(execute_data: &mut ExecuteData) -> Result<bool, String> {
         execute_data.session_id = generate_session_id();
     }
     if execute_data.session_name.is_empty() {
-        execute_data.session_name = "PHPSESSID".to_string();
+        execute_data.session_name = DEFAULT_SESSION_NAME.to_string();
     }
     let data = load_session_data(&execute_data.session_id);
     bind_session_array(execute_data, data);
@@ -225,7 +228,7 @@ pub fn session_name(args: &[Val], execute_data: &mut ExecuteData) -> Result<Stri
         execute_data.session_name = zval_get_string(&args[0]).as_str().to_string();
     }
     if execute_data.session_name.is_empty() {
-        execute_data.session_name = "PHPSESSID".to_string();
+        execute_data.session_name = DEFAULT_SESSION_NAME.to_string();
     }
     Ok(execute_data.session_name.clone())
 }

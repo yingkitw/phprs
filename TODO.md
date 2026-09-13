@@ -34,8 +34,8 @@
 - [x] Control flow (if/else, while, for, foreach)
 - [x] Function compilation and calls
 - [x] Class compilation (properties, methods, constructors)
-- [x] VM execution (74 opcodes, dispatch table)
-- [x] Built-in functions (160+ functions — see Statistics)
+- [x] VM execution (76 opcodes, dispatch table)
+- [x] Built-in functions (195+ functions — see Statistics)
 - [x] Legacy `array()` constructor syntax (`array()`, `array('k' => v)`, indexed elements)
 - [x] Foreach with key => value (`foreach ($a as $k => $v)`)
 - [x] Chained array dimension assignment (`$a['b']['c'] = $v`)
@@ -44,7 +44,10 @@
 - [x] `global $var` statement (BindGlobal opcode; script globals in user functions)
 - [x] Chained object property dimension assignment (`$obj->prop['k'] = v`, `$this->data['a']['b'] = v`)
 - [x] Class property defaults with constant expressions (`public $data = array()`)
-- [x] try/catch/finally exception dispatch (single op-array scope; cross-function propagation pending)
+- [x] try/catch/finally exception dispatch (single op-array scope; cross-function propagation now supported via `propagate_after_call` in `src/engine/vm/exception_dispatch.rs`)
+- [x] Cross-function exception propagation — `throw` in a callee (function, method, static method, included file, `call_user_func` callback) with no local catch is catchable by `try` regions in the caller's frame. `finally` blocks run on normal completion, after catch, and during exception unwinding (pending exceptions re-dispatched after `FinallyEnd`).
+- [x] Built-in `Exception`/`Error` family: `new Exception("msg")` stores message/code on the object so `$e->getMessage()` and `$e->getCode()` work; rethrow from a local catch propagates to the outer `try`.
+- [x] `__unset` magic method (`unset($obj->prop)` calls `__unset($name)` when the property is undefined; defined properties are removed without invoking `__unset`); covered by `tests/php8x_features.rs::test_magic_unset_*`.
 - [x] Direct subscripting of function-call results (`func()['key']`, `(func())['key']`)
 - [x] Compound assignment operators (`+=`, `-=`, `*=`, `/=`, `%=`, `.=`) on variables, array dims (`$a['k'] .= x`, chained), and object properties (`$obj->p += x`); `??=` on variables — compiler desugaring
 - [x] Bitwise operators (`&`, `|`, `^`, `~`, `<<`, `>>`) with PHP 8 precedence (`|` > `^` > `&`, shifts tighter than comparison); bitwise compound assigns (`&=`, `|=`, `^=`, `<<=`, `>>=`)
@@ -89,7 +92,7 @@
 - [x] `tests/build_rust_examples.rs` — `examples/rust/*.rs` compile
 - [x] `src/engine/vm/builtin_capability_tests.rs` — broad builtin coverage
 - [x] [PERFORMANCE.md](PERFORMANCE.md) evidence policy (phprs-only benchmarks; no fake PHP baselines)
-- [x] Example scripts adjusted for phprs compiler limits (regex lookahead, session simulation, foreach value-only)
+- [x] Example scripts adjusted for phprs limits where needed (look-ahead regex — later unlocked natively via `fancy-regex`; session demos — later backed by real `session_*` builtins)
 - [x] Look-ahead/look-behind regex via `fancy-regex` fallback in `preg_*`
 - [x] Session builtins + file-backed storage for `phprs serve`
 - [x] First-class callable syntax (`strlen(...)`, static/instance method forms)
@@ -101,8 +104,6 @@
 - [x] Autoloader generation (PSR-4)
 - [x] Dependency resolution (transitive, semver)
 - [x] Package installation
-
-## Planned 📋
 
 ### Standard Library
 - [x] Stream wrappers (HTTP, FTP)
@@ -117,9 +118,9 @@
   - [x] preg_split() for pattern-based splitting
   - [x] PCRE flag support (i, m, s, x)
   - [x] Regex compilation and caching
-- [x] Session **demo patterns** (`examples/session-examples.php` — plain `$_SESSION` array; not Zend session extension)
-  - [x] `session_start()`, `session_destroy()`, `session_id()` as engine builtins
-  - [x] File-backed / request-scoped session storage in `phprs serve`
+- [x] Session builtins (`session_start()`, `session_destroy()`, `session_id()`, `session_name()`)
+  - [x] File-backed / request-scoped session storage in `phprs serve` (JSON files, `PHPSESSID` cookie)
+  - Not the full Zend session extension — see SPEC.md limitations
 - [x] PDO/database layer
   - [x] PDO class with connection management
   - [x] Query execution (query(), exec())
@@ -129,6 +130,8 @@
   - [x] Fetch operations (fetch(), fetchAll())
   - [x] Error handling (errorInfo())
   - [x] Multiple driver support (MySQL, PostgreSQL, SQLite stubs)
+
+## Planned 📋
 
 ### Framework Roadmap
 
@@ -171,14 +174,15 @@
 ### Implementation stats (current)
 - **Engine**: types, string, hash, alloc, gc, operators, compile, vm, jit, benchmark, …
 - **PHP runtime**: modules under `src/php/` (regex, http_stream, pdo stub, math, hash, datetime, mbstring, …)
-- **Framework examples**: WordPress-shaped (partial), CodeIgniter 4 demo (CI-tested), Drupal demo (CI-tested)
-- **74 opcodes** (dispatch table)
+- **Framework examples**: WordPress-shaped (partial), CodeIgniter 4 demo (covered by `tests/examples_runtime.rs`), Drupal demo (covered by `tests/examples_runtime.rs`)
+- **76 opcodes** (dispatch table)
 - **195+ built-in functions** — see `builtin_capability_tests.rs` for exercised surface
-- **510+ workspace tests** (`cargo test --workspace`)
-- **23 root PHP examples** — all run via `examples_root_php_scripts_all_run`
+- **560+ workspace tests** (`cargo test --workspace` — all passing; see `tests/exception_propagation.rs`, `tests/string_interpolation.rs`, `tests/php8x_features.rs` for the new surface)
+- **24+ root PHP examples** — all run via `examples_root_php_scripts_all_run`
 - **Known gaps** (verified during testing — tracked, not blocking):
   - Un-dispatched opcodes (no-ops today): `AssignObj`, `TypeCheck`, `Unset`, `IsSet`, `Empty`, `Count`, `Keys`, `Values`, `ArrayDiff`. Several are covered by their builtin equivalents (`isset`/`empty`/`count`/`unset` work as function calls), but the opcode-level forms do nothing.
-  - Exception dispatch is scoped to a single op-array; cross-function propagation (throw in a callee caught by a caller) is not yet supported.
+  - Exception dispatch now supports cross-function propagation (throw in a callee caught by a caller) via `propagate_after_call`; `finally` blocks now run on normal completion, after catch, and during exception unwinding (pending exceptions re-dispatched after `FinallyEnd`). Covered by `tests/exception_propagation.rs` (18 cases, including 5 `finally` tests).
+  - `__unset` implemented; `__serialize`/`__unserialize` implemented via `invoke_magic_method`/`invoke_magic_method_with_this` helpers in `callable.rs`.
   - `Val::clone()` is shallow for arrays/objects (creates an empty/default copy); engine code must use `clone_val` (deep) — a frequent source of subtle bugs for contributors.
 
 ### Standard library (honest)
@@ -200,7 +204,7 @@
 - **printf family**: richer `sprintf` (`%s`/`%d`/`%f` with precision/`%x`/`%e`/`%%`) and `vsprintf`
 - **Math/type helpers**: `intdiv`, `fmod`, `hypot`, `is_nan`, `is_infinite`, `is_finite`, improved `is_numeric` (numeric strings), `is_callable`, `boolval`, base conversion (`decbin`/`decoct`/`dechex`/`bindec`/`octdec`/`hexdec`/`base_convert`), `deg2rad`, `rad2deg`
 - **Fuzzy string comparison**: `similar_text`, `levenshtein`, `soundex`, simplified `metaphone`
-- **Serialization**: `serialize()` / `unserialize()` (`src/php/serialize.rs`) — scalars, arrays, plain objects via properties; `__serialize`/`__unserialize` method hooks still pending (require method invocation from builtins)
+- **Serialization**: `serialize()` / `unserialize()` (`src/php/serialize.rs`) — scalars, arrays, plain objects via properties; `__serialize`/`__unserialize` magic methods supported via `invoke_magic_method`/`invoke_magic_method_with_this` helpers in `callable.rs`
 - **Bug fix**: void builtins returning `null` (e.g. `var_dump`, `echo`, `unset`) no longer emit spurious "Call to undefined function" warnings — `DoFCall` now treats a known builtin returning `None` as a successful void call
 
 ## Rust host advantages (engineering, not product guarantees)
@@ -241,7 +245,7 @@ Rust is used for the **interpreter implementation** because of memory safety in 
 - [x] **Magic methods** (remaining) - `__toString`, `__invoke`, `__clone`
 - [x] **Magic methods** - `__isset` (called from FetchObjProp before __get)
 - [x] **Magic methods** (partial) - `__debugInfo` (object dumping in var_dump; method invocation requires ExecuteData in builtins)
-- [ ] **Magic methods** (pending) - `__unset` (requires compiler support for `unset($obj->prop)`), `__serialize`, `__unserialize`
+- [x] **Magic methods** - `__unset` implemented (UnsetObjProp opcode + `unset($obj->prop)` compiler path); `__serialize`/`__unserialize` implemented via `invoke_magic_method`/`invoke_magic_method_with_this` helpers in `callable.rs`
 - [x] **Anonymous classes** - `new class { ... }` with optional extends/implements
 - [x] **Variadic functions** - `...$args` parameter unpacking in VM
 - [x] **Named arguments** (PHP 8.0) - `func(param: value)` via `SendValNamed` opcode
@@ -251,19 +255,21 @@ Rust is used for the **interpreter implementation** because of memory safety in 
 - [x] **Enums** (PHP 8.1) - Pure and backed enums (`enum Color: string { case Red = 'red'; }`)
 - [x] **First-class callable syntax** (PHP 8.1) - `strlen(...)`, `Class::method(...)`, `$obj->method(...)`
 - [x] **Foreach with key** — `foreach ($a as $k => $v)`
-- [ ] **Complex string interpolation** — `"{$arr['key']}"`, `"{$obj->prop}"`, `"{$var[0]}"` (simple `$var` interpolation works today)
+- [x] **Complex string interpolation** (PHP double-quote syntax) — `"$name"`, simple-syntax accessors (`"$arr[key]"`, `"$arr[0]"`, `"$arr[$k]"`, `"$obj->prop"`), and complex `"{$arr['key']}"`, `"{$obj->prop}"`, `"{$obj->method()}"` (see `tests/string_interpolation.rs`)
 - [x] **Array append / chained dim assign** — `$arr[] = $x`, `$a['b']['c'] = $v`
 - [x] **User-defined functions in CLI scripts** — top-level `function foo()` callable from same file
-- [ ] **Fibers** (PHP 8.1) - Lightweight concurrency
+- [x] **Fibers** (PHP 8.1) - Lightweight concurrency — implemented as built-in class with suspend/resume via `execute_ex_resume`
 - [x] **Never type** (PHP 8.1) - recognized in type hints
-- [ ] **Final class constants** (PHP 8.1)
+- [x] **Final class constants** (PHP 8.1) - `final public const X = ...` (and `public final const X`); child override of a final constant is a compile error
+- [x] **Inherited class constant / static property lookup** - `execute_fetch_static_prop` walks `parent_name` chain; `Child::PARENT_CONST` and multi-level inheritance work
 - [x] **New in initializers** (PHP 8.1) - `new` in property defaults and param defaults
 
 ### Standard Library Extensions
 - [x] **DateTime/DateTimeImmutable** - Basic date/time manipulation
   - [x] `date()`, `strtotime()`, `mktime()`, `time()`, `microtime()`
-  - [ ] `DateTime::createFromFormat()`, `DateTime::diff()`
-  - [ ] Timezone support
+  - [x] `DateTime::createFromFormat()` — parses a datetime string using a format specifier (Y, y, m, n, d, j, H, G, i, s, a, A, g); returns a `DateTime` object
+  - [x] `DateTime::diff()` — returns a `DateInterval` object with `y`, `m`, `d`, `h`, `i`, `s`, `days`, `invert` properties; calendar-aware difference with borrowing
+  - [x] Timezone support — `DateTimeZone` built-in class; constructor accepts `DateTimeZone` as second arg; `getTimezone()`/`setTimezone()` methods; format specifiers `e`, `T`, `O`, `P`, `Z`; named zones (UTC, America/New_York, Asia/Tokyo, etc.) and numeric offsets (+0530, -08:00); DST-aware offsets via `timezone_offset_at(name, timestamp)` for US/EU/Australia zones
 - [x] **Math functions** - `abs()`, `ceil()`, `floor()`, `round()`, `sqrt()`, `pow()`, `exp()`, `log()`, `log10()`, `sin()`, `cos()`, `tan()`, `asin()`, `acos()`, `atan()`, `atan2()`, `pi()`, `max()`, `min()`, `rand()`
 - [x] **Hash functions** - `md5()`, `sha1()`, `hash()`, `base64_encode()`, `base64_decode()`
   - [x] `hash_hmac()`, `password_hash()`, `password_verify()`
@@ -289,11 +295,12 @@ Rust is used for the **interpreter implementation** because of memory safety in 
 - [x] **Reflection API** (basic) - `ReflectionClass`, `ReflectionMethod`, `ReflectionProperty` with `getName()`, `getMethods()`, `getProperties()`, `hasMethod()`, `hasProperty()`, `getParentClass()`, `getDeclaringClass()`
 - [x] **Reflection API** (extended) - `ReflectionFunction` (`getName`, `getParameters`, `getNumberOfParameters`, `isBuiltin`, `isUserDefined`), `ReflectionParameter` (`getName`, `getPosition`, `getDeclaringFunction`), and `ReflectionMethod::getParameters()` / `getNumberOfParameters()`
 - [ ] **Reflection API** (remaining) - `ReflectionExtension`, typed-parameter reflection, full attribute reflection
-- [ ] **SPL (Standard PHP Library)**
-  - [ ] Iterators (ArrayIterator, DirectoryIterator, RecursiveDirectoryIterator)
-  - [ ] Data structures (SplStack, SplQueue, SplHeap, SplPriorityQueue)
-  - [ ] Exceptions (SPL exception hierarchy)
-  - [ ] File handling (SplFileObject, SplFileInfo)
+- [x] **SPL (Standard PHP Library)**
+  - [x] ArrayIterator (construction, current/key/next/rewind/valid, count, ArrayAccess methods)
+  - [x] Data structures (SplStack, SplQueue, SplHeap/SplMaxHeap/SplMinHeap, SplPriorityQueue — push/pop/enqueue/dequeue/top/bottom/count/isEmpty/insert/extract)
+  - [x] DirectoryIterator (construction, valid/current/getFilename/getPathname/getPath/key/next/rewind)
+  - [x] Exceptions (SPL exception hierarchy — RuntimeException, LogicException, InvalidArgumentException, BadMethodCallException, OutOfBoundsException, OverflowException, UnderflowException, UnexpectedValueException, RangeException, DomainException, LengthException, BadFunctionCallException)
+  - [x] File handling (SplFileInfo — getPath/getFilename/getPathname/getRealPath/getSize/isFile/isDir/isReadable/isWritable; SplFileObject — fgets/fread/fwrite/feof/rewind)
 - [x] **Autoloading** - `spl_autoload_register()`, `spl_autoload_unregister()`, `spl_autoload_functions()` (runtime registration); PSR-4 autoloader generation (package manager)
 - [x] **Error handling improvements**
   - [x] Custom error handlers (`set_error_handler()`)

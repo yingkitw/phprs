@@ -147,6 +147,12 @@ pub unsafe fn perealloc(ptr: *mut u8, new_size: usize, persistent: bool) -> *mut
 }
 
 /// Free memory
+///
+/// # Safety
+///
+/// `ptr` must be either null (no-op) or a non-null pointer previously
+/// returned by `pemalloc` (or compatible allocator) with the matching
+/// `persistent` flag. After this call the memory must not be accessed.
 pub unsafe fn pefree(ptr: *mut u8, persistent: bool) {
     if ptr.is_null() {
         return;

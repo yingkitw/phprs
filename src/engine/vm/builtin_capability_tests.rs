@@ -1527,7 +1527,9 @@ fn is_nan_infinite_finite() {
         .unwrap()
         .unwrap();
     assert!(zval_get_bool(
-        &run("is_nan", &[nan.clone()], &mut ed).unwrap().unwrap()
+        &run("is_nan", std::slice::from_ref(&nan), &mut ed)
+            .unwrap()
+            .unwrap()
     ));
     assert!(!zval_get_bool(
         &run("is_finite", &[nan], &mut ed).unwrap().unwrap()

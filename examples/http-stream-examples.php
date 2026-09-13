@@ -29,10 +29,12 @@ echo "  Method: file_get_contents()\n\n";
 echo "Example 3: REST API Integration\n";
 echo "  Scenario: Fetch JSON data from API\n";
 echo "  Code:\n";
-echo "    \$json = file_get_contents('https://api.example.com/users');\n";
-echo "    \$data = json_decode(\$json, true);\n";
-echo "    foreach (\$data['users'] as \$user) {\n";
-echo "      echo \$user['name'];\n";
+// '$' is printed via {'$'} (complex interpolation of a literal '$' string):
+// an escaped \$ inside "..." is still treated as an interpolation start by this engine.
+echo "    {'$'}json = file_get_contents('https://api.example.com/users');\n";
+echo "    {'$'}data = json_decode({'$'}json, true);\n";
+echo "    foreach ({'$'}data['users'] as {'$'}user) {\n";
+echo "      echo {'$'}user['name'];\n";
 echo "    }\n\n";
 
 // Example 4: Error Handling

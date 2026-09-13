@@ -365,7 +365,7 @@ mod tests {
             ("s:5:\"hello\";", mk_str("hello")),
         ];
         for (expected, val) in cases {
-            let s = php_serialize(&[val.clone()]).unwrap();
+            let s = php_serialize(std::slice::from_ref(val)).unwrap();
             assert_eq!(zval_get_string(&s).as_str(), *expected);
             let back = php_unserialize(&[s]).unwrap();
             assert_eq!(

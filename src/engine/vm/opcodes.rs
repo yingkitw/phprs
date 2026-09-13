@@ -80,6 +80,18 @@ pub enum Opcode {
     BindGlobal = 71,   // Import a variable from script globals into function scope
     SendVarRef = 72,   // Push variable reference for by-ref parameter (op1=var name)
     Spaceship = 73,    // Combined comparison: -1 / 0 / 1
+    UnsetObjProp = 74, // Unset object property (op1=obj, op2=prop name); calls __unset if defined
+    UnsetDim = 75,     // Unset array element (op1=container var, op2=key)
+    /// Sentinel: one past the last real opcode (auto-numbered). Keep last,
+    /// never dispatch on it. New opcodes go right above with no explicit
+    /// discriminant and the dispatch table grows automatically.
+    Last,
+}
+
+impl Opcode {
+    /// Total number of opcode slots (the `Last` sentinel is one past the
+    /// last dispatchable index).
+    pub const COUNT: usize = Self::Last as usize;
 }
 
 /// Operation structure
@@ -188,6 +200,8 @@ pub fn get_opcode_name(opcode: Opcode) -> &'static str {
         Opcode::BindGlobal => "BIND_GLOBAL",
         Opcode::SendVarRef => "SEND_VAR_REF",
         Opcode::Spaceship => "SPACESHIP",
+        Opcode::UnsetObjProp => "UNSET_OBJ_PROP",
+        Opcode::UnsetDim => "UNSET_DIM",
         _ => "UNKNOWN",
     }
 }

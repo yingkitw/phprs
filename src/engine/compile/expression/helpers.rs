@@ -197,7 +197,7 @@ fn local_var_name_from_var_ref(val: &Val) -> Option<String> {
     }
     if let PhpValue::String(s) = &val.value {
         let n = s.as_str();
-        let clean = if n.starts_with('$') { &n[1..] } else { n };
+        let clean = n.strip_prefix('$').unwrap_or(n);
         Some(clean.to_string())
     } else {
         None
@@ -698,6 +698,12 @@ pub(crate) fn pow_loop(
 }
 
 /// Compile an interpolated string like "Hello $name, you are $age years old"
+///
+/// Supports PHP double-quote interpolation syntax:
+/// - Simple variable: `"$name"`
+/// - Simple-syntax single accessor: `"$arr[key]"`, `"$arr[0]"`, `"$arr[$k]"`, `"$obj->prop"`
+/// - Complex (curly) syntax: `"{$arr['key']}"`, `"{$obj->prop}"`, `"{$arr['a']['b']}"`,
+///   `"{$obj->method()}"` — the inner expression is parsed by the full expression parser
 pub(crate) fn compile_interpolated_string(
     s: &str,
     context: &mut CompileContext,
@@ -708,20 +714,63 @@ pub(crate) fn compile_interpolated_string(
     let mut text_start = 0;
 
     while i < bytes.len() {
-        if bytes[i] == b'$'
-            && i + 1 < bytes.len()
-            && (bytes[i + 1].is_ascii_alphabetic() || bytes[i + 1] == b'_')
-        {
+        // Complex (curly) syntax starts with "{$" — opening brace, then '$'.
+        if bytes[i] == b'{' && bytes.get(i + 1) == Some(&b'$') {
+            let close = find_matching_brace(s, i)
+                .ok_or_else(|| "Unterminated '{$' expression in interpolated string".to_string())?;
             if i > text_start {
                 parts.push(facade::string_val(&s[text_start..i]));
             }
-            let var_start = i + 1;
-            i += 1;
-            while i < bytes.len() && (bytes[i].is_ascii_alphanumeric() || bytes[i] == b'_') {
+            let inner = &s[i + 1..close];
+            parts.push(compile_curly_expression(inner, context)?);
+            i = close + 1;
+            text_start = i;
+            continue;
+        }
+        if bytes[i] == b'$' && i + 1 < bytes.len() {
+            if bytes[i + 1].is_ascii_alphabetic() || bytes[i + 1] == b'_' {
+                if i > text_start {
+                    parts.push(facade::string_val(&s[text_start..i]));
+                }
+                let var_start = i + 1;
+                i += 1;
+                while i < bytes.len() && (bytes[i].is_ascii_alphanumeric() || bytes[i] == b'_') {
+                    i += 1;
+                }
+                let name = &s[var_start..i];
+                let base = var_ref(&format!("${}", name));
+                // Simple syntax allows exactly one accessor: $arr[key] or $obj->prop
+                if bytes.get(i) == Some(&b'[') {
+                    let close = s[i..]
+                        .find(']')
+                        .map(|rel| rel + i)
+                        .ok_or("Unterminated '[' in interpolated string")?;
+                    let key_text = &s[i + 1..close];
+                    let key_val = simple_syntax_key(key_text)?;
+                    parts.push(emit_binary_op(context, Opcode::FetchDim, base, key_val));
+                    i = close + 1;
+                } else if s[i..].starts_with("->") {
+                    let rest = &s[i + 2..];
+                    let prop_len = rest
+                        .bytes()
+                        .take_while(|b| b.is_ascii_alphanumeric() || *b == b'_')
+                        .count();
+                    if prop_len == 0 {
+                        return Err(
+                            "Expected property name after '->' in interpolated string".to_string()
+                        );
+                    }
+                    let member = facade::string_val(&rest[..prop_len]);
+                    parts.push(emit_binary_op(context, Opcode::FetchObjProp, base, member));
+                    i += 2 + prop_len;
+                } else {
+                    parts.push(base);
+                }
+                text_start = i;
+            } else {
+                // Literal '$' (e.g. "costs $5", "end$$")
                 i += 1;
             }
-            parts.push(var_ref(&format!("${}", &s[var_start..i])));
-            text_start = i;
         } else {
             i += 1;
         }
@@ -742,6 +791,86 @@ pub(crate) fn compile_interpolated_string(
         result = emit_binary_op(context, Opcode::Concat, result, part);
     }
     Ok(result)
+}
+
+/// Find the index of the `}` matching the `{` at `open_idx`, skipping quoted
+/// sections so keys like `{$arr['}']}` terminate correctly.
+fn find_matching_brace(s: &str, open_idx: usize) -> Option<usize> {
+    let bytes = s.as_bytes();
+    let mut depth: usize = 0;
+    let mut i = open_idx;
+    while i < bytes.len() {
+        match bytes[i] {
+            b'\'' | b'"' => {
+                let quote = bytes[i];
+                i += 1;
+                while i < bytes.len() && bytes[i] != quote {
+                    if bytes[i] == b'\\' {
+                        i += 1;
+                    }
+                    i += 1;
+                }
+                if i >= bytes.len() {
+                    return None;
+                }
+            }
+            b'{' => depth += 1,
+            b'}' => {
+                depth -= 1;
+                if depth == 0 {
+                    return Some(i);
+                }
+            }
+            _ => {}
+        }
+        i += 1;
+    }
+    None
+}
+
+/// Compile the expression inside `"{$expr}"` with a dedicated sub-lexer over `inner`.
+fn compile_curly_expression(inner: &str, context: &mut CompileContext) -> Result<Val, String> {
+    let mut sub = Lexer::new(inner);
+    let (val, after) = super::parse_expression(&mut sub, context)?;
+    if after.token_type != TokenType::T_EOF {
+        return Err(format!(
+            "Invalid expression in '{{...}}' interpolation: unexpected trailing input in \"{{{}}}\"",
+            inner
+        ));
+    }
+    Ok(val)
+}
+
+/// Resolve the key of a simple-syntax subscript (`"$arr[key]"`).
+/// PHP semantics: numeric text → int key, `$var` → variable key,
+/// bare label → string key (never a constant lookup).
+fn simple_syntax_key(key_text: &str) -> Result<Val, String> {
+    let t = key_text.trim();
+    if let Ok(n) = t.parse::<i64>() {
+        return Ok(facade::long_val(n));
+    }
+    if let Some(name) = t.strip_prefix('$') {
+        let valid = !name.is_empty()
+            && (name.as_bytes()[0].is_ascii_alphabetic() || name.as_bytes()[0] == b'_')
+            && name.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'_');
+        if valid {
+            return Ok(var_ref(&format!("${}", name)));
+        }
+        return Err(format!(
+            "Unsupported variable key \"$arr[{}]\" in interpolated string; use {{$expr[...]}} syntax",
+            key_text
+        ));
+    }
+    let valid = !t.is_empty()
+        && (t.as_bytes()[0].is_ascii_alphabetic() || t.as_bytes()[0] == b'_')
+        && t.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'_');
+    if valid {
+        return Ok(facade::string_val(t));
+    }
+    Err(format!(
+        "Unsupported key \"$arr[{}]\" in interpolated string; use {{$expr[...]}} syntax",
+        key_text
+    ))
 }
 
 /// Shared body for `[...]` and `array(...)` literals. Opening delimiter already consumed.

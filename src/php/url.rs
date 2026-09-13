@@ -337,8 +337,10 @@ pub fn get_headers(args: &[Val]) -> Result<Val, String> {
 
     let mut headers_list: Vec<Val> = Vec::new();
 
+    // Named (not magic) request timeout for get_headers().
+    const HTTP_TIMEOUT_SECS: u64 = 10;
     let client = reqwest::blocking::Client::builder()
-        .timeout(std::time::Duration::from_secs(10))
+        .timeout(std::time::Duration::from_secs(HTTP_TIMEOUT_SECS))
         .build();
 
     if let Ok(client) = client {

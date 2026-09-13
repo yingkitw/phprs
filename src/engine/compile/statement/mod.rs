@@ -179,7 +179,9 @@ fn compile_echo(lexer: &mut Lexer, context: &mut CompileContext) -> Result<Token
 fn emit_echo_value(context: &mut CompileContext, echo_value: Val) {
     let zval_zero = zero_val();
     let zval_result = match &echo_value.value {
-        crate::engine::types::PhpValue::String(s) => string_val_copy(s.as_str(), echo_value.get_type()),
+        crate::engine::types::PhpValue::String(s) => {
+            string_val_copy(s.as_str(), echo_value.get_type())
+        }
         _ => result_val(echo_value.get_type()),
     };
     context.emit_opcode(Opcode::Echo, echo_value, zval_zero, zval_result);
@@ -215,18 +217,9 @@ fn compile_variable_stmt(
     } else if let Some(bin_op) = compound_assign_opcode(&next_token.token_type) {
         // Compound assignment: $var op= expr  →  $var = $var op expr
         let (rhs, after_expr) = parse_expression(lexer, context)?;
-        let result = super::expression::helpers::emit_binary_op(
-            context,
-            bin_op,
-            var_ref(var_name),
-            rhs,
-        );
-        context.emit_opcode(
-            Opcode::Assign,
-            string_val(var_name),
-            result,
-            null_val(),
-        );
+        let result =
+            super::expression::helpers::emit_binary_op(context, bin_op, var_ref(var_name), rhs);
+        context.emit_opcode(Opcode::Assign, string_val(var_name), result, null_val());
         skip_semicolon(lexer, after_expr)
     } else if token_is_punct(&next_token, "[") {
         // $var[key] = value;  $var[a][b] = value;  $var[] = value;
@@ -680,6 +673,10 @@ fn compile_string_stmt(
     }
     let next = lexer.next_token()?;
     if token_is_punct(&next, "(") {
+        // Special-case `unset($obj->prop)` to emit UnsetObjProp opcode.
+        if val == "unset" {
+            return compile_unset_stmt(lexer, context);
+        }
         let (_, after_token) = super::expression::parse_function_call_public(lexer, context, val)?;
         skip_semicolon(lexer, after_token)
     } else if next.token_type == TokenType::T_PAAMAYIM_NEKUDOTAYIM {
@@ -747,6 +744,217 @@ fn compile_string_stmt(
     }
 }
 
+/// Compile `unset(...)` statement.
+/// Handles `unset($var)` (Unset opcode) and `unset($obj->prop)` (UnsetObjProp
+/// opcode) with comma-separated multiple arguments.  Other forms
+/// (`$var[$key]`, non-variable expressions) fall back to the `unset()` builtin.
+fn compile_unset_stmt(lexer: &mut Lexer, context: &mut CompileContext) -> Result<Token, String> {
+    let mut current = lexer.next_token()?;
+
+    loop {
+        // Each argument must start with a variable for the opcode path.
+        if current.token_type != TokenType::T_VARIABLE {
+            break;
+        }
+        let var_name = current.value.as_ref().unwrap().as_str().to_string();
+        let next_tok = lexer.next_token()?;
+
+        if next_tok.token_type == TokenType::T_OBJECT_OPERATOR {
+            // unset($obj->prop)
+            let prop_token = lexer.next_token()?;
+            let prop_name = prop_token
+                .value
+                .as_ref()
+                .ok_or("Expected property name after '->' in unset()")?
+                .as_str()
+                .to_string();
+            let after_prop = lexer.next_token()?;
+            if !token_is_punct(&after_prop, ")") && !token_is_punct(&after_prop, ",") {
+                return Err("Expected ')' or ',' after unset($obj->prop".to_string());
+            }
+            let var_zval = crate::engine::vm::var_ref(&var_name);
+            let prop_zval = string_val(&prop_name);
+            context.emit_opcode(Opcode::UnsetObjProp, var_zval, prop_zval, null_val());
+            if token_is_punct(&after_prop, ")") {
+                let after = lexer.next_token()?;
+                return skip_semicolon(lexer, after);
+            }
+            // comma — parse next argument
+            current = lexer.next_token()?;
+            continue;
+        }
+
+        if token_is_punct(&next_tok, ")") {
+            // unset($var) — final argument
+            let var_zval = crate::engine::vm::var_ref(&var_name);
+            context.emit_opcode(Opcode::Unset, var_zval, null_val(), null_val());
+            let after = lexer.next_token()?;
+            return skip_semicolon(lexer, after);
+        }
+
+        if token_is_punct(&next_tok, ",") {
+            // unset($var, ...) — emit Unset and continue
+            let var_zval = crate::engine::vm::var_ref(&var_name);
+            context.emit_opcode(Opcode::Unset, var_zval, null_val(), null_val());
+            current = lexer.next_token()?;
+            continue;
+        }
+
+        if token_is_punct(&next_tok, "[") {
+            // unset($arr[$key]) — parse the key expression, emit UnsetDim
+            let (key_val, after_key) = super::expression::parse_expression(lexer, context)?;
+            if !token_is_punct(&after_key, "]") {
+                return Err("Expected ']' after array key in unset()".to_string());
+            }
+            let after_bracket = lexer.next_token()?;
+            if token_is_punct(&after_bracket, "[") {
+                // Chained subscript (e.g. unset($arr[$a][$b][$c])):
+                // FetchDim through all but last key, UnsetDim on innermost,
+                // then AssignDim to write back each level in reverse order.
+                let var_zval = crate::engine::vm::var_ref(&var_name);
+                let inner_slot = context.alloc_temp();
+                context.emit_opcode(
+                    Opcode::FetchDim,
+                    var_zval,
+                    clone_val(&key_val),
+                    temp_var_ref(inner_slot),
+                );
+                // Track (container_slot, key) for write-back.
+                let mut chain: Vec<(u32, Val)> = vec![(inner_slot, key_val)];
+                let mut container = temp_var_ref(inner_slot);
+                loop {
+                    let (inner_key, after_inner) =
+                        super::expression::parse_expression(lexer, context)?;
+                    if !token_is_punct(&after_inner, "]") {
+                        return Err("Expected ']' after array key in unset()".to_string());
+                    }
+                    let next_tok = lexer.next_token()?;
+                    if token_is_punct(&next_tok, "[") {
+                        // Another level — fetch this dimension and continue
+                        let next_slot = context.alloc_temp();
+                        context.emit_opcode(
+                            Opcode::FetchDim,
+                            container,
+                            clone_val(&inner_key),
+                            temp_var_ref(next_slot),
+                        );
+                        chain.push((next_slot, inner_key));
+                        container = temp_var_ref(next_slot);
+                        continue;
+                    }
+                    // Final level — emit UnsetDim on the innermost container
+                    context.emit_opcode(Opcode::UnsetDim, container, inner_key, null_val());
+                    // Write back through the chain in reverse order:
+                    //   T(n-2)[k(n-1)] = T(n-1) … T0[k1] = T1, $var[k0] = T0.
+                    for i in (0..chain.len()).rev() {
+                        let (slot, ref k) = chain[i];
+                        if i == 0 {
+                            // First level: write back to the variable
+                            let var_zval = crate::engine::vm::var_ref(&var_name);
+                            context.emit_opcode(
+                                Opcode::AssignDim,
+                                var_zval,
+                                temp_var_ref(slot),
+                                clone_val(k),
+                            );
+                        } else {
+                            // Intermediate level: write back to parent slot
+                            let (parent_slot, _) = &chain[i - 1];
+                            context.emit_opcode(
+                                Opcode::AssignDim,
+                                temp_var_ref(*parent_slot),
+                                temp_var_ref(slot),
+                                clone_val(k),
+                            );
+                        }
+                    }
+                    if !token_is_punct(&next_tok, ")") && !token_is_punct(&next_tok, ",") {
+                        return Err(
+                            "Expected ')' or ',' after unset() chained subscript".to_string()
+                        );
+                    }
+                    if token_is_punct(&next_tok, ")") {
+                        let after = lexer.next_token()?;
+                        return skip_semicolon(lexer, after);
+                    }
+                    current = lexer.next_token()?;
+                    break;
+                }
+                continue;
+            }
+            if !token_is_punct(&after_bracket, ")") && !token_is_punct(&after_bracket, ",") {
+                return Err("Expected ')' or ',' after unset($arr[$key]".to_string());
+            }
+            let var_zval = crate::engine::vm::var_ref(&var_name);
+            context.emit_opcode(Opcode::UnsetDim, var_zval, key_val, null_val());
+            if token_is_punct(&after_bracket, ")") {
+                let after = lexer.next_token()?;
+                return skip_semicolon(lexer, after);
+            }
+            current = lexer.next_token()?;
+            continue;
+        }
+
+        // Other forms — fall back to the generic builtin for ALL arguments
+        // by re-parsing from scratch.  We've consumed `current` and
+        // `next_tok`, so reconstruct the expression with var_ref +
+        // parse_access_chain.
+        context.emit_opcode(Opcode::InitFCall, null_val(), null_val(), null_val());
+        let primary = crate::engine::vm::var_ref(&var_name);
+        let (arg_val, after_arg) =
+            super::expression::helpers::parse_access_chain(lexer, context, primary, next_tok)?;
+        context.emit_opcode(Opcode::SendVal, arg_val, null_val(), null_val());
+        let mut current = after_arg;
+        while token_is_punct(&current, ",") {
+            let next_arg = lexer.next_token()?;
+            let (arg_val, after_arg) =
+                super::expression::parse_additive_expr_with_initial(lexer, context, next_arg)?;
+            context.emit_opcode(Opcode::SendVal, arg_val, null_val(), null_val());
+            current = after_arg;
+        }
+        if !token_is_punct(&current, ")") {
+            return Err("Expected ')' after unset() arguments".to_string());
+        }
+        let slot = context.alloc_temp();
+        context.emit_opcode(
+            Opcode::DoFCall,
+            string_val("unset"),
+            null_val(),
+            temp_var_ref(slot),
+        );
+        let after = lexer.next_token()?;
+        return skip_semicolon(lexer, after);
+    }
+
+    // Non-variable first argument (e.g. unset(func())) — generic builtin.
+    context.emit_opcode(Opcode::InitFCall, null_val(), null_val(), null_val());
+    if !token_is_punct(&current, ")") {
+        let (arg_val, after_arg) =
+            super::expression::parse_additive_expr_with_initial(lexer, context, current)?;
+        context.emit_opcode(Opcode::SendVal, arg_val, null_val(), null_val());
+        current = after_arg;
+        while token_is_punct(&current, ",") {
+            let next_arg = lexer.next_token()?;
+            let (arg_val, after_arg) =
+                super::expression::parse_additive_expr_with_initial(lexer, context, next_arg)?;
+            context.emit_opcode(Opcode::SendVal, arg_val, null_val(), null_val());
+            current = after_arg;
+        }
+    }
+    if !token_is_punct(&current, ")") {
+        return Err("Expected ')' after unset() arguments".to_string());
+    }
+    let slot = context.alloc_temp();
+    context.emit_opcode(
+        Opcode::DoFCall,
+        string_val("unset"),
+        null_val(),
+        temp_var_ref(slot),
+    );
+    let after = lexer.next_token()?;
+    skip_semicolon(lexer, after)
+}
+
 /// Compile global statement: global $a, $b;
 fn compile_global(lexer: &mut Lexer, context: &mut CompileContext) -> Result<Token, String> {
     let mut token = lexer.next_token()?;
@@ -755,11 +963,7 @@ fn compile_global(lexer: &mut Lexer, context: &mut CompileContext) -> Result<Tok
             return Err("Expected variable after global".to_string());
         }
         let var_name = token.value.as_ref().unwrap().as_str();
-        let clean = if var_name.starts_with('$') {
-            &var_name[1..]
-        } else {
-            var_name
-        };
+        let clean = var_name.strip_prefix('$').unwrap_or(var_name);
         context.emit_opcode(
             Opcode::BindGlobal,
             string_val(clean),

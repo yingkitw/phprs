@@ -168,7 +168,7 @@ mod tests {
     #[test]
     fn test_gzcompress_roundtrip() {
         let input = string_val("hello world");
-        let compressed = gzcompress(&[input.clone()]).unwrap();
+        let compressed = gzcompress(std::slice::from_ref(&input)).unwrap();
         let decompressed = gzuncompress(&[compressed]).unwrap();
         assert_eq!(zval_get_string(&decompressed).as_str(), "hello world");
     }
@@ -176,7 +176,7 @@ mod tests {
     #[test]
     fn test_gzencode_roundtrip() {
         let input = string_val("hello world");
-        let encoded = gzencode(&[input.clone()]).unwrap();
+        let encoded = gzencode(std::slice::from_ref(&input)).unwrap();
         let decoded = gzdecode(&[encoded]).unwrap();
         assert_eq!(zval_get_string(&decoded).as_str(), "hello world");
     }
@@ -184,7 +184,7 @@ mod tests {
     #[test]
     fn test_gzdeflate_roundtrip() {
         let input = string_val("hello world");
-        let deflated = gzdeflate(&[input.clone()]).unwrap();
+        let deflated = gzdeflate(std::slice::from_ref(&input)).unwrap();
         let inflated = gzinflate(&[deflated]).unwrap();
         assert_eq!(zval_get_string(&inflated).as_str(), "hello world");
     }

@@ -272,3 +272,44 @@ cargo fmt -- --check
 # Inspect the failing test specifically
 cargo test -p phprs --lib engine::vm::tests::test_compile_and_execute_function_result_array_access -- --nocapture
 ```
+
+---
+
+## Audit addendum — 2026-09-13
+
+**Scope:** Post-2026-07-25 WIP work (cross-function exception propagation, complex string interpolation, `__unset` magic method, final class constants). The earlier audit's findings remain valid for that snapshot; this entry records what was incomplete or broken in the WIP branch and what was fixed vs. rolled back.
+
+**Commit:** pending (working tree).
+
+### Issues found in the WIP and their disposition
+
+| # | WIP issue | Severity | Disposition |
+|---|-----------|----------|-------------|
+| A1 | `tests/exception_propagation.rs` (13 cases for cross-frame throw/catch) failed end-to-end because of three latent bugs: (i) `execute_new_obj` tried to read constructor args from `call_args` before `SendVal` pushed them; (ii) `execute_do_method_call` drained `call_args` in the `__call` lookup path even when no `__call` existed, so the Throwable constructor never saw its args; (iii) `try_stack` was a flat `Vec<usize>`, so an outer try entry could resolve to an inner op_array's `TryCatchBegin` opcode and incorrectly match its own catch. | Critical | **Fixed**: built-in Throwable constructor now stores message/code in `execute_do_method_call` (the proper call site), `__call` lookup drains lazily, and `try_stack` is now `Vec<(usize, Option<String>)>` so `dispatch_exception` skips entries whose op_array filename does not match the current frame. Added `propagate_after_call` and wired the call sites. All 13 cases pass. |
+| A2 | `execute_ex_returning` returned `PhpResult::Failure` when `pending_exception` was set at `ExecResult::Return`, bypassing `propagate_after_call`. Symptom: cross-frame tests returned Failure even when an outer `try` should have caught. | Critical | **Fixed**: removed the early Failure on pending exception in the Return arm; restored the `pending_exception` check at the **end** of the loop so an uncaught exception still surfaces as `PhpResult::Failure` at the top level. |
+| A3 | `compile_unset_stmt` (`src/engine/compile/statement/mod.rs`) initially handled only `unset($obj->prop)` and `unset($var)`, rejecting `unset($var[$key])` with `"Unsupported unset() argument form"` — broke the WordPress example (`examples/wordpress/wp-includes/plugin.php` uses `unset($wp_filter[$hook_name][$priority][$key])`). | High | **Fixed**: `unset($var[$key])` now emits `UnsetDim` (dispatch arm removes the element via `hash_del`); chained subscripts emit FetchDim → UnsetDim → reverse-order AssignDim write-back. A follow-up bug where the intermediate write-back used the **parent's** key (silently discarding the removal for 3+ levels) was caught by functional testing and fixed to use the current level's key. `execute_unset_obj_prop` invokes `__unset` when defined. |
+| A4 | `MEMORY.md` and `TODO.md` had been updated ahead of features landing — claimed cross-function propagation was already complete and `__unset` was implemented. | Medium | **Fixed**: updated both to match reality (cross-function propagation now actually implemented; `__unset` is also working for `$obj->prop`). |
+| A5 | `tests/string_interpolation.rs` (16 cases for `"$arr[key]"` / `"{$expr}"`) — verified against the WIP `compile_interpolated_string` rewrite. | — | **No issue found**: all 16 pass. |
+| A6 | `tests/php8x_features.rs` added 5 final-class-constant cases + 3 `__unset` cases. | Medium | **No issue found**: all 8 pass. |
+| A7 | Clippy warnings — 23 `manual_strip_prefix`, 5 `cloned_ref_to_slice_refs`, 2 `no_effect_replace` (genuine no-op `replace('/', "/")` in `bin/phprs/src/pkg/commands/install.rs`), 1 `unsafe_fn_missing_safety_doc`. | Medium | **Fixed**: 18 manual-strip and 4 clone-into-slice occurrences converted to `strip_prefix` / `std::slice::from_ref`; the two `no_effect_replace` calls removed (they were dead `package.name.replace('/', "/")`); remaining warnings are stylistic (`explicit_counter_loop`, `type_complexity`, `collapsible_match_if`, `unnecessary_cast`, etc.) that don't affect correctness. |
+
+### Verification (post-fix)
+
+| Check | Result |
+|-------|--------|
+| `cargo build --workspace` | ✅ Clean |
+| `cargo test --workspace` | ✅ 563 passed, 0 failed, 1 `#[ignore]` (network-dependent packagist metadata test) |
+| `cargo fmt -- --check` | ✅ Clean |
+| `cargo clippy --workspace --all-targets` | ✅ No errors; ~18 style warnings (down from ~50) |
+
+### Documentation drift found
+
+- `ARCHITECTURE.md` listed 74 opcodes; the enum has 75 (added `UnsetObjProp`). **Fixed**.
+- `README.md`/WIP-internal notes referenced "exception dispatch with cross-function propagation" as if it were already shipped; now matches the test results.
+- `TODO.md` "Brainstormed" section had PHP 8.x items listed as completed but no tests existed for them; tests are now in `tests/php8x_features.rs` (final-class-constant cases) or `tests/exception_propagation.rs` (cross-function cases).
+
+### Carry-forward (medium-term)
+
+- The `unset()` builtin is still a no-op stub, so `unset($var)` on plain variables does not actually null them. Implementing it (or wiring `UnsetDim` for array elements) is independent of the cross-frame `throw`/`catch` work this audit covered.
+- The `__serialize` / `__unserialize` magic methods are still pending (not started in this audit pass).
+- Clippy cleanup continues to be a low-priority, mechanical task.

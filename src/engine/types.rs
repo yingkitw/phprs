@@ -484,6 +484,8 @@ pub struct ClassEntry {
     pub static_properties: std::collections::HashMap<String, Val>,
     pub property_flags: std::collections::HashMap<String, PropertyFlags>,
     pub constants: std::collections::HashMap<String, Val>,
+    /// Names of class constants declared `final` (PHP 8.1) — cannot be overridden by child classes.
+    pub final_constants: std::collections::HashSet<String>,
     pub is_final: bool,
     pub is_abstract: bool,
     pub is_enum: bool,
@@ -500,6 +502,7 @@ impl ClassEntry {
             static_properties: std::collections::HashMap::new(),
             property_flags: std::collections::HashMap::new(),
             constants: std::collections::HashMap::new(),
+            final_constants: std::collections::HashSet::new(),
             is_final: false,
             is_abstract: false,
             is_enum: false,

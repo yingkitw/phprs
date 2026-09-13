@@ -31,13 +31,19 @@ fn parse_primary_inner(
             if token.token_type == TokenType::T_PLUS {
                 Ok((operand, next))
             } else {
-                Ok((emit_binary_op(context, Opcode::Sub, facade::zero_val(), operand), next))
+                Ok((
+                    emit_binary_op(context, Opcode::Sub, facade::zero_val(), operand),
+                    next,
+                ))
             }
         }
         // Bitwise NOT (~)
         TokenType::T_STRING if token_is_punct(&token, "~") => {
             let (operand, next) = super::operators::parse_multiplicative_expr(lexer, context)?;
-            Ok((emit_binary_op(context, Opcode::BwNot, operand, facade::zero_val()), next))
+            Ok((
+                emit_binary_op(context, Opcode::BwNot, operand, facade::zero_val()),
+                next,
+            ))
         }
         TokenType::T_LNUMBER => {
             let num_val = token

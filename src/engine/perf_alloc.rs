@@ -103,7 +103,7 @@ impl MemoryPool {
     pub fn clear_pools(&mut self) {
         for pool in &mut self.pools {
             for ptr in pool.drain(..) {
-                let size = unsafe { std::mem::transmute::<_, usize>(ptr) };
+                let size = unsafe { std::mem::transmute::<NonNull<u8>, usize>(ptr) };
                 let layout = Layout::from_size_align(size, 8).unwrap();
                 unsafe { dealloc(ptr.as_ptr(), layout) };
             }
@@ -164,6 +164,10 @@ impl StringBuilder {
 
     pub fn len(&self) -> usize {
         self.buffer.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.buffer.is_empty()
     }
 
     pub fn clear(&mut self) {

@@ -13,8 +13,10 @@ cargo run -p phprs-cli -- run examples/wordpress/index.php
 ## Status
 
 - **`array()` constructor** compiles (enables `wp-includes/wp-db.php`).
-- **Full bootstrap** still fails on later includes (e.g. `plugin.php` uses assignment patterns the compiler does not support yet).
-- **Not in the root example matrix** — run manually while the nested tree is being brought up.
+- **Full bootstrap runs**: `index.php` → `wp-blog-header.php` → `wp-load.php` → `wp-settings.php` → plugins/theme hooks complete successfully.
+- **Covered by a test**: `example_wordpress_index_runs` in `tests/examples_runtime.rs` (the nested tree is outside the root `examples/*.php` matrix, which only scans top-level files).
+- **`test-theme-plugin.php`** is manual — run it with `cargo run -p phprs-cli -- run examples/wordpress/test-theme-plugin.php`.
+- Demo stubs only — **not** production WordPress core.
 
 ## Layout
 

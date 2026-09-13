@@ -418,13 +418,22 @@ fn handle_execute(body: &str, cookies: &str) -> (ApiResponse<ExecResult>, Option
     let t1 = std::time::Instant::now();
     let mut exec_data = ExecuteData::new();
     exec_data.function_table = Some(Arc::new(function_table));
-    if let Some(id) = parse_cookie_value(cookies, "PHPSESSID") {
+    if let Some(id) = parse_cookie_value(cookies, phprs::php::session::DEFAULT_SESSION_NAME) {
         phprs::php::session::apply_incoming_session_id(&mut exec_data, &id);
     }
-    let _result = execute_ex(&mut exec_data, &op_array);
+    let result = execute_ex(&mut exec_data, &op_array);
     let exec_time_ms = t1.elapsed().as_secs_f64() * 1000.0;
     let output = php_output_end().unwrap_or_default();
     let set_cookie = phprs::php::session::cookie_header_value(&exec_data);
+
+    // Uncaught exception: report PHP-style fatal on stderr.
+    if result == phprs::engine::types::PhpResult::Failure
+        && let Some(thrown) = exec_data.pending_exception.take()
+    {
+        let (class, message) =
+            phprs::engine::vm::exception_dispatch::thrown_class_and_message(&thrown);
+        eprintln!("PHP Fatal error:  Uncaught {}: {}", class, message);
+    }
 
     (
         ApiResponse {

@@ -143,6 +143,7 @@ pub fn invoke_user_function(
     let saved_script_dir = execute_data.current_script_dir.clone();
     let saved_magic_dir = execute_data.constants.get("__DIR__").map(clone_val);
     let saved_magic_file = execute_data.constants.get("__FILE__").map(clone_val);
+    let saved_try_depth = execute_data.try_stack.len();
 
     let (_status, return_val) = execute_ex_returning(execute_data, &func_op_array);
 
@@ -180,5 +181,212 @@ pub fn invoke_user_function(
         }
     }
 
+    // If the user function threw uncaught, drop its try frames and leave the
+    // exception pending — the DoFCall builtin branch re-dispatches it against
+    // the caller's frame via propagate_after_call.
+    execute_data.try_stack.truncate(saved_try_depth);
+
     Ok(return_val)
+}
+
+/// Invoke a magic method (e.g. `__serialize`, `__unserialize`) on an object.
+///
+/// Looks up `method_name` in the object's class entry, saves/restores VM
+/// state (mirrors `call_magic_tostring`), sets `$this`, binds `args`, and
+/// runs the method via `execute_ex_returning`. Returns `Ok(Some(value))` on
+/// success, `Ok(None)` if the method doesn't exist, or `Err` on failure.
+pub fn invoke_magic_method(
+    execute_data: &mut ExecuteData,
+    obj_val: &Val,
+    method_name: &str,
+    args: &[Val],
+) -> Result<Option<Val>, String> {
+    let PhpValue::Object(ref obj) = obj_val.value else {
+        return Ok(None);
+    };
+    // Extract method data before mutable borrows of execute_data.
+    let method_data = execute_data
+        .class_table
+        .get(&obj.class_name)
+        .and_then(|ce| ce.methods.get(method_name))
+        .map(|magic| {
+            let ops: Vec<Op> = magic
+                .op_array
+                .ops
+                .iter()
+                .map(|op| {
+                    Op::new(
+                        op.opcode,
+                        clone_val(&op.op1),
+                        clone_val(&op.op2),
+                        clone_val(&op.result),
+                        op.extended_value,
+                    )
+                })
+                .collect();
+            let param_names = magic.params.clone();
+            (ops, param_names, magic.op_array.variadic_param.clone(), magic.op_array.ref_params.clone())
+        });
+    let Some((ops, param_names, variadic_param, ref_params)) = method_data else {
+        return Ok(None);
+    };
+
+    let saved_current_op = execute_data.current_op;
+    let saved_op_array = execute_data.op_array.take();
+    let saved_called_class = execute_data.called_class.clone();
+    let saved_temps = std::mem::take(&mut execute_data.temp_vars);
+    let saved_symbol_table = execute_data.symbol_table.take();
+    let saved_call_args = std::mem::take(&mut execute_data.call_args);
+    let saved_call_arg_stack = std::mem::take(&mut execute_data.call_arg_stack);
+    let saved_call_arg_names = std::mem::take(&mut execute_data.call_arg_names);
+    let saved_call_arg_by_ref = std::mem::take(&mut execute_data.call_arg_by_ref);
+    let saved_script_dir = execute_data.current_script_dir.clone();
+
+    execute_data.called_class = Some(obj.class_name.clone());
+    execute_data.symbol_table = Some(crate::engine::types::PhpArray::new());
+    execute_data.set_var("this", clone_val(obj_val));
+
+    let arg_names: Vec<Option<String>> = vec![None; args.len()];
+    let arg_by_ref: Vec<bool> = vec![false; args.len()];
+    super::dispatch_handlers::bind_call_args(
+        execute_data,
+        &param_names,
+        args,
+        &arg_names,
+        &variadic_param,
+        &ref_params,
+        &arg_by_ref,
+    );
+
+    let mut method_op_array = OpArray::new(format!("{}::{}", obj.class_name, method_name));
+    method_op_array.ops = ops;
+    let saved_try_depth = execute_data.try_stack.len();
+    let (_status, return_val) =
+        super::execute::execute_ex_returning(execute_data, &method_op_array);
+
+    // Restore state.
+    execute_data.op_array = saved_op_array;
+    execute_data.current_op = saved_current_op;
+    execute_data.called_class = saved_called_class;
+    execute_data.temp_vars = saved_temps;
+    execute_data.symbol_table = saved_symbol_table;
+    execute_data.call_args = saved_call_args;
+    execute_data.call_arg_stack = saved_call_arg_stack;
+    execute_data.call_arg_names = saved_call_arg_names;
+    execute_data.call_arg_by_ref = saved_call_arg_by_ref;
+    execute_data.current_script_dir = saved_script_dir;
+    execute_data.try_stack.truncate(saved_try_depth);
+
+    Ok(return_val)
+}
+
+/// Result of invoking a magic method: the return value and the (possibly
+/// modified) `$this` object.
+pub struct MagicMethodResult {
+    pub return_val: Option<Val>,
+    pub this_val: Option<Val>,
+}
+
+/// Invoke a magic method and return both the return value and the modified
+/// `$this` object. Used by `__unserialize` which modifies properties through
+/// `$this`.
+pub fn invoke_magic_method_with_this(
+    execute_data: &mut ExecuteData,
+    obj_val: &Val,
+    method_name: &str,
+    args: &[Val],
+) -> Result<MagicMethodResult, String> {
+    let PhpValue::Object(ref obj) = obj_val.value else {
+        return Ok(MagicMethodResult {
+            return_val: None,
+            this_val: None,
+        });
+    };
+    let method_data = execute_data
+        .class_table
+        .get(&obj.class_name)
+        .and_then(|ce| ce.methods.get(method_name))
+        .map(|magic| {
+            let ops: Vec<Op> = magic
+                .op_array
+                .ops
+                .iter()
+                .map(|op| {
+                    Op::new(
+                        op.opcode,
+                        clone_val(&op.op1),
+                        clone_val(&op.op2),
+                        clone_val(&op.result),
+                        op.extended_value,
+                    )
+                })
+                .collect();
+            let param_names = magic.params.clone();
+            (ops, param_names, magic.op_array.variadic_param.clone(), magic.op_array.ref_params.clone())
+        });
+    let Some((ops, param_names, variadic_param, ref_params)) = method_data else {
+        return Ok(MagicMethodResult {
+            return_val: None,
+            this_val: None,
+        });
+    };
+
+    let saved_current_op = execute_data.current_op;
+    let saved_op_array = execute_data.op_array.take();
+    let saved_called_class = execute_data.called_class.clone();
+    let saved_temps = std::mem::take(&mut execute_data.temp_vars);
+    let saved_symbol_table = execute_data.symbol_table.take();
+    let saved_call_args = std::mem::take(&mut execute_data.call_args);
+    let saved_call_arg_stack = std::mem::take(&mut execute_data.call_arg_stack);
+    let saved_call_arg_names = std::mem::take(&mut execute_data.call_arg_names);
+    let saved_call_arg_by_ref = std::mem::take(&mut execute_data.call_arg_by_ref);
+    let saved_script_dir = execute_data.current_script_dir.clone();
+
+    execute_data.called_class = Some(obj.class_name.clone());
+    execute_data.symbol_table = Some(crate::engine::types::PhpArray::new());
+    execute_data.set_var("this", clone_val(obj_val));
+
+    let arg_names: Vec<Option<String>> = vec![None; args.len()];
+    let arg_by_ref: Vec<bool> = vec![false; args.len()];
+    super::dispatch_handlers::bind_call_args(
+        execute_data,
+        &param_names,
+        args,
+        &arg_names,
+        &variadic_param,
+        &ref_params,
+        &arg_by_ref,
+    );
+
+    let mut method_op_array = OpArray::new(format!("{}::{}", obj.class_name, method_name));
+    method_op_array.ops = ops;
+    let saved_try_depth = execute_data.try_stack.len();
+    let (_status, return_val) =
+        super::execute::execute_ex_returning(execute_data, &method_op_array);
+
+    let this_val = execute_data
+        .symbol_table
+        .as_ref()
+        .and_then(|st| {
+            let key = crate::engine::string::string_init("this", false);
+            crate::engine::hash::hash_find(st, &key)
+        })
+        .map(clone_val);
+
+    execute_data.op_array = saved_op_array;
+    execute_data.current_op = saved_current_op;
+    execute_data.called_class = saved_called_class;
+    execute_data.temp_vars = saved_temps;
+    execute_data.symbol_table = saved_symbol_table;
+    execute_data.call_args = saved_call_args;
+    execute_data.call_arg_stack = saved_call_arg_stack;
+    execute_data.call_arg_names = saved_call_arg_names;
+    execute_data.call_arg_by_ref = saved_call_arg_by_ref;
+    execute_data.current_script_dir = saved_script_dir;
+    execute_data.try_stack.truncate(saved_try_depth);
+
+    Ok(MagicMethodResult {
+        return_val,
+        this_val,
+    })
 }

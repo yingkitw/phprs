@@ -16,7 +16,9 @@ src/
 │   │   ├── dispatch_handlers.rs  # Opcode handlers + include path resolution
 │   │   ├── builtins.rs           # Built-in PHP functions
 │   │   ├── builtin_capability_tests.rs  # Broad builtin tests
-│   │   └── execute.rs            # Main loop, __FILE__/__DIR__
+│   │   ├── execute.rs            # Main loop, __FILE__/__DIR__
+│   │   ├── exception_dispatch.rs # try/catch/finally + cross-frame propagation
+│   │   └── callable.rs           # invoke_user_function + call_user_func helpers
 │   ├── jit.rs
 │   ├── function_optimizer.rs
 │   ├── opcode_cache.rs
@@ -58,9 +60,10 @@ Magic constants `__FILE__` and `__DIR__` are set per script in `execute.rs` from
 
 ## Virtual machine
 
-- **74 opcodes** (arithmetic, control flow, calls, OOP, includes, exceptions, …)
+- **76 opcodes** (arithmetic, control flow, calls, OOP, includes, exceptions, …)
 - **Direct dispatch table** in `dispatch_handlers.rs`
 - **Built-ins** delegated from `builtins.rs` to `src/php/*` modules
+- **Cross-frame exception propagation**: every call site that runs a callee op-array restores caller state, then `propagate_after_call` (`src/engine/vm/exception_dispatch.rs`) re-dispatches the pending exception against the caller's try regions. `try_stack` entries carry `(TryCatchBegin idx, op_array filename)` so `dispatch_exception` only considers catches in the current op_array.
 
 Authoritative builtin coverage: `src/engine/vm/builtin_capability_tests.rs`.
 
@@ -74,11 +77,11 @@ phprs pkg init | install | require | build
 
 ## Framework demos (`examples/`)
 
-| Tree | Entry | CI test |
+| Tree | Entry | Test |
 |------|-------|---------|
+| WordPress-shaped | `wordpress/index.php` | `example_wordpress_index_runs` |
 | CodeIgniter-shaped | `codeigniter/public/index.php` | `example_codeigniter_public_index_runs` |
 | Drupal-shaped | `drupal/index.php` | `example_drupal_index_runs` |
-| WordPress-shaped | `wordpress/index.php` | Manual (compiler gaps in nested stubs) |
 
 All **root** `examples/*.php` files: `examples_root_php_scripts_all_run`.
 
@@ -90,6 +93,9 @@ All **root** `examples/*.php` files: `examples_root_php_scripts_all_run`.
 | `tests/examples_runtime.rs` | PHP example E2E |
 | `tests/build_rust_examples.rs` | Rust `examples/rust/` compile |
 | `tests/php_examples.rs` | PHP compile smoke |
+| `tests/exception_propagation.rs` | Cross-frame try/catch dispatch (13 cases) |
+| `tests/string_interpolation.rs` | `"$arr[key]"` / `"{$expr}"` interpolation |
+| `tests/php8x_features.rs` | PHP 8.x surface (`final const`, `__unset` etc.) |
 
 ## Performance notes
 
@@ -98,6 +104,8 @@ JIT, opcode cache, and optimizer modules exist as **scaffolding**. Claims relati
 ## See also
 
 - [SPEC.md](SPEC.md)
+- [QUICKSTART.md](QUICKSTART.md)
+- [MEMORY.md](MEMORY.md)
 - [README.md](README.md)
 - [TODO.md](TODO.md)
 - [PERFORMANCE.md](PERFORMANCE.md)
