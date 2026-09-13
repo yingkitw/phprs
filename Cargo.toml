@@ -1,6 +1,6 @@
 [package]
 name = "phprs"
-version = "0.1.18"
+version = "0.1.19"
 authors = ["Ying kit WONG"]
 license = "Apache-2.0"
 description = "PHP interpreter, compiler, runtime VM and package manager written in Rust. Memory-safe host code for running PHP scripts and popular PHP frameworks."
