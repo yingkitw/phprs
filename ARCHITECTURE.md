@@ -93,7 +93,7 @@ All **root** `examples/*.php` files: `examples_root_php_scripts_all_run`.
 | `tests/examples_runtime.rs` | PHP example E2E |
 | `tests/build_rust_examples.rs` | Rust `examples/rust/` compile |
 | `tests/php_examples.rs` | PHP compile smoke |
-| `tests/exception_propagation.rs` | Cross-frame try/catch dispatch (13 cases) |
+| `tests/exception_propagation.rs` | Cross-frame try/catch dispatch (18 cases) |
 | `tests/string_interpolation.rs` | `"$arr[key]"` / `"{$expr}"` interpolation |
 | `tests/php8x_features.rs` | PHP 8.x surface (`final const`, `__unset` etc.) |
 
@@ -105,7 +105,6 @@ JIT, opcode cache, and optimizer modules exist as **scaffolding**. Claims relati
 
 - [SPEC.md](SPEC.md)
 - [QUICKSTART.md](QUICKSTART.md)
-- [MEMORY.md](MEMORY.md)
 - [README.md](README.md)
 - [TODO.md](TODO.md)
 - [PERFORMANCE.md](PERFORMANCE.md)

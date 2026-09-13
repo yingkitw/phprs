@@ -35,7 +35,7 @@
 - [x] Function compilation and calls
 - [x] Class compilation (properties, methods, constructors)
 - [x] VM execution (76 opcodes, dispatch table)
-- [x] Built-in functions (195+ functions — see Statistics)
+- [x] Built-in functions (210+ functions — see Statistics)
 - [x] Legacy `array()` constructor syntax (`array()`, `array('k' => v)`, indexed elements)
 - [x] Foreach with key => value (`foreach ($a as $k => $v)`)
 - [x] Chained array dimension assignment (`$a['b']['c'] = $v`)
@@ -176,8 +176,8 @@
 - **PHP runtime**: modules under `src/php/` (regex, http_stream, pdo stub, math, hash, datetime, mbstring, …)
 - **Framework examples**: WordPress-shaped (partial), CodeIgniter 4 demo (covered by `tests/examples_runtime.rs`), Drupal demo (covered by `tests/examples_runtime.rs`)
 - **76 opcodes** (dispatch table)
-- **195+ built-in functions** — see `builtin_capability_tests.rs` for exercised surface
-- **560+ workspace tests** (`cargo test --workspace` — all passing; see `tests/exception_propagation.rs`, `tests/string_interpolation.rs`, `tests/php8x_features.rs` for the new surface)
+- **210+ built-in functions** — see `builtin_capability_tests.rs` for exercised surface
+- **600+ workspace tests** (`cargo test --workspace` — all passing; see `tests/exception_propagation.rs`, `tests/string_interpolation.rs`, `tests/php8x_features.rs` for the new surface)
 - **24+ root PHP examples** — all run via `examples_root_php_scripts_all_run`
 - **Known gaps** (verified during testing — tracked, not blocking):
   - Un-dispatched opcodes (no-ops today): `AssignObj`, `TypeCheck`, `Unset`, `IsSet`, `Empty`, `Count`, `Keys`, `Values`, `ArrayDiff`. Several are covered by their builtin equivalents (`isset`/`empty`/`count`/`unset` work as function calls), but the opcode-level forms do nothing.

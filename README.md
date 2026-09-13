@@ -7,7 +7,7 @@ Use phprs to run PHP CLI scripts, serve PHP pages locally, or experiment with ru
 [![Rust](https://img.shields.io/badge/rust-2024-orange.svg)](https://www.rust-lang.org/)
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
 [![Build Status](https://img.shields.io/badge/build-passing-brightgreen.svg)]()
-[![Tests](https://img.shields.io/badge/tests-560%2B%20passing-brightgreen.svg)]()
+[![Tests](https://img.shields.io/badge/tests-600%2B%20passing-brightgreen.svg)]()
 
 ---
 
@@ -37,7 +37,7 @@ phprs is a from-scratch **PHP runtime written in Rust**. It includes:
 - **PHP lexer and parser** — tokenizes PHP 7/8-style source into an abstract syntax tree.
 - **Compiler** — lowers PHP expressions, statements and functions into a typed opcode array.
 - **Virtual Machine (VM)** — executes opcodes via a direct dispatch table with 76 opcodes.
-- **Built-in PHP functions** — 195+ standard library functions covering math, strings, arrays, files, streams, sessions, regex, hashing and more.
+- **Built-in PHP functions** — 210+ standard library functions covering math, strings, arrays, files, streams, sessions, regex, hashing and more.
 - **Package manager** — Composer-compatible install/update workflows powered by `semver`.
 - **Development server** — `phprs serve` runs PHP pages locally.
 - **Rust library API** — embed a PHP runtime in your Rust application or call PHP builtins from Rust code.
@@ -51,7 +51,7 @@ The project is primarily a research and engineering playground: it proves PHP se
 - 🧩 **Standard PHP library** — `echo`, `array`, `function`, `class`, `try`/`catch`, `foreach`, closures, null coalescing, match expressions and more.
 - 🌐 **Web server for PHP** — `phprs serve` for local development.
 - 📦 **PHP package manager** — install packages from Packagist / private Composer repositories.
-- 🧪 **Extensive test suite** — 560+ workspace tests pass (`cargo test --workspace`); root PHP examples + framework entrypoints covered; `tests/exception_propagation.rs`, `tests/string_interpolation.rs`, and `tests/php8x_features.rs` document the recent surfaces (cross-frame try/catch, complex `"{$expr}"` / `"$arr[key]"`, final class constants, `__unset`).
+- 🧪 **Extensive test suite** — 600+ workspace tests pass (`cargo test --workspace`); root PHP examples + framework entrypoints covered; `tests/exception_propagation.rs`, `tests/string_interpolation.rs`, and `tests/php8x_features.rs` document the recent surfaces (cross-frame try/catch, complex `"{$expr}"` / `"$arr[key]"`, final class constants, `__unset`, Fibers, SPL classes).
 - 🔌 **Embeddable library** — use `phprs` as a crate in Rust projects.
 
 ## Why phprs? The Rust Advantage
@@ -61,7 +61,7 @@ PHP powers much of the web; many production runtimes are implemented in C and C+
 - **Safer by construction (Rust)**: Memory errors that plague C/C++ code are largely ruled out in safe Rust; the interpreter still has correctness and parity work ahead.
 - **A performance-minded design**: Opcode dispatch, JIT hooks, and LLVM for the host binary — without promising a given speedup over Zend until we publish reproducible benchmarks.
 - **Concurrency-friendly host code**: Rust’s type system helps avoid data races in the engine itself; PHP’s shared mutable runtime model is still evolving in phprs.
-- **Test-backed**: 560+ workspace tests; every root `examples/*.php` runs in `tests/examples_runtime.rs`; framework demos (WordPress, CodeIgniter, Drupal) have entrypoint tests; Rust demos compile via `build_rust_examples`.
+- **Test-backed**: 600+ workspace tests; every root `examples/*.php` runs in `tests/examples_runtime.rs`; framework demos (WordPress, CodeIgniter, Drupal) have entrypoint tests; Rust demos compile via `build_rust_examples`.
 
 **phprs** brings PHP into the future by:
 
@@ -388,7 +388,7 @@ cargo run -p phprs-cli -- run examples/wordpress/index.php
 - **Reflection API**: `ReflectionClass`, `ReflectionMethod`, `ReflectionProperty`, `ReflectionFunction`, `ReflectionParameter` (getName/getParameters/getNumberOfParameters/isBuiltin/hasMethod/hasProperty)
 - **Error Handling**: try/catch/finally, exceptions with cross-function propagation (`throw` in a callee caught by `try` in the caller — see `tests/exception_propagation.rs`)
 
-### ✅ Standard Library (195+ functions, expanding)
+### ✅ Standard Library (210+ functions, expanding)
 **String Functions**: `strlen`, `substr`, `str_replace`, `trim`, `strtolower`, `strtoupper`, `ucfirst`, `ucwords`, `lcfirst`, `str_repeat`, `str_pad`, `str_split`, `strrev`, `str_contains`, `str_starts_with`, `str_ends_with`, `strtr`, `str_ireplace`, `nl2br`, `chunk_split`, `addslashes`, `stripslashes`, `quotemeta`, `strip_tags`, `htmlspecialchars`/`htmlspecialchars_decode`, `wordwrap`, `number_format`, `sprintf`/`vsprintf`, `substr_count`, `substr_replace`, `strpbrk`, `substr_compare`, plus a growing **mbstring** subset (`mb_strlen`, `mb_substr`, … — see `src/php/mbstring.rs`, `examples/mbstring.php`)
 
 **Callback helpers**: `call_user_func`, `call_user_func_array` (invoke builtins **and** user functions; see `src/engine/vm/callable.rs`)
@@ -539,15 +539,13 @@ The workspace passes `cargo build --workspace` and `cargo test --workspace`. Som
 
 ### Quick Links
 - **[examples/](examples/)** - Curated PHP demos (language features, WordPress, CodeIgniter, Drupal stubs)
-- **[AGENTS.md](AGENTS.md)** - Development guidelines
-- **[MEMORY.md](MEMORY.md)** - Institutional knowledge: proven patterns, PHP semantics notes, testing conventions
 - **[Cargo.toml](Cargo.toml)** - Dependencies and build configuration
 
 ## Roadmap
 
 ### ✅ Completed (v0.1.x)
 - Core PHP engine with 76 opcodes (added FetchStaticProp, DoStaticCall, CloneObj, SendValNamed, BindGlobal, SendVarRef, UnsetObjProp, UnsetDim)
-- 195+ built-in functions (string, array, math, regex, hash, datetime, URL, mbstring, callbacks, serialize)
+- 210+ built-in functions (string, array, math, regex, hash, datetime, URL, mbstring, callbacks, serialize)
 - Regular expressions (`preg_*` via Rust `regex`)
 - HTTP/HTTPS stream wrappers
 - PDO database abstraction
@@ -610,7 +608,7 @@ git push origin feature/my-feature
 - Add tests for new features
 - Update documentation
 - Keep code DRY and maintainable
-- See [AGENTS.md](AGENTS.md) for detailed guidelines
+- See [TODO.md](TODO.md) for detailed roadmap.
 
 ## Community & Support
 

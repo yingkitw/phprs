@@ -313,3 +313,30 @@ cargo test -p phprs --lib engine::vm::tests::test_compile_and_execute_function_r
 - The `unset()` builtin is still a no-op stub, so `unset($var)` on plain variables does not actually null them. Implementing it (or wiring `UnsetDim` for array elements) is independent of the cross-frame `throw`/`catch` work this audit covered.
 - The `__serialize` / `__unserialize` magic methods are still pending (not started in this audit pass).
 - Clippy cleanup continues to be a low-priority, mechanical task.
+
+---
+
+## Audit addendum — 2026-09-15
+
+**Scope:** Post-2026-09-13 WIP (Fibers, DST-aware timezone offsets, additional SPL classes, `__serialize`/`__unserialize`, `finally` blocks during unwinding, `ArrayIterator`).
+
+### Carry-forward items now resolved
+
+| Item | Status |
+|------|--------|
+| `__serialize` / `__unserialize` magic methods | **Implemented** via `invoke_magic_method`/`invoke_magic_method_with_this` helpers in `callable.rs` |
+| `finally` blocks during exception unwinding | **Implemented** — `finally` runs on normal completion, after catch, and during unwinding; pending exceptions re-dispatched after `FinallyEnd` |
+| `ArrayIterator` SPL class | **Implemented** — construction, iterator methods, `count`, ArrayAccess |
+| Fibers (PHP 8.1) | **Implemented** — `Fiber` built-in class with `start`/`suspend`/`resume`/`getReturn`/state queries via `execute_ex_resume` |
+| DST-aware timezone offsets | **Implemented** — `timezone_offset_at(name, timestamp)` for US/EU/Australia zones |
+| Additional SPL classes | **Implemented** — `SplStack`, `SplQueue`, `SplHeap`/`SplMaxHeap`/`SplMinHeap`, `SplPriorityQueue`, `DirectoryIterator`, `SplFileInfo`, `SplFileObject`, SPL exception hierarchy |
+
+### Current verification
+
+| Check | Result |
+|-------|--------|
+| `cargo test --workspace` | ✅ 607 passed, 0 failed, 1 `#[ignore]` |
+| `cargo clippy --lib` | ✅ No errors; ~27 style warnings (pre-existing) |
+| Opcode count | 76 |
+| Built-in function count | 210+ |
+| Test count | 600+ |

@@ -21,7 +21,7 @@ This directory contains integration and workspace-level tests for phprs. Unit te
 | `php_examples.rs` | Compile checks and existence tests for tutorial PHP files |
 | `fixtures/` | Shared fixtures used by integration tests |
 
-See also [../MEMORY.md](../MEMORY.md) for testing patterns and known gaps.
+See also [../ARCHITECTURE.md](../ARCHITECTURE.md) for testing patterns and known gaps.
 
 ## Engine unit tests (highlights)
 
