@@ -648,8 +648,7 @@ pub(crate) fn execute_builtin_function(
             }
             let mut result = crate::engine::types::PhpArray::new();
             if let PhpValue::Array(ref arr) = args[0].value {
-                let mut idx: u64 = 0;
-                for bucket in &arr.ar_data {
+                for (idx, bucket) in (0_u64..).zip(&arr.ar_data) {
                     let key_val = if let Some(ref k) = bucket.key {
                         Val::new(
                             PhpValue::String(Box::new(crate::engine::string::string_init(
@@ -663,7 +662,6 @@ pub(crate) fn execute_builtin_function(
                     };
                     let _ =
                         crate::engine::hash::hash_add_or_update(&mut result, None, idx, key_val, 0);
-                    idx += 1;
                 }
             }
             Ok(Some(Val::new(
@@ -680,11 +678,9 @@ pub(crate) fn execute_builtin_function(
             }
             let mut result = crate::engine::types::PhpArray::new();
             if let PhpValue::Array(ref arr) = args[0].value {
-                let mut idx: u64 = 0;
-                for bucket in &arr.ar_data {
+                for (idx, bucket) in (0_u64..).zip(&arr.ar_data) {
                     let val = clone_val(&bucket.val);
                     let _ = crate::engine::hash::hash_add_or_update(&mut result, None, idx, val, 0);
-                    idx += 1;
                 }
             }
             Ok(Some(Val::new(
@@ -2580,7 +2576,7 @@ pub(crate) fn execute_builtin_function(
                         })
                     })
                     .collect();
-                pairs.sort_by(|a, b| b.0.len().cmp(&a.0.len()));
+                pairs.sort_by_key(|b| std::cmp::Reverse(b.0.len()));
                 for (from, to) in pairs {
                     if !from.is_empty() {
                         out = out.replace(&from, &to);

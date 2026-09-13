@@ -1094,21 +1094,45 @@ fn compile_return(lexer: &mut Lexer, context: &mut CompileContext) -> Result<Tok
     skip_semicolon(lexer, after)
 }
 
-/// Compile yield statement (currently treated as return-style value)
+/// Compile yield statement — emits a Yield opcode that suspends the generator
+/// and produces the yielded value. The function is marked as a generator.
+/// Supports: `yield;`, `yield $val;`, `yield $key => $val;`
 fn compile_yield(lexer: &mut Lexer, context: &mut CompileContext) -> Result<Token, String> {
-    let yield_array = context.ensure_yield_array();
+    context.is_generator = true;
     let peek = lexer.next_token()?;
+    // `yield;` — yield with no value (yields null)
     if token_is_punct(&peek, ";") {
-        context.emit_opcode(Opcode::AddArrayElement, yield_array, null_val(), null_val());
+        let result = crate::engine::vm::temp_var_ref(context.alloc_temp());
+        context.emit_opcode(
+            Opcode::Yield,
+            crate::engine::facade::null_val(),
+            crate::engine::facade::null_val(),
+            result,
+        );
         return lexer.next_token().map(Ok)?;
     }
-    let (yield_value, after) =
+    let (first_expr, after) =
         crate::engine::compile::expression::parse_additive_expr_with_initial(lexer, context, peek)?;
+    // Check for `yield key => value` syntax
+    if after.token_type == crate::engine::lexer::TokenType::T_DOUBLE_ARROW {
+        let (value_expr, after2) =
+            crate::engine::compile::expression::parse_expression(lexer, context)?;
+        let result = crate::engine::vm::temp_var_ref(context.alloc_temp());
+        // op1 = value, op2 = key (Yield opcode stores key in op2)
+        context.emit_opcode(
+            Opcode::Yield,
+            value_expr,
+            first_expr,
+            result,
+        );
+        return skip_semicolon(lexer, after2);
+    }
+    let result = crate::engine::vm::temp_var_ref(context.alloc_temp());
     context.emit_opcode(
-        Opcode::AddArrayElement,
-        yield_array,
-        yield_value,
-        null_val(),
+        Opcode::Yield,
+        first_expr,
+        crate::engine::facade::null_val(),
+        result,
     );
     skip_semicolon(lexer, after)
 }

@@ -165,8 +165,7 @@ pub fn execute_reflection_class_method(
             if let Some(ref cn) = reflected_name
                 && let Some(reflected_ce) = execute_data.class_table.get(cn)
             {
-                let mut idx: u64 = 0;
-                for method_name in reflected_ce.methods.keys() {
+                for (idx, method_name) in (0_u64..).zip(reflected_ce.methods.keys()) {
                     let val = Val::new(
                         PhpValue::String(Box::new(crate::engine::string::string_init(
                             method_name,
@@ -175,7 +174,6 @@ pub fn execute_reflection_class_method(
                         PhpType::String,
                     );
                     let _ = crate::engine::hash::hash_add_or_update(&mut result, None, idx, val, 0);
-                    idx += 1;
                 }
             }
             Some(Val::new(PhpValue::Array(Box::new(result)), PhpType::Array))
@@ -185,8 +183,7 @@ pub fn execute_reflection_class_method(
             if let Some(ref cn) = reflected_name
                 && let Some(reflected_ce) = execute_data.class_table.get(cn)
             {
-                let mut idx: u64 = 0;
-                for prop_name in reflected_ce.default_properties.keys() {
+                for (idx, prop_name) in (0_u64..).zip(reflected_ce.default_properties.keys()) {
                     let val = Val::new(
                         PhpValue::String(Box::new(crate::engine::string::string_init(
                             prop_name, false,
@@ -194,7 +191,6 @@ pub fn execute_reflection_class_method(
                         PhpType::String,
                     );
                     let _ = crate::engine::hash::hash_add_or_update(&mut result, None, idx, val, 0);
-                    idx += 1;
                 }
             }
             Some(Val::new(PhpValue::Array(Box::new(result)), PhpType::Array))
@@ -340,8 +336,7 @@ pub fn execute_reflection_method(
                 && let Some(ce) = execute_data.class_table.get(cn)
                 && let Some(method) = ce.methods.get(mn)
             {
-                let mut idx: u64 = 0;
-                for p in &method.params {
+                for (idx, p) in (0_u64..).zip(&method.params) {
                     let _ = crate::engine::hash::hash_add_or_update(
                         &mut result,
                         None,
@@ -354,7 +349,6 @@ pub fn execute_reflection_method(
                         ),
                         0,
                     );
-                    idx += 1;
                 }
             }
             Some(Val::new(PhpValue::Array(Box::new(result)), PhpType::Array))
@@ -538,8 +532,7 @@ pub fn execute_reflection_function(
             if let Some(ref name) = reflected_name
                 && let Some(params) = function_param_names(execute_data, name)
             {
-                let mut idx: u64 = 0;
-                for p in params {
+                for (idx, p) in (0_u64..).zip(params) {
                     let _ = crate::engine::hash::hash_add_or_update(
                         &mut result,
                         None,
@@ -552,7 +545,6 @@ pub fn execute_reflection_function(
                         ),
                         0,
                     );
-                    idx += 1;
                 }
             }
             Some(Val::new(PhpValue::Array(Box::new(result)), PhpType::Array))

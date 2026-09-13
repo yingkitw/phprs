@@ -280,7 +280,7 @@ pub struct StrRef<'a> {
 
 impl<'a> StrRef<'a> {
     #[inline]
-    pub fn from_str(s: &'a str) -> Self {
+    pub fn from_str_ref(s: &'a str) -> Self {
         Self {
             data: s.as_bytes(),
             len: s.len(),
@@ -352,7 +352,7 @@ mod tests {
     #[test]
     fn test_str_ref() {
         let s = "Hello World";
-        let r = StrRef::from_str(s);
+        let r = StrRef::from_str_ref(s);
 
         assert_eq!(r.as_str(), s);
         assert_eq!(r.len(), s.len());

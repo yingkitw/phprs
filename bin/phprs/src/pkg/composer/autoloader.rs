@@ -183,55 +183,48 @@ fn extract_classes_from_file(path: &Path) -> Result<Vec<String>> {
     let mut current_namespace = String::new();
     let mut in_namespace = false;
 
-    loop {
-        match lexer.next_token() {
-            Ok(token) => {
-                if token.token_type == TokenType::T_EOF {
-                    break;
-                }
+    while let Ok(token) = lexer.next_token() {
+        if token.token_type == TokenType::T_EOF {
+            break;
+        }
 
-                match token.token_type {
-                    TokenType::T_NAMESPACE => {
-                        in_namespace = true;
-                        current_namespace.clear();
-                    }
-                    TokenType::T_STRING => {
-                        if let Some(value) = &token.value {
-                            let s = value.as_str();
-                            if in_namespace {
-                                if s == ";" {
-                                    in_namespace = false;
-                                } else {
-                                    if !current_namespace.is_empty() && s != "\\" {
-                                        current_namespace.push('\\');
-                                    }
-                                    current_namespace.push_str(s);
-                                }
+        match token.token_type {
+            TokenType::T_NAMESPACE => {
+                in_namespace = true;
+                current_namespace.clear();
+            }
+            TokenType::T_STRING => {
+                if let Some(value) = &token.value {
+                    let s = value.as_str();
+                    if in_namespace {
+                        if s == ";" {
+                            in_namespace = false;
+                        } else {
+                            if !current_namespace.is_empty() && s != "\\" {
+                                current_namespace.push('\\');
                             }
+                            current_namespace.push_str(s);
                         }
                     }
-                    TokenType::T_CLASS => {
-                        let next_token = lexer.next_token()?;
-                        if let Some(value) = &next_token.value {
-                            let class_name = value.as_str().to_string();
-                            let full_class_name = if current_namespace.is_empty() {
-                                class_name
-                            } else {
-                                format!("{}\\{}", current_namespace, class_name)
-                            };
-                            classes.push(full_class_name);
-                        }
-                    }
-                    TokenType::T_OPEN_TAG => {
-                        in_namespace = false;
-                        current_namespace.clear();
-                    }
-                    _ => {}
                 }
             }
-            Err(_) => {
-                break;
+            TokenType::T_CLASS => {
+                let next_token = lexer.next_token()?;
+                if let Some(value) = &next_token.value {
+                    let class_name = value.as_str().to_string();
+                    let full_class_name = if current_namespace.is_empty() {
+                        class_name
+                    } else {
+                        format!("{}\\{}", current_namespace, class_name)
+                    };
+                    classes.push(full_class_name);
+                }
             }
+            TokenType::T_OPEN_TAG => {
+                in_namespace = false;
+                current_namespace.clear();
+            }
+            _ => {}
         }
     }
 

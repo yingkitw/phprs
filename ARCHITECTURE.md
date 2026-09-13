@@ -60,7 +60,7 @@ Magic constants `__FILE__` and `__DIR__` are set per script in `execute.rs` from
 
 ## Virtual machine
 
-- **76 opcodes** (arithmetic, control flow, calls, OOP, includes, exceptions, …)
+- **77 opcodes** (arithmetic, control flow, calls, OOP, includes, exceptions, …)
 - **Direct dispatch table** in `dispatch_handlers.rs`
 - **Built-ins** delegated from `builtins.rs` to `src/php/*` modules
 - **Cross-frame exception propagation**: every call site that runs a callee op-array restores caller state, then `propagate_after_call` (`src/engine/vm/exception_dispatch.rs`) re-dispatches the pending exception against the caller's try regions. `try_stack` entries carry `(TryCatchBegin idx, op_array filename)` so `dispatch_exception` only considers catches in the current op_array.

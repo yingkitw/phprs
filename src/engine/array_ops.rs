@@ -170,10 +170,7 @@ impl OptimizedArray {
         // Remove deleted entries and compact memory
         self.inner
             .ar_data
-            .retain(|bucket| match bucket.val.get_type() {
-                crate::engine::types::PhpType::Undef => false,
-                _ => true,
-            });
+            .retain(|bucket| !matches!(bucket.val.get_type(), crate::engine::types::PhpType::Undef));
 
         self.inner.n_num_used = self.inner.ar_data.len() as u32;
         self.inner.n_num_of_elements = self.inner.n_num_used;
@@ -196,7 +193,7 @@ pub struct ArrayOps;
 
 impl ArrayOps {
     /// Fast array creation from iterator
-    pub fn from_iter<T: IntoIterator<Item = Val>>(iter: T) -> OptimizedArray {
+    pub fn from_iter_val<T: IntoIterator<Item = Val>>(iter: T) -> OptimizedArray {
         let iterator = iter.into_iter();
         let (lower, upper) = iterator.size_hint();
         let mut array = OptimizedArray::with_capacity(upper.unwrap_or(lower));

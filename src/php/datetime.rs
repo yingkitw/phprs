@@ -340,7 +340,7 @@ fn ymd_to_timestamp(year: i64, month: u32, day: i64, hour: i64, min: i64, sec: i
     }
     // Count days in months of the current year
     for m in 1..month {
-        days += days_in_month(year, m) as i64;
+        days += days_in_month(year, m);
     }
     // Add the day (day is 1-based, so subtract 1)
     days += day - 1;
@@ -361,8 +361,8 @@ fn nth_sunday_of_month(year: i64, month: u32, n: u32) -> i64 {
 fn last_sunday_of_month(year: i64, month: u32) -> i64 {
     let days_in_month = days_in_month(year, month);
     let last_day_dow = day_of_week(year, month, days_in_month as u32);
-    let last_sunday = days_in_month - last_day_dow as i64;
-    last_sunday
+    
+    days_in_month - last_day_dow
 }
 
 /// Day of week: 0=Sunday, 1=Monday, ..., 6=Saturday

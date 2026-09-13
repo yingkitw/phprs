@@ -335,8 +335,23 @@ cargo test -p phprs --lib engine::vm::tests::test_compile_and_execute_function_r
 
 | Check | Result |
 |-------|--------|
-| `cargo test --workspace` | ✅ 607 passed, 0 failed, 1 `#[ignore]` |
-| `cargo clippy --lib` | ✅ No errors; ~27 style warnings (pre-existing) |
-| Opcode count | 76 |
+| `cargo test --workspace` | ✅ 610 passed, 0 failed, 1 `#[ignore]` |
+| `cargo clippy --lib` | ✅ No errors; 0 warnings |
+| Opcode count | 77 |
 | Built-in function count | 210+ |
-| Test count | 600+ |
+| Test count | 610+ |
+
+## Audit addendum — 2026-09-16
+
+### No-op opcodes wired up
+All eight previously no-op opcodes now have dispatch handlers:
+- `AssignObj`, `TypeCheck`, `IsSet`, `Empty`, `Count`, `Keys`, `Values`, `ArrayDiff`
+- The dispatch-table coverage test no longer exempts any opcode.
+
+### Generators implemented
+- New `Yield` opcode (76) suspends generator execution.
+- `Generator` built-in class with `rewind`, `valid`, `current`, `key`, `next`, `send`, `getReturn`.
+- Generator functions return a `Generator` object instead of executing the body.
+- Reuses the `FiberFrame` infrastructure for saving/restoring VM state.
+- `foreach` over generators is not yet supported (requires VM re-entry from `FeFetch`); use `while ($g->valid()) { ... $g->next(); }`.
+- 4 new tests in `tests/php8x_features.rs`.

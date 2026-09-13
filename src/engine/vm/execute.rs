@@ -86,6 +86,17 @@ fn init_dispatch_table() {
         table[Opcode::Unset as usize] = execute_unset;
         table[Opcode::UnsetDim as usize] = execute_unset_dim;
 
+        // Previously no-op opcodes — now wired to real handlers
+        table[Opcode::AssignObj as usize] = execute_assign_obj;
+        table[Opcode::TypeCheck as usize] = execute_type_check;
+        table[Opcode::IsSet as usize] = execute_is_set;
+        table[Opcode::Empty as usize] = execute_empty;
+        table[Opcode::Count as usize] = execute_count;
+        table[Opcode::Keys as usize] = execute_keys;
+        table[Opcode::Values as usize] = execute_values;
+        table[Opcode::ArrayDiff as usize] = execute_array_diff;
+        table[Opcode::Yield as usize] = execute_yield;
+
         // Exception handling
         table[Opcode::TryCatchBegin as usize] = execute_try_catch_begin;
         table[Opcode::TryCatchEnd as usize] = execute_try_catch_end;
@@ -102,53 +113,6 @@ fn init_dispatch_table() {
 #[inline]
 fn default_handler(_op: &Op, _execute_data: &mut ExecuteData) -> Result<ExecResult, String> {
     Ok(ExecResult::Continue)
-}
-
-#[cfg(test)]
-mod dispatch_table_tests {
-    use super::*;
-
-    /// Opcode indices that intentionally have no handler (documented no-ops;
-    /// their builtin equivalents work — see MEMORY.md §2). Any new entry here
-    /// must be justified; anything NOT listed here and not registered in
-    /// `init_dispatch_table` fails this test, so silent no-op drift is caught.
-    const DOCUMENTED_NO_OPS: &[usize] = &[
-        Opcode::AssignObj as usize,
-        Opcode::TypeCheck as usize,
-        Opcode::IsSet as usize,
-        Opcode::Empty as usize,
-        Opcode::Keys as usize,
-        Opcode::Values as usize,
-        Opcode::ArrayDiff as usize,
-    ];
-
-    #[test]
-    fn test_dispatch_table_covers_every_real_opcode() {
-        init_dispatch_table();
-        let table = DISPATCH_TABLE.get().expect("dispatch table initialized");
-        let mut unregistered: Vec<usize> = Vec::new();
-        for idx in 0..Opcode::COUNT {
-            if DOCUMENTED_NO_OPS.contains(&idx) {
-                continue;
-            }
-            // Pointer equality: registered handlers differ from the default.
-            if (table[idx] as *const () as usize) == (default_handler as *const () as usize) {
-                unregistered.push(idx);
-            }
-        }
-        assert!(
-            unregistered.is_empty(),
-            "opcode indices without a dispatch handler and not on the documented no-op list: {unregistered:?}"
-        );
-    }
-
-    #[test]
-    fn test_count_sentinel_covers_last_real_opcode() {
-        // The sentinel must be strictly greater than every real opcode so the
-        // table size always covers all dispatchable indices. Update when a
-        // new opcode is added (the compiler will point here).
-        assert_eq!(Opcode::COUNT, (Opcode::UnsetDim as usize) + 1);
-    }
 }
 
 /// Parent directory for relative includes. `None` keeps the caller's `current_script_dir`
@@ -264,6 +228,11 @@ pub fn execute_ex_returning(
                 if execute_data.fiber_suspend_requested.is_some() {
                     break (PhpResult::Success, None);
                 }
+                // Generator yield requested — break out of the loop.
+                // The generator dispatch code saves the VM state after this returns.
+                if execute_data.generator_yield_requested.is_some() {
+                    break (PhpResult::Success, None);
+                }
             }
             Ok(ExecResult::Jump(target)) => {
                 execute_data.current_op = target as usize;
@@ -336,6 +305,9 @@ pub fn execute_ex_resume(execute_data: &mut ExecuteData) -> (PhpResult, Option<c
                     break (PhpResult::Success, None);
                 }
                 if execute_data.fiber_suspend_requested.is_some() {
+                    break (PhpResult::Success, None);
+                }
+                if execute_data.generator_yield_requested.is_some() {
                     break (PhpResult::Success, None);
                 }
             }
@@ -526,5 +498,44 @@ pub fn execute_ex(execute_data: &mut ExecuteData, op_array: &OpArray) -> PhpResu
 fn finalize_request(execute_data: &mut ExecuteData) {
     if let Err(e) = crate::php::session::session_write_close(execute_data) {
         eprintln!("Session write error: {e}");
+    }
+}
+
+#[cfg(test)]
+mod dispatch_table_tests {
+    use super::*;
+
+    /// Opcode indices that intentionally have no handler (documented no-ops;
+    /// their builtin equivalents work — see MEMORY.md §2). Any new entry here
+    /// must be justified; anything NOT listed here and not registered in
+    /// `init_dispatch_table` fails this test, so silent no-op drift is caught.
+    const DOCUMENTED_NO_OPS: &[usize] = &[];
+
+    #[test]
+    fn test_dispatch_table_covers_every_real_opcode() {
+        init_dispatch_table();
+        let table = DISPATCH_TABLE.get().expect("dispatch table initialized");
+        let mut unregistered: Vec<usize> = Vec::new();
+        for (idx, handler) in table.iter().enumerate().take(Opcode::COUNT) {
+            if DOCUMENTED_NO_OPS.contains(&idx) {
+                continue;
+            }
+            // Pointer equality: registered handlers differ from the default.
+            if std::ptr::eq(*handler as *const (), default_handler as *const ()) {
+                unregistered.push(idx);
+            }
+        }
+        assert!(
+            unregistered.is_empty(),
+            "opcode indices without a dispatch handler and not on the documented no-op list: {unregistered:?}"
+        );
+    }
+
+    #[test]
+    fn test_count_sentinel_covers_last_real_opcode() {
+        // The sentinel must be strictly greater than every real opcode so the
+        // table size always covers all dispatchable indices. Update when a
+        // new opcode is added (the compiler will point here).
+        assert_eq!(Opcode::COUNT, (Opcode::Yield as usize) + 1);
     }
 }

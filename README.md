@@ -7,7 +7,7 @@ Use phprs to run PHP CLI scripts, serve PHP pages locally, or experiment with ru
 [![Rust](https://img.shields.io/badge/rust-2024-orange.svg)](https://www.rust-lang.org/)
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
 [![Build Status](https://img.shields.io/badge/build-passing-brightgreen.svg)]()
-[![Tests](https://img.shields.io/badge/tests-600%2B%20passing-brightgreen.svg)]()
+[![Tests](https://img.shields.io/badge/tests-610%2B%20passing-brightgreen.svg)]()
 
 ---
 
@@ -36,7 +36,7 @@ phprs is a from-scratch **PHP runtime written in Rust**. It includes:
 
 - **PHP lexer and parser** — tokenizes PHP 7/8-style source into an abstract syntax tree.
 - **Compiler** — lowers PHP expressions, statements and functions into a typed opcode array.
-- **Virtual Machine (VM)** — executes opcodes via a direct dispatch table with 76 opcodes.
+- **Virtual Machine (VM)** — executes opcodes via a direct dispatch table with 77 opcodes.
 - **Built-in PHP functions** — 210+ standard library functions covering math, strings, arrays, files, streams, sessions, regex, hashing and more.
 - **Package manager** — Composer-compatible install/update workflows powered by `semver`.
 - **Development server** — `phprs serve` runs PHP pages locally.
@@ -51,7 +51,7 @@ The project is primarily a research and engineering playground: it proves PHP se
 - 🧩 **Standard PHP library** — `echo`, `array`, `function`, `class`, `try`/`catch`, `foreach`, closures, null coalescing, match expressions and more.
 - 🌐 **Web server for PHP** — `phprs serve` for local development.
 - 📦 **PHP package manager** — install packages from Packagist / private Composer repositories.
-- 🧪 **Extensive test suite** — 600+ workspace tests pass (`cargo test --workspace`); root PHP examples + framework entrypoints covered; `tests/exception_propagation.rs`, `tests/string_interpolation.rs`, and `tests/php8x_features.rs` document the recent surfaces (cross-frame try/catch, complex `"{$expr}"` / `"$arr[key]"`, final class constants, `__unset`, Fibers, SPL classes).
+- 🧪 **Extensive test suite** — 610+ workspace tests pass (`cargo test --workspace`); root PHP examples + framework entrypoints covered; `tests/exception_propagation.rs`, `tests/string_interpolation.rs`, and `tests/php8x_features.rs` document the recent surfaces (cross-frame try/catch, complex `"{$expr}"` / `"$arr[key]"`, final class constants, `__unset`, Fibers, SPL classes, Generators).
 - 🔌 **Embeddable library** — use `phprs` as a crate in Rust projects.
 
 ## Why phprs? The Rust Advantage
@@ -61,7 +61,7 @@ PHP powers much of the web; many production runtimes are implemented in C and C+
 - **Safer by construction (Rust)**: Memory errors that plague C/C++ code are largely ruled out in safe Rust; the interpreter still has correctness and parity work ahead.
 - **A performance-minded design**: Opcode dispatch, JIT hooks, and LLVM for the host binary — without promising a given speedup over Zend until we publish reproducible benchmarks.
 - **Concurrency-friendly host code**: Rust’s type system helps avoid data races in the engine itself; PHP’s shared mutable runtime model is still evolving in phprs.
-- **Test-backed**: 600+ workspace tests; every root `examples/*.php` runs in `tests/examples_runtime.rs`; framework demos (WordPress, CodeIgniter, Drupal) have entrypoint tests; Rust demos compile via `build_rust_examples`.
+- **Test-backed**: 610+ workspace tests; every root `examples/*.php` runs in `tests/examples_runtime.rs`; framework demos (WordPress, CodeIgniter, Drupal) have entrypoint tests; Rust demos compile via `build_rust_examples`.
 
 **phprs** brings PHP into the future by:
 
@@ -544,7 +544,7 @@ The workspace passes `cargo build --workspace` and `cargo test --workspace`. Som
 ## Roadmap
 
 ### ✅ Completed (v0.1.x)
-- Core PHP engine with 76 opcodes (added FetchStaticProp, DoStaticCall, CloneObj, SendValNamed, BindGlobal, SendVarRef, UnsetObjProp, UnsetDim)
+- Core PHP engine with 77 opcodes (added FetchStaticProp, DoStaticCall, CloneObj, SendValNamed, BindGlobal, SendVarRef, UnsetObjProp, UnsetDim, Yield)
 - 210+ built-in functions (string, array, math, regex, hash, datetime, URL, mbstring, callbacks, serialize)
 - Regular expressions (`preg_*` via Rust `regex`)
 - HTTP/HTTPS stream wrappers

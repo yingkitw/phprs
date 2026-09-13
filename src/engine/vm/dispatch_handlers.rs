@@ -910,6 +910,7 @@ pub fn execute_do_fcall(op: &Op, execute_data: &mut ExecuteData) -> Result<ExecR
                         cloned.function_name = func_op_array.function_name.clone();
                         cloned.ref_params = func_op_array.ref_params.clone();
                         cloned.variadic_param = func_op_array.variadic_param.clone();
+                        cloned.is_generator = func_op_array.is_generator;
                         for op in &func_op_array.ops {
                             cloned.add_op(super::opcodes::Op::new(
                                 op.opcode,
@@ -924,8 +925,72 @@ pub fn execute_do_fcall(op: &Op, execute_data: &mut ExecuteData) -> Result<ExecR
 
             if let Some((param_names, variadic_param, func_op_array)) = func_data {
                 let ref_params = func_op_array.ref_params.clone();
+
+                // Generator function: return a Generator object instead of executing.
+                // The generator stores the op_array and initial state; execution
+                // begins on the first next()/rewind() call.
+                if func_op_array.is_generator {
+                    let mut gen_obj = crate::engine::types::PhpObject::new("Generator");
+                    gen_obj.properties.insert("__op_array".to_string(),
+                        Val::new(PhpValue::Object(Box::new(
+                            crate::engine::types::PhpObject::new("__GeneratorOpArray")
+                        )), PhpType::Object));
+                    // Store the op_array in the generator frames slot
+                    let frame_idx = execute_data.fiber_frames.len();
+                    // Save the generator's op_array and initial state in a FiberFrame
+                    let gen_frame = super::execute_data::FiberFrame {
+                        op_array: func_op_array,
+                        current_op: 0,
+                        temp_vars: Vec::new(),
+                        symbol_table: None,
+                        call_args: args.clone(),
+                        call_arg_stack: Vec::new(),
+                        call_arg_names: arg_names.clone(),
+                        call_arg_by_ref: arg_by_ref.clone(),
+                        ref_caller_scope: None,
+                        ref_param_bindings: std::collections::HashMap::new(),
+                        global_imports: std::collections::HashSet::new(),
+                        try_stack: Vec::new(),
+                    };
+                    execute_data.fiber_frames.push(gen_frame);
+                    gen_obj.properties.insert("__frame_index".to_string(),
+                        Val::new(PhpValue::Long(frame_idx as i64), PhpType::Long));
+                    gen_obj.properties.insert("__state".to_string(),
+                        Val::new(PhpValue::Long(0), PhpType::Long)); // 0=pending, 1=running, 2=suspended, 3=terminated
+                    gen_obj.properties.insert("__current_value".to_string(),
+                        Val::new(PhpValue::Long(0), PhpType::Null));
+                    gen_obj.properties.insert("__current_key".to_string(),
+                        Val::new(PhpValue::Long(0), PhpType::Null));
+                    gen_obj.properties.insert("__return_value".to_string(),
+                        Val::new(PhpValue::Long(0), PhpType::Null));
+                    gen_obj.properties.insert("__send_value".to_string(),
+                        Val::new(PhpValue::Long(0), PhpType::Null));
+                    gen_obj.properties.insert("__param_names".to_string(),
+                        Val::new(PhpValue::String(Box::new(
+                            crate::engine::string::string_init(
+                                &param_names.iter().map(|n| n.as_str()).collect::<Vec<_>>().join(","),
+                                false,
+                            )
+                        )), PhpType::String));
+                    gen_obj.properties.insert("__variadic_param".to_string(),
+                        Val::new(PhpValue::String(Box::new(
+                            crate::engine::string::string_init(
+                                variadic_param.as_deref().unwrap_or(""), false)
+                        )), PhpType::String));
+                    gen_obj.properties.insert("__ref_params".to_string(),
+                        Val::new(PhpValue::String(Box::new(
+                            crate::engine::string::string_init(
+                                &ref_params.iter().map(|b| if *b { "1" } else { "0" })
+                                    .collect::<Vec<_>>().join(","), false)
+                        )), PhpType::String));
+                    let gen_val = Val::new(PhpValue::Object(Box::new(gen_obj)), PhpType::Object);
+                    if let Some(slot) = result_slot(op) {
+                        execute_data.set_temp(slot, gen_val);
+                    }
+                    return Ok(ExecResult::Continue);
+                }
+
                 // Note: JIT compilation check removed to prevent deadlock
-                // The function will be JIT compiled on subsequent calls if it's hot enough
 
                 // Save current execution state
                 let saved_op = execute_data.current_op;
@@ -1326,6 +1391,10 @@ pub fn execute_fe_reset(op: &Op, execute_data: &mut ExecuteData) -> Result<ExecR
     execute_data.fe_key_slot = temp_slot_index(&op.op2).map(|s| s as u32);
     if matches!(arr.value, PhpValue::Array(_)) {
         execute_data.set_temp(iter_slot, Val::new(PhpValue::Long(0), PhpType::Long));
+    } else if matches!(arr.value, PhpValue::Object(_)) {
+        // For objects (including Generator), store the object itself as the iterator.
+        // FeFetch will dispatch to the appropriate method calls.
+        execute_data.set_temp(iter_slot, arr);
     }
     Ok(ExecResult::Continue)
 }
@@ -1341,7 +1410,17 @@ pub fn execute_fe_fetch(op: &Op, execute_data: &mut ExecuteData) -> Result<ExecR
         return Ok(ExecResult::Continue);
     };
 
-    let PhpValue::Array(ref arr) = arr.value else {
+    // Handle Generator objects: foreach over a generator is not directly
+    // supported via FeFetch because advancing the generator requires VM
+    // re-entry (saving/restoring state). Users should use the
+    // while($g->valid()) { ... $g->next(); } pattern instead.
+    if let PhpValue::Object(ref obj) = arr.value
+        && obj.class_name == "Generator"
+    {
+        return Ok(ExecResult::Jump(op.extended_value));
+    }
+
+    let PhpValue::Array(arr) = &arr.value else {
         return Ok(ExecResult::Jump(op.extended_value));
     };
 
@@ -1495,7 +1574,7 @@ pub fn execute_new_obj(op: &Op, execute_data: &mut ExecuteData) -> Result<ExecRe
     if cn == "ArrayIterator" {
         obj.properties.insert(
             "__storage".to_string(),
-            Val::new(PhpValue::Array(Box::new(PhpArray::new())), PhpType::Array),
+            Val::new(PhpValue::Array(Box::default()), PhpType::Array),
         );
         obj.properties.insert(
             "__index".to_string(),
@@ -1526,14 +1605,14 @@ pub fn execute_new_obj(op: &Op, execute_data: &mut ExecuteData) -> Result<ExecRe
     if cn == "SplStack" || cn == "SplQueue" {
         obj.properties.insert(
             "__storage".to_string(),
-            Val::new(PhpValue::Array(Box::new(PhpArray::new())), PhpType::Array),
+            Val::new(PhpValue::Array(Box::default()), PhpType::Array),
         );
     }
     // Built-in SplHeap/SplPriorityQueue: initialize with empty storage and index.
     if cn == "SplHeap" || cn == "SplPriorityQueue" || cn == "SplMinHeap" || cn == "SplMaxHeap" {
         obj.properties.insert(
             "__storage".to_string(),
-            Val::new(PhpValue::Array(Box::new(PhpArray::new())), PhpType::Array),
+            Val::new(PhpValue::Array(Box::default()), PhpType::Array),
         );
         obj.properties.insert(
             "__index".to_string(),
@@ -1548,7 +1627,7 @@ pub fn execute_new_obj(op: &Op, execute_data: &mut ExecuteData) -> Result<ExecRe
         );
         obj.properties.insert(
             "__entries".to_string(),
-            Val::new(PhpValue::Array(Box::new(PhpArray::new())), PhpType::Array),
+            Val::new(PhpValue::Array(Box::default()), PhpType::Array),
         );
         obj.properties.insert(
             "__index".to_string(),
@@ -2421,6 +2500,276 @@ pub fn execute_do_method_call(
             }
         }
 
+        // Built-in Generator methods: current, next, send, getReturn, valid, rewind, key
+        if class_name == "Generator" {
+            let (base, _names_base) = execute_data.call_arg_stack.pop().unwrap_or((0, 0));
+            let m_args: Vec<Val> = execute_data.call_args.drain(base..).collect();
+            let mn = method_name.as_str();
+            let state = obj.properties.get("__state")
+                .map(crate::engine::operators::zval_get_long)
+                .unwrap_or(0);
+            let null_val = Val::new(PhpValue::Long(0), PhpType::Null);
+
+            if mn == "valid" {
+                let result = make_bool(state != 3);
+                if let Some(slot) = result_slot(op) {
+                    execute_data.set_temp(slot, result.clone());
+                }
+                return Ok(ExecResult::Continue);
+            }
+            if mn == "current" {
+                let result = obj.properties.get("__current_value")
+                    .map(clone_val).unwrap_or_else(|| clone_val(&null_val));
+                if let Some(slot) = result_slot(op) {
+                    execute_data.set_temp(slot, result.clone());
+                }
+                return Ok(ExecResult::Continue);
+            }
+            if mn == "key" {
+                let result = obj.properties.get("__current_key")
+                    .map(clone_val).unwrap_or_else(|| clone_val(&null_val));
+                if let Some(slot) = result_slot(op) {
+                    execute_data.set_temp(slot, result.clone());
+                }
+                return Ok(ExecResult::Continue);
+            }
+            if mn == "getReturn" {
+                let result = obj.properties.get("__return_value")
+                    .map(clone_val).unwrap_or_else(|| clone_val(&null_val));
+                if let Some(slot) = result_slot(op) {
+                    execute_data.set_temp(slot, result.clone());
+                }
+                return Ok(ExecResult::Continue);
+            }
+            if mn == "rewind" || mn == "next" || mn == "send" {
+                // For send(), get the value to pass to the yield expression
+                let send_val = if mn == "send" {
+                    Some(if !m_args.is_empty() { clone_val(&m_args[0]) }
+                         else { clone_val(&null_val) })
+                } else {
+                    None
+                };
+
+                // Get the generator's frame index
+                let frame_idx = obj.properties.get("__frame_index")
+                    .map(crate::engine::operators::zval_get_long)
+                    .unwrap_or(0) as usize;
+
+                if frame_idx >= execute_data.fiber_frames.len() {
+                    if let Some(slot) = result_slot(op) {
+                        execute_data.set_temp(slot, clone_val(&null_val));
+                    }
+                    return Ok(ExecResult::Continue);
+                }
+
+                // Save current VM state (caller's state)
+                let saved_op = execute_data.current_op;
+                let saved_op_array = execute_data.op_array.take();
+                let saved_temps = std::mem::take(&mut execute_data.temp_vars);
+                let saved_symbol_table = execute_data.symbol_table.take();
+                let saved_ref_caller_scope = execute_data.ref_caller_scope.take();
+                let saved_call_arg_stack = std::mem::take(&mut execute_data.call_arg_stack);
+                let saved_call_args = std::mem::take(&mut execute_data.call_args);
+                let saved_call_arg_names = std::mem::take(&mut execute_data.call_arg_names);
+                let saved_call_arg_by_ref = std::mem::take(&mut execute_data.call_arg_by_ref);
+                let saved_global_imports = std::mem::take(&mut execute_data.global_imports);
+                let saved_ref_bindings = std::mem::take(&mut execute_data.ref_param_bindings);
+                let saved_script_dir = execute_data.current_script_dir.clone();
+                let saved_try_stack = std::mem::take(&mut execute_data.try_stack);
+
+                // Take the generator frame out
+                let gen_frame = std::mem::replace(&mut execute_data.fiber_frames[frame_idx],
+                    super::execute_data::FiberFrame {
+                        op_array: super::opcodes::OpArray::new(String::new()),
+                        current_op: 0,
+                        temp_vars: Vec::new(),
+                        symbol_table: None,
+                        call_args: Vec::new(),
+                        call_arg_stack: Vec::new(),
+                        call_arg_names: Vec::new(),
+                        call_arg_by_ref: Vec::new(),
+                        ref_caller_scope: None,
+                        ref_param_bindings: std::collections::HashMap::new(),
+                        global_imports: std::collections::HashSet::new(),
+                        try_stack: Vec::new(),
+                    });
+
+                // Install the generator's state into ExecuteData
+                execute_data.op_array = Some(gen_frame.op_array);
+                execute_data.current_op = gen_frame.current_op;
+                execute_data.temp_vars = gen_frame.temp_vars;
+                execute_data.symbol_table = gen_frame.symbol_table
+                    .or_else(|| Some(crate::engine::types::PhpArray::new()));
+                execute_data.ref_caller_scope = gen_frame.ref_caller_scope;
+                execute_data.call_args = gen_frame.call_args;
+                execute_data.call_arg_stack = gen_frame.call_arg_stack;
+                execute_data.call_arg_names = gen_frame.call_arg_names;
+                execute_data.call_arg_by_ref = gen_frame.call_arg_by_ref;
+                execute_data.ref_param_bindings = gen_frame.ref_param_bindings;
+                execute_data.global_imports = gen_frame.global_imports;
+                execute_data.try_stack = gen_frame.try_stack;
+
+                // If this is the first call (rewind/next from state 0), bind the parameters
+                if state == 0 {
+                    let param_str = obj.properties.get("__param_names")
+                        .map(|v| crate::engine::operators::zval_get_string(v).as_str().to_string())
+                        .unwrap_or_default();
+                    let variadic = obj.properties.get("__variadic_param")
+                        .map(|v| crate::engine::operators::zval_get_string(v).as_str().to_string())
+                        .unwrap_or_default();
+                    let variadic_opt: Option<String> = if variadic.is_empty() { None } else { Some(variadic.clone()) };
+                    let ref_params_str = obj.properties.get("__ref_params")
+                        .map(|v| crate::engine::operators::zval_get_string(v).as_str().to_string())
+                        .unwrap_or_default();
+                    let ref_params: Vec<bool> = if ref_params_str.is_empty() {
+                        Vec::new()
+                    } else {
+                        ref_params_str.split(',').map(|s| s == "1").collect()
+                    };
+                    let param_names: Vec<String> = if param_str.is_empty() {
+                        Vec::new()
+                    } else {
+                        param_str.split(',').map(|s| s.to_string()).collect()
+                    };
+                    let init_args = std::mem::take(&mut execute_data.call_args);
+                    let init_arg_names = std::mem::take(&mut execute_data.call_arg_names);
+                    let init_arg_by_ref = std::mem::take(&mut execute_data.call_arg_by_ref);
+                    bind_call_args(
+                        execute_data,
+                        &param_names,
+                        &init_args,
+                        &init_arg_names,
+                        &variadic_opt,
+                        &ref_params,
+                        &init_arg_by_ref,
+                    );
+                }
+
+                // If send(), we need to set the sent value as the result of the
+                // Yield opcode. The Yield opcode's result temp slot gets the sent value.
+                // We do this by setting it in the temp_vars before resuming.
+                if let Some(ref sv) = send_val {
+                    // The Yield opcode's result slot is the temp var that will receive
+                    // the sent value. We need to find it and set it.
+                    // Since we can't easily know which temp slot the Yield uses,
+                    // we'll store the send value and let the next Yield pick it up.
+                    // For simplicity, we'll set it as a special var.
+                    execute_data.set_var("__generator_send_value", clone_val(sv));
+                }
+
+                // Clear the yield flag before resuming
+                execute_data.generator_yield_requested = None;
+
+                // Resume execution
+                let (_status, return_val) = super::execute::execute_ex_resume(execute_data);
+
+                // Check if we yielded or finished
+                let yielded = execute_data.generator_yield_requested.take();
+                let yielded_key = execute_data.generator_yield_key.take();
+                let new_state = if yielded.is_some() {
+                    2 // suspended
+                } else {
+                    3 // terminated
+                };
+
+                // Extract the generator's current state
+                let gen_op_array = execute_data.op_array.take().unwrap_or_else(|| super::opcodes::OpArray::new(String::new()));
+                let gen_current_op = execute_data.current_op;
+                let gen_temps = std::mem::take(&mut execute_data.temp_vars);
+                let gen_symbol_table = execute_data.symbol_table.take();
+                let gen_ref_caller_scope = execute_data.ref_caller_scope.take();
+                let gen_call_args = std::mem::take(&mut execute_data.call_args);
+                let gen_call_arg_stack = std::mem::take(&mut execute_data.call_arg_stack);
+                let gen_call_arg_names = std::mem::take(&mut execute_data.call_arg_names);
+                let gen_call_arg_by_ref = std::mem::take(&mut execute_data.call_arg_by_ref);
+                let gen_ref_param_bindings = std::mem::take(&mut execute_data.ref_param_bindings);
+                let gen_global_imports = std::mem::take(&mut execute_data.global_imports);
+                let gen_try_stack = std::mem::take(&mut execute_data.try_stack);
+
+                // Save the generator frame back
+                execute_data.fiber_frames[frame_idx] = super::execute_data::FiberFrame {
+                    op_array: gen_op_array,
+                    current_op: gen_current_op,
+                    temp_vars: gen_temps,
+                    symbol_table: gen_symbol_table,
+                    call_args: gen_call_args,
+                    call_arg_stack: gen_call_arg_stack,
+                    call_arg_names: gen_call_arg_names,
+                    call_arg_by_ref: gen_call_arg_by_ref,
+                    ref_caller_scope: gen_ref_caller_scope,
+                    ref_param_bindings: gen_ref_param_bindings,
+                    global_imports: gen_global_imports,
+                    try_stack: gen_try_stack,
+                };
+
+                // Restore caller's VM state
+                execute_data.temp_vars = saved_temps;
+                execute_data.op_array = saved_op_array;
+                execute_data.current_op = saved_op;
+                execute_data.symbol_table = saved_symbol_table;
+                execute_data.ref_caller_scope = saved_ref_caller_scope;
+                execute_data.call_arg_stack = saved_call_arg_stack;
+                execute_data.call_args = saved_call_args;
+                execute_data.call_arg_names = saved_call_arg_names;
+                execute_data.call_arg_by_ref = saved_call_arg_by_ref;
+                execute_data.global_imports = saved_global_imports;
+                execute_data.ref_param_bindings = saved_ref_bindings;
+                execute_data.current_script_dir = saved_script_dir;
+                execute_data.try_stack = saved_try_stack;
+
+                // Update the Generator object's properties
+                let mut updated = crate::engine::types::PhpObject::new("Generator");
+                updated.properties = obj.properties.clone();
+                updated.properties.insert("__state".to_string(),
+                    Val::new(PhpValue::Long(new_state), PhpType::Long));
+                if let Some(ref yv) = yielded {
+                    updated.properties.insert("__current_value".to_string(), clone_val(yv));
+                    // Use the yielded key if provided, otherwise auto-increment
+                    if let Some(ref yk) = yielded_key {
+                        if yk.get_type() != PhpType::Null {
+                            updated.properties.insert("__current_key".to_string(), clone_val(yk));
+                        } else {
+                            let old_key = obj.properties.get("__current_key")
+                                .map(crate::engine::operators::zval_get_long)
+                                .unwrap_or(-1);
+                            updated.properties.insert("__current_key".to_string(),
+                                Val::new(PhpValue::Long(old_key + 1), PhpType::Long));
+                        }
+                    } else {
+                        let old_key = obj.properties.get("__current_key")
+                            .map(crate::engine::operators::zval_get_long)
+                            .unwrap_or(-1);
+                        updated.properties.insert("__current_key".to_string(),
+                            Val::new(PhpValue::Long(old_key + 1), PhpType::Long));
+                    }
+                }
+                if let Some(rv) = return_val {
+                    updated.properties.insert("__return_value".to_string(), rv);
+                }
+
+                // Write back the updated object
+                if is_var_ref(&op.op2)
+                    && let PhpValue::String(ref name) = op.op2.value
+                {
+                    let n = name.as_str();
+                    let clean = n.strip_prefix('$').unwrap_or(n);
+                    execute_data.set_var(clean, Val::new(PhpValue::Object(Box::new(updated)), PhpType::Object));
+                } else if is_temp_ref(&op.op2)
+                    && let PhpValue::Long(idx) = op.op2.value
+                {
+                    execute_data.set_temp(idx as usize, Val::new(PhpValue::Object(Box::new(updated)), PhpType::Object));
+                }
+
+                // Return the yielded value (for send()) or null
+                let result = yielded.unwrap_or_else(|| clone_val(&null_val));
+                if let Some(slot) = result_slot(op) {
+                    execute_data.set_temp(slot, result.clone());
+                }
+                return Ok(ExecResult::Continue);
+            }
+            // Unknown method — fall through
+        }
+
         // Built-in Fiber methods: __construct, start, resume, getReturn,
         // isStarted, isSuspended, isTerminated, isRunning
         if class_name == "Fiber" {
@@ -2546,6 +2895,7 @@ pub fn execute_do_method_call(
                                 cloned.function_name = func_op_array.function_name.clone();
                                 cloned.ref_params = func_op_array.ref_params.clone();
                                 cloned.variadic_param = func_op_array.variadic_param.clone();
+                                cloned.is_generator = func_op_array.is_generator;
                                 for op in &func_op_array.ops {
                                     cloned.add_op(super::opcodes::Op::new(
                                         op.opcode, clone_val(&op.op1), clone_val(&op.op2),
@@ -2797,7 +3147,7 @@ pub fn execute_do_method_call(
                 .get("__storage")
                 .map(clone_val)
                 .unwrap_or_else(|| {
-                    Val::new(PhpValue::Array(Box::new(PhpArray::new())), PhpType::Array)
+                    Val::new(PhpValue::Array(Box::default()), PhpType::Array)
                 });
             let index = obj
                 .properties
@@ -3115,7 +3465,7 @@ pub fn execute_do_method_call(
             let mn = method_name.as_str();
             let mut storage = obj.properties.get("__storage")
                 .map(clone_val)
-                .unwrap_or_else(|| Val::new(PhpValue::Array(Box::new(PhpArray::new())), PhpType::Array));
+                .unwrap_or_else(|| Val::new(PhpValue::Array(Box::default()), PhpType::Array));
 
             if mn == "push" || mn == "enqueue" {
                 let mut updated = clone_val(&obj_val);
@@ -3244,7 +3594,7 @@ pub fn execute_do_method_call(
 
             let entries = obj.properties.get("__entries")
                 .map(clone_val)
-                .unwrap_or_else(|| Val::new(PhpValue::Array(Box::new(PhpArray::new())), PhpType::Array));
+                .unwrap_or_else(|| Val::new(PhpValue::Array(Box::default()), PhpType::Array));
             let index = obj.properties.get("__index")
                 .map(crate::engine::operators::zval_get_long)
                 .unwrap_or(0);
@@ -3333,7 +3683,7 @@ pub fn execute_do_method_call(
             let mn = method_name.as_str();
             let mut storage = obj.properties.get("__storage")
                 .map(clone_val)
-                .unwrap_or_else(|| Val::new(PhpValue::Array(Box::new(PhpArray::new())), PhpType::Array));
+                .unwrap_or_else(|| Val::new(PhpValue::Array(Box::default()), PhpType::Array));
             let is_min_heap = class_name == "SplMinHeap";
 
             // Helper: compare two values for heap ordering.
@@ -4823,5 +5173,210 @@ pub fn execute_is_smaller_or_equal(
     if let Some(slot) = result_slot(op) {
         execute_data.set_temp(slot, make_bool(result));
     }
+    Ok(ExecResult::Continue)
+}
+
+// --- Previously no-op opcodes, now wired to real handlers ---
+
+/// `AssignObj` — assign a value to an object property (op1=obj, op2=prop name,
+/// result=value). This is the opcode-level form; the compiler currently emits
+/// `FetchObjProp` + `Assign` for `$obj->prop = v`, but this handler ensures the
+/// opcode is not a silent no-op if emitted directly.
+#[inline]
+pub fn execute_assign_obj(op: &Op, execute_data: &mut ExecuteData) -> Result<ExecResult, String> {
+    let val = resolve_operand(&op.result, execute_data);
+    let obj = resolve_operand(&op.op1, execute_data);
+    if let PhpValue::Object(obj_inner) = &obj.value {
+        let mut updated = crate::engine::types::PhpObject::new(&obj_inner.class_name);
+        updated.properties = obj_inner.properties.clone();
+        if let PhpValue::String(prop_name) = &op.op2.value {
+            updated.properties.insert(prop_name.as_str().to_string(), clone_val(&val));
+        }
+        let new_obj = Val::new(PhpValue::Object(Box::new(updated)), PhpType::Object);
+        // Write back to the variable/temp holding the object
+        if is_var_ref(&op.op1)
+            && let PhpValue::String(ref name) = op.op1.value
+        {
+            let n = name.as_str();
+            let clean = n.strip_prefix('$').unwrap_or(n);
+            execute_data.set_var(clean, new_obj);
+        } else if is_temp_ref(&op.op1)
+            && let PhpValue::Long(idx) = op.op1.value
+        {
+            execute_data.set_temp(idx as usize, new_obj);
+        }
+    }
+    Ok(ExecResult::Continue)
+}
+
+/// `TypeCheck` — check the type of op1 against a type spec in op2 (string type name).
+/// Result temp gets a boolean.
+#[inline]
+pub fn execute_type_check(op: &Op, execute_data: &mut ExecuteData) -> Result<ExecResult, String> {
+    let val = resolve_operand(&op.op1, execute_data);
+    let type_name = if let PhpValue::String(ref s) = op.op2.value {
+        s.as_str().to_lowercase()
+    } else {
+        String::new()
+    };
+    let result = match type_name.as_str() {
+        "int" | "integer" | "long" => val.get_type() == PhpType::Long,
+        "float" | "double" => val.get_type() == PhpType::Double,
+        "string" => val.get_type() == PhpType::String,
+        "bool" | "boolean" => val.get_type() == PhpType::True || val.get_type() == PhpType::False,
+        "array" => val.get_type() == PhpType::Array,
+        "object" => val.get_type() == PhpType::Object,
+        "null" => val.get_type() == PhpType::Null,
+        "numeric" => {
+            let s = crate::engine::operators::zval_get_string(&val);
+            s.as_str().parse::<f64>().is_ok() || val.get_type() == PhpType::Long || val.get_type() == PhpType::Double
+        }
+        _ => false,
+    };
+    if let Some(slot) = result_slot(op) {
+        execute_data.set_temp(slot, make_bool(result));
+    }
+    Ok(ExecResult::Continue)
+}
+
+/// `IsSet` — opcode-level isset(): check if op1 is set and not null.
+#[inline]
+pub fn execute_is_set(op: &Op, execute_data: &mut ExecuteData) -> Result<ExecResult, String> {
+    let val = resolve_operand(&op.op1, execute_data);
+    let result = val.get_type() != PhpType::Null && val.get_type() != PhpType::Undef;
+    if let Some(slot) = result_slot(op) {
+        execute_data.set_temp(slot, make_bool(result));
+    }
+    Ok(ExecResult::Continue)
+}
+
+/// `Empty` — opcode-level empty(): check if op1 is "empty" per PHP rules.
+#[inline]
+pub fn execute_empty(op: &Op, execute_data: &mut ExecuteData) -> Result<ExecResult, String> {
+    let val = resolve_operand(&op.op1, execute_data);
+    let is_empty = match val.get_type() {
+        PhpType::Null | PhpType::False | PhpType::Undef => true,
+        PhpType::Long => crate::engine::operators::zval_get_long(&val) == 0,
+        PhpType::Double => crate::engine::operators::zval_get_double(&val) == 0.0,
+        PhpType::String => {
+            let s = crate::engine::operators::zval_get_string(&val);
+            s.as_str().is_empty() || s.as_str() == "0"
+        }
+        PhpType::Array => {
+            if let PhpValue::Array(arr) = &val.value {
+                arr.ar_data.is_empty()
+            } else {
+                false
+            }
+        }
+        _ => false,
+    };
+    if let Some(slot) = result_slot(op) {
+        execute_data.set_temp(slot, make_bool(is_empty));
+    }
+    Ok(ExecResult::Continue)
+}
+
+/// `Count` — opcode-level count(): count elements in op1 (array or string length).
+#[inline]
+pub fn execute_count(op: &Op, execute_data: &mut ExecuteData) -> Result<ExecResult, String> {
+    let val = resolve_operand(&op.op1, execute_data);
+    let count = match &val.value {
+        PhpValue::Array(arr) => arr.ar_data.len() as i64,
+        PhpValue::String(s) => s.as_str().chars().count() as i64,
+        _ => 0,
+    };
+    if let Some(slot) = result_slot(op) {
+        execute_data.set_temp(slot, Val::new(PhpValue::Long(count), PhpType::Long));
+    }
+    Ok(ExecResult::Continue)
+}
+
+/// `Keys` — opcode-level array_keys(): return keys of op1 array.
+#[inline]
+pub fn execute_keys(op: &Op, execute_data: &mut ExecuteData) -> Result<ExecResult, String> {
+    let val = resolve_operand(&op.op1, execute_data);
+    let mut result = crate::engine::types::PhpArray::new();
+    if let PhpValue::Array(arr) = &val.value {
+        for (idx, bucket) in (0_u64..).zip(&arr.ar_data) {
+            let key_val = if let Some(ref k) = bucket.key {
+                Val::new(
+                    PhpValue::String(Box::new(crate::engine::string::string_init(k.as_str(), false))),
+                    PhpType::String,
+                )
+            } else {
+                Val::new(PhpValue::Long(idx as i64), PhpType::Long)
+            };
+            let _ = crate::engine::hash::hash_add_or_update(&mut result, None, idx, key_val, 0);
+        }
+    }
+    if let Some(slot) = result_slot(op) {
+        execute_data.set_temp(slot, Val::new(PhpValue::Array(Box::new(result)), PhpType::Array));
+    }
+    Ok(ExecResult::Continue)
+}
+
+/// `Values` — opcode-level array_values(): return values of op1 array.
+#[inline]
+pub fn execute_values(op: &Op, execute_data: &mut ExecuteData) -> Result<ExecResult, String> {
+    let val = resolve_operand(&op.op1, execute_data);
+    let mut result = crate::engine::types::PhpArray::new();
+    if let PhpValue::Array(arr) = &val.value {
+        for (idx, bucket) in (0_u64..).zip(&arr.ar_data) {
+            let _ = crate::engine::hash::hash_add_or_update(
+                &mut result,
+                None,
+                idx,
+                clone_val(&bucket.val),
+                0,
+            );
+        }
+    }
+    if let Some(slot) = result_slot(op) {
+        execute_data.set_temp(slot, Val::new(PhpValue::Array(Box::new(result)), PhpType::Array));
+    }
+    Ok(ExecResult::Continue)
+}
+
+/// `ArrayDiff` — opcode-level array_diff(): return elements in op1 not in op2.
+#[inline]
+pub fn execute_array_diff(op: &Op, execute_data: &mut ExecuteData) -> Result<ExecResult, String> {
+    let arr1 = resolve_operand(&op.op1, execute_data);
+    let arr2 = resolve_operand(&op.op2, execute_data);
+    let mut result = crate::engine::types::PhpArray::new();
+    if let (PhpValue::Array(a1), PhpValue::Array(a2)) = (&arr1.value, &arr2.value) {
+        let values2: Vec<String> = a2.ar_data.iter().map(|b| {
+            crate::engine::operators::zval_get_string(&b.val).as_str().to_string()
+        }).collect();
+        for (idx, bucket) in (0_u64..).zip(&a1.ar_data) {
+            let v = crate::engine::operators::zval_get_string(&bucket.val);
+            if !values2.contains(&v.as_str().to_string()) {
+                let _ = crate::engine::hash::hash_add_or_update(
+                    &mut result,
+                    None,
+                    idx,
+                    clone_val(&bucket.val),
+                    0,
+                );
+            }
+        }
+    }
+    if let Some(slot) = result_slot(op) {
+        execute_data.set_temp(slot, Val::new(PhpValue::Array(Box::new(result)), PhpType::Array));
+    }
+    Ok(ExecResult::Continue)
+}
+
+/// `Yield` — suspend generator execution and produce a value.
+/// op1 = value to yield, op2 = key (or null for auto-increment), result = temp for sent value.
+/// Sets `generator_yield_requested` to break out of `execute_ex_returning`.
+#[inline]
+pub fn execute_yield(op: &Op, execute_data: &mut ExecuteData) -> Result<ExecResult, String> {
+    let yield_value = resolve_operand(&op.op1, execute_data);
+    let yield_key = resolve_operand(&op.op2, execute_data);
+    // Signal the execution loop to break, carrying the yielded value and key.
+    // We store the key in a separate field on ExecuteData.
+    execute_data.generator_yield_requested = Some(yield_value);
+    execute_data.generator_yield_key = Some(yield_key);
     Ok(ExecResult::Continue)
 }

@@ -215,10 +215,7 @@ impl OpcodeCache {
     /// Check if value is constant
     fn is_constant(val: &crate::engine::types::Val) -> bool {
         use crate::engine::types::PhpValue;
-        match &val.value {
-            PhpValue::Long(_) | PhpValue::Double(_) | PhpValue::String(_) => true,
-            _ => false,
-        }
+        matches!(&val.value, PhpValue::Long(_) | PhpValue::Double(_) | PhpValue::String(_))
     }
 
     /// Check if operation can be dead code eliminated
@@ -263,16 +260,16 @@ impl OpcodeCache {
         let mut optimized = ops;
 
         // Simple branch prediction - assume backward jumps are likely taken
-        for i in 0..optimized.len() {
-            if optimized[i].base.opcode == Opcode::Jmp
-                && let Some(target) = optimized[i].base.extended_value.checked_sub(1)
+        for (i, op) in optimized.iter_mut().enumerate() {
+            if op.base.opcode == Opcode::Jmp
+                && let Some(target) = op.base.extended_value.checked_sub(1)
             {
                 if target < i as u32 {
                     // Backward jump - likely loop, high probability
-                    optimized[i].optimization_hints.branch_probability = 0.9;
+                    op.optimization_hints.branch_probability = 0.9;
                 } else {
                     // Forward jump - unlikely
-                    optimized[i].optimization_hints.branch_probability = 0.1;
+                    op.optimization_hints.branch_probability = 0.1;
                 }
             }
         }

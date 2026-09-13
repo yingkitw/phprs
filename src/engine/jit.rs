@@ -302,8 +302,8 @@ pub fn execute_with_jit(
             // Note: This is a read-only operation, so we don't need a write lock
             drop(jit); // Release the read lock
 
-            // We need to update stats - get a write lock just for that
-            let jit = get_jit_compiler().write().unwrap();
+            // Atomic stats update only needs a read lock
+            let jit = get_jit_compiler().read().unwrap();
             jit.jit_stats.jit_hits.fetch_add(1, Ordering::Relaxed);
             return compiled_fn(execute_data);
         }

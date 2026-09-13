@@ -1421,3 +1421,90 @@ try {
     assert!(out.contains("caught as LogicException: bad arg"), "InvalidArgumentException -> LogicException: {out:?}");
     assert!(out.contains("caught as RuntimeException: overflow"), "OverflowException -> RuntimeException: {out:?}");
 }
+
+#[test]
+fn test_generator_basic() {
+    let code = r#"<?php
+function gen() {
+    yield 1;
+    yield 2;
+    yield 3;
+}
+$g = gen();
+$g->rewind();
+$out = "";
+while ($g->valid()) {
+    $out .= $g->current() . ",";
+    $g->next();
+}
+echo $out;
+"#;
+    let (result, out) = run_php(code).expect("compile");
+    assert!(matches!(result, PhpResult::Success), "result: {result:?}");
+    assert_eq!(out, "1,2,3,");
+}
+
+#[test]
+fn test_generator_with_keys() {
+    let code = r#"<?php
+function gen_kv() {
+    yield "a" => 1;
+    yield "b" => 2;
+    yield "c" => 3;
+}
+$g = gen_kv();
+$g->rewind();
+$out = "";
+while ($g->valid()) {
+    $out .= $g->key() . "=" . $g->current() . ";";
+    $g->next();
+}
+echo $out;
+"#;
+    let (result, out) = run_php(code).expect("compile");
+    assert!(matches!(result, PhpResult::Success), "result: {result:?}");
+    assert_eq!(out, "a=1;b=2;c=3;");
+}
+
+#[test]
+fn test_generator_return_value() {
+    let code = r#"<?php
+function gen() {
+    yield 1;
+    yield 2;
+    return "done";
+}
+$g = gen();
+$g->rewind();
+$g->next();
+$g->next();
+echo $g->getReturn();
+echo "|";
+echo $g->valid() ? "yes" : "no";
+"#;
+    let (result, out) = run_php(code).expect("compile");
+    assert!(matches!(result, PhpResult::Success), "result: {result:?}");
+    assert_eq!(out, "done|no");
+}
+
+#[test]
+fn test_generator_with_parameters() {
+    let code = r#"<?php
+function range_gen($start, $end) {
+    for ($i = $start; $i <= $end; $i++) {
+        yield $i;
+    }
+}
+$g = range_gen(5, 8);
+$g->rewind();
+$out = "";
+while ($g->valid()) {
+    $out .= $g->current() . " ";
+    $g->next();
+}
+echo $out;
+"#;
+    let (result, out) = run_php(code).expect("compile");
+    assert!(matches!(result, PhpResult::Success), "result: {result:?}");
+    assert_eq!(out, "5 6 7 8 ");
+}

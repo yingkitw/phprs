@@ -152,6 +152,11 @@ pub struct ExecuteData {
     /// Saved fiber execution frames, indexed by the `__frame_index` property
     /// on Fiber objects. Only one fiber can run at a time (synchronous VM).
     pub fiber_frames: Vec<FiberFrame>,
+    /// Set by the `Yield` opcode to break out of `execute_ex_returning` with
+    /// the yielded value. Cleared by the generator dispatch code after saving.
+    pub generator_yield_requested: Option<Val>,
+    /// The key accompanying a `Yield` opcode (null for auto-increment keys).
+    pub generator_yield_key: Option<Val>,
 }
 
 /// Captured VM state for a suspended Fiber, allowing resume to continue
@@ -212,6 +217,8 @@ impl ExecuteData {
             pending_exception: None,
             fiber_suspend_requested: None,
             fiber_frames: Vec::new(),
+            generator_yield_requested: None,
+            generator_yield_key: None,
         };
         ed.register_reflection_classes();
         ed

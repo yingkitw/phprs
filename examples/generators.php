@@ -13,11 +13,11 @@ function fibonacci() {
 }
 
 $fib = fibonacci();
-echo $fib[0];
-echo "\n";
-echo $fib[3];
-echo "\n";
-echo $fib[6];
+$fib->rewind();
+while ($fib->valid()) {
+    echo $fib->current() . " ";
+    $fib->next();
+}
 echo "\n";
 
 function range_gen() {
@@ -27,5 +27,9 @@ function range_gen() {
 }
 
 $r = range_gen();
-echo $r[1];
+$r->rewind();
+while ($r->valid()) {
+    echo $r->current() . " ";
+    $r->next();
+}
 echo "\n";

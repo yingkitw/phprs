@@ -373,10 +373,8 @@ pub fn get_headers(args: &[Val]) -> Result<Val, String> {
     }
 
     let mut arr = crate::engine::types::PhpArray::new();
-    let mut idx: u64 = 0;
-    for val in headers_list.into_iter() {
+    for (idx, val) in (0_u64..).zip(headers_list) {
         let _ = crate::engine::hash::hash_add_or_update(&mut arr, None, idx, val, 0);
-        idx += 1;
     }
     Ok(Val::new(PhpValue::Array(Box::new(arr)), PhpType::Array))
 }

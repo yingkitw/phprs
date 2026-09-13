@@ -82,6 +82,7 @@ pub enum Opcode {
     Spaceship = 73,    // Combined comparison: -1 / 0 / 1
     UnsetObjProp = 74, // Unset object property (op1=obj, op2=prop name); calls __unset if defined
     UnsetDim = 75,     // Unset array element (op1=container var, op2=key)
+    Yield = 76,        // Generator yield: op1=value to yield, result=temp for sent value
     /// Sentinel: one past the last real opcode (auto-numbered). Keep last,
     /// never dispatch on it. New opcodes go right above with no explicit
     /// discriminant and the dispatch table grows automatically.
@@ -129,6 +130,8 @@ pub struct OpArray {
     pub variadic_param: Option<String>,
     /// Per-parameter pass-by-reference flags (aligned with `vars`).
     pub ref_params: Vec<bool>,
+    /// True if the function body contains `yield` (makes it a generator).
+    pub is_generator: bool,
 }
 
 impl OpArray {
@@ -143,6 +146,7 @@ impl OpArray {
             function_name: None,
             variadic_param: None,
             ref_params: Vec::new(),
+            is_generator: false,
         }
     }
 
@@ -158,6 +162,7 @@ impl OpArray {
             function_name: None,
             variadic_param: None,
             ref_params: Vec::new(),
+            is_generator: false,
         }
     }
 

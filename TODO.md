@@ -34,7 +34,7 @@
 - [x] Control flow (if/else, while, for, foreach)
 - [x] Function compilation and calls
 - [x] Class compilation (properties, methods, constructors)
-- [x] VM execution (76 opcodes, dispatch table)
+- [x] VM execution (77 opcodes, dispatch table)
 - [x] Built-in functions (210+ functions — see Statistics)
 - [x] Legacy `array()` constructor syntax (`array()`, `array('k' => v)`, indexed elements)
 - [x] Foreach with key => value (`foreach ($a as $k => $v)`)
@@ -79,7 +79,7 @@
 - [x] Traits
 - [x] Attributes (PHP 8.0)
 - [x] Match expressions (PHP 8.0)
-- [x] Generators (yield → array accumulation)
+- [x] Generators (yield → resumable Generator objects with rewind/valid/current/key/next/send/getReturn)
 
 ### WordPress example support
 - [x] define(), defined(), constant(); bare-identifier constant lookup
@@ -175,12 +175,12 @@
 - **Engine**: types, string, hash, alloc, gc, operators, compile, vm, jit, benchmark, …
 - **PHP runtime**: modules under `src/php/` (regex, http_stream, pdo stub, math, hash, datetime, mbstring, …)
 - **Framework examples**: WordPress-shaped (partial), CodeIgniter 4 demo (covered by `tests/examples_runtime.rs`), Drupal demo (covered by `tests/examples_runtime.rs`)
-- **76 opcodes** (dispatch table)
+- **77 opcodes** (dispatch table)
 - **210+ built-in functions** — see `builtin_capability_tests.rs` for exercised surface
-- **600+ workspace tests** (`cargo test --workspace` — all passing; see `tests/exception_propagation.rs`, `tests/string_interpolation.rs`, `tests/php8x_features.rs` for the new surface)
+- **610+ workspace tests** (`cargo test --workspace` — all passing; see `tests/exception_propagation.rs`, `tests/string_interpolation.rs`, `tests/php8x_features.rs` for the new surface)
 - **24+ root PHP examples** — all run via `examples_root_php_scripts_all_run`
 - **Known gaps** (verified during testing — tracked, not blocking):
-  - Un-dispatched opcodes (no-ops today): `AssignObj`, `TypeCheck`, `Unset`, `IsSet`, `Empty`, `Count`, `Keys`, `Values`, `ArrayDiff`. Several are covered by their builtin equivalents (`isset`/`empty`/`count`/`unset` work as function calls), but the opcode-level forms do nothing.
+  - All 77 opcodes now have dispatch handlers. The previously no-op opcodes (`AssignObj`, `TypeCheck`, `IsSet`, `Empty`, `Count`, `Keys`, `Values`, `ArrayDiff`) are wired up, and a new `Yield` opcode (76) implements generator suspension.
   - Exception dispatch now supports cross-function propagation (throw in a callee caught by a caller) via `propagate_after_call`; `finally` blocks now run on normal completion, after catch, and during exception unwinding (pending exceptions re-dispatched after `FinallyEnd`). Covered by `tests/exception_propagation.rs` (18 cases, including 5 `finally` tests).
   - `__unset` implemented; `__serialize`/`__unserialize` implemented via `invoke_magic_method`/`invoke_magic_method_with_this` helpers in `callable.rs`.
   - `Val::clone()` is shallow for arrays/objects (creates an empty/default copy); engine code must use `clone_val` (deep) — a frequent source of subtle bugs for contributors.

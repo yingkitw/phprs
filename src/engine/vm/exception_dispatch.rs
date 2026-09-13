@@ -271,7 +271,7 @@ pub fn is_throwable_object(val: &Val) -> bool {
 /// Returns `None` when `method` is not a known Throwable getter, letting the
 /// caller fall through to normal undefined-method handling.
 pub fn execute_throwable_getter(class: &str, method: &str, obj_val: &Val) -> Option<Val> {
-    use crate::engine::types::{PhpArray, PhpType};
+    use crate::engine::types::PhpType;
 
     if !is_standard_throwable(class) {
         return None;
@@ -304,7 +304,7 @@ pub fn execute_throwable_getter(class: &str, method: &str, obj_val: &Val) -> Opt
             Some(prop("previous").unwrap_or_else(|| Val::new(PhpValue::Long(0), PhpType::Null)))
         }
         "gettrace" => Some(Val::new(
-            PhpValue::Array(Box::new(PhpArray::new())),
+            PhpValue::Array(Box::default()),
             PhpType::Array,
         )),
         "gettraceasstring" => Some(Val::new(

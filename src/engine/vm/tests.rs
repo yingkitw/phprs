@@ -506,10 +506,10 @@ fn test_compile_attributes() {
 
 #[test]
 fn test_compile_yield_statement() {
-    let code = "<?php\nfunction gen() { yield 3; }\necho gen();\n";
+    let code = "<?php\nfunction gen() { yield 3; }\n$g = gen();\n$g->rewind();\necho $g->current();\n";
     let (result, output) = run_php_code(code);
     assert!(matches!(result, PhpResult::Success));
-    assert_eq!(output, "Array");
+    assert_eq!(output, "3");
 }
 
 #[test]
@@ -531,7 +531,7 @@ fn test_compile_attributes_on_class_and_method() {
 #[test]
 fn test_compile_generator_multiple_yields() {
     let code =
-        "<?php\nfunction gen() { yield 1; yield 2; yield 3; }\n$arr = gen();\necho $arr[1];\n";
+        "<?php\nfunction gen() { yield 1; yield 2; yield 3; }\n$g = gen();\n$g->rewind();\n$g->next();\necho $g->current();\n";
     let (result, output) = run_php_code(code);
     assert!(matches!(result, PhpResult::Success));
     assert_eq!(output, "2");

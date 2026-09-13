@@ -25,6 +25,8 @@ pub struct CompileContext {
     pub use_imports: std::collections::HashMap<String, String>,
     // Generator yield array slot (if any)
     pub yield_slot: Option<u32>,
+    /// True if the function body contains `yield` (makes it a generator).
+    pub is_generator: bool,
 }
 
 impl CompileContext {
@@ -40,6 +42,7 @@ impl CompileContext {
             current_namespace: None,
             use_imports: std::collections::HashMap::new(),
             yield_slot: None,
+            is_generator: false,
         }
     }
 
@@ -184,6 +187,7 @@ impl CompileContext {
         self.op_array.line_end = self.current_line;
         // Transfer class table to op array
         self.op_array.class_table = self.class_table;
+        self.op_array.is_generator = self.is_generator;
         self.op_array
     }
 }

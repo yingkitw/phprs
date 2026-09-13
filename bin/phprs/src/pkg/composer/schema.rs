@@ -173,7 +173,7 @@ pub enum Repository {
     },
 
     /// Package repository (inline)
-    Package { package: ComposerJson },
+    Package { package: Box<ComposerJson> },
 
     /// Artifact repository (local zip files)
     Artifact { url: String },
