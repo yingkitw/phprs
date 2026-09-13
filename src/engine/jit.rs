@@ -3,7 +3,7 @@
 //! Advanced JIT compilation system to outperform PHP 8 by compiling
 //! hot code paths to native machine code.
 
-use crate::engine::types::{PhpResult, Val};
+use crate::engine::types::{PhpResult, PhpValue, Val};
 use crate::engine::vm::execute_data::{ExecResult, ExecuteData};
 use crate::engine::vm::opcodes::{OpArray, Opcode};
 use std::collections::HashMap;
@@ -330,6 +330,11 @@ pub fn try_inline_operation(opcode: Opcode, op1: &Val, op2: &Val) -> Option<Val>
         Opcode::Add => Some(crate::engine::operators::zval_add(op1, op2)),
         Opcode::Mul => Some(crate::engine::operators::zval_mul(op1, op2)),
         Opcode::Concat => {
+            // Don't inline when either operand is an object — __toString
+            // must be called via the regular path.
+            if matches!(op1.value, PhpValue::Object(_)) || matches!(op2.value, PhpValue::Object(_)) {
+                return None;
+            }
             let s1 = crate::engine::operators::zval_get_string(op1);
             let s2 = crate::engine::operators::zval_get_string(op2);
             let result = super::perf_alloc::fast_concat(s1.as_str(), s2.as_str());

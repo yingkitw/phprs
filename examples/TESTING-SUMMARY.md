@@ -4,10 +4,10 @@ Overview of how examples and tests relate in phprs.
 
 ## Workspace tests
 
-Roughly **610+** tests across:
+Roughly **628+** tests across:
 
 - **380** library unit tests (`cargo test --lib`)
-- Integration crates: `array_key_normalization` (5), `bitwise_operators` (11), `build_rust_examples` (1), `compound_assignment` (10), `comprehensive_tests` (25), `edge_cases` (13), `error_handling` (4), `example_verification` (7), `examples_runtime` (15), `exception_propagation` (18), `integer_arithmetic` (3), `integration_tests` (4), `php8x_features` (75), `php_examples` (16), `string_interpolation` (16)
+- Integration crates: `array_key_normalization` (5), `bitwise_operators` (11), `build_rust_examples` (1), `compound_assignment` (10), `comprehensive_tests` (25), `edge_cases` (13), `error_handling` (4), `example_verification` (7), `examples_runtime` (15), `exception_propagation` (18), `integer_arithmetic` (3), `integration_tests` (4), `php8x_features` (93), `php_examples` (16), `string_interpolation` (16)
 - CLI crate unit tests (`bin/phprs`): 8 (1 ignored — network-dependent packagist metadata test)
 
 ## Example entrypoints

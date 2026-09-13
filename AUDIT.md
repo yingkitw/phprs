@@ -355,3 +355,41 @@ All eight previously no-op opcodes now have dispatch handlers:
 - Reuses the `FiberFrame` infrastructure for saving/restoring VM state.
 - `foreach` over generators is not yet supported (requires VM re-entry from `FeFetch`); use `while ($g->valid()) { ... $g->next(); }`.
 - 4 new tests in `tests/php8x_features.rs`.
+
+## Audit addendum — 2026-09-17
+
+### High-value stdlib functions
+- **ctype functions**: `ctype_alnum`, `ctype_alpha`, `ctype_digit`, `ctype_lower`, `ctype_upper`, `ctype_space`, `ctype_xdigit`, `ctype_punct`, `ctype_print`, `ctype_graph`, `ctype_cntrl` — all implemented as pure-Rust builtins.
+- **filter functions**: `filter_var` with `FILTER_VALIDATE_INT/FLOAT/BOOL/URL/EMAIL/IP/REGEXP` and `FILTER_SANITIZE_STRING/NUMBER_INT/NUMBER_FLOAT/ENCODED` — implemented with a helper function in `builtins.rs`.
+- **Additional string/array functions**: `array_key_first`, `array_key_last`, `array_is_list`, `str_word_count`, `strcoll`, `quoted_printable_decode`, `levenshtein`, `similar_text`.
+
+### cURL functions
+- `curl_init`, `curl_setopt`, `curl_setopt_array`, `curl_exec`, `curl_getinfo`, `curl_close`, `curl_version`, `curl_strerror` — compatibility surface in `src/php/curl.rs`.
+- cURL handles represented as PHP objects with `__url` and `__options` properties.
+
+### OpenSSL functions
+- `openssl_digest`, `openssl_get_md_methods`, `openssl_cipher_iv_length`, `openssl_error_string`, `openssl_random_pseudo_bytes`, `openssl_encrypt`, `openssl_decrypt` — in `src/php/openssl.rs`.
+- Uses `sha2` for digests and `getrandom` for random bytes.
+
+### SimpleXML support
+- `src/php/xml.rs` — lightweight recursive-descent XML parser (no external dependency).
+- `simplexml_load_string`, `simplexml_load_file` builtins.
+- `SimpleXMLElement` class with `__name`, `__text`, `@attr` properties and `asXML`, `getName`, `__toString`, `count` methods.
+- Attribute access via `$xml["attr"]` handled in `execute_fetch_dim`.
+- JIT `try_inline_operation` for `Concat` fixed to return `None` for objects so `call_magic_tostring` is invoked.
+
+### SQLite PDO driver
+- `src/php/sqlite.rs` — real SQLite via `rusqlite` (bundled feature).
+- Global connection registry with atomic ID counter (avoids race conditions in parallel tests).
+- PDO class dispatch: `__construct`, `query`, `exec`, `prepare`, `lastInsertId`, `beginTransaction`, `commit`, `rollBack`, `errorCode`, `errorInfo`.
+- PDOStatement dispatch: `execute` (with bound params), `fetch`, `fetchAll`, `rowCount`, `columnCount`, `bindParam`/`bindValue`.
+
+### Updated metrics
+| Metric | Value |
+|--------|-------|
+| `cargo test --workspace` | ✅ 628 passed, 0 failed, 1 `#[ignore]` |
+| `cargo clippy --workspace --all-targets` | ✅ 0 warnings |
+| Opcode count | 77 |
+| Built-in function count | 279+ |
+| Test count | 628+ |
+| New dependencies | `rusqlite` (bundled) |

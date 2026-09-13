@@ -50,6 +50,9 @@ url = "2.5"
 # Unicode handling
 unicode-segmentation = "1.11"
 
+# SQLite for PDO driver
+rusqlite = { version = "0.31", features = ["bundled"] }
+
 # Testing
 pulldown-cmark = "0.9"
 

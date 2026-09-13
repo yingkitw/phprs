@@ -129,7 +129,22 @@
   - [x] Transactions (beginTransaction(), commit(), rollback())
   - [x] Fetch operations (fetch(), fetchAll())
   - [x] Error handling (errorInfo())
-  - [x] Multiple driver support (MySQL, PostgreSQL, SQLite stubs)
+  - [x] Multiple driver support (MySQL, PostgreSQL stubs; **SQLite: real driver via rusqlite**)
+- [x] **SQLite PDO driver** (real database access via `rusqlite` with bundled SQLite; `sqlite::memory:` and file paths supported)
+  - [x] Connection management with global registry (atomic ID counter)
+  - [x] `query()`, `exec()`, `prepare()`, `execute()` with bound parameters
+  - [x] `fetch()`, `fetchAll()`, `rowCount()`, `columnCount()`, `lastInsertId()`
+  - [x] Transactions: `beginTransaction()`, `commit()`, `rollBack()`
+- [x] **SimpleXML support** (`simplexml_load_string`, `simplexml_load_file`, `SimpleXMLElement` class)
+  - [x] Lightweight recursive-descent XML parser (no external dependency)
+  - [x] Element/attribute/text access, nested children, multiple same-name children
+  - [x] `asXML()`, `getName()`, `__toString()`, `count()` methods
+  - [x] `html_entity_decode()`, `utf8_encode()`, `utf8_decode()`
+- [x] **cURL functions** (`curl_init`, `curl_setopt`, `curl_exec`, `curl_getinfo`, `curl_close`, `curl_version`, `curl_strerror`)
+- [x] **OpenSSL functions** (`openssl_digest`, `openssl_get_md_methods`, `openssl_cipher_iv_length`, `openssl_error_string`, `openssl_random_pseudo_bytes`, `openssl_encrypt`, `openssl_decrypt`)
+- [x] **ctype functions** (`ctype_alnum`, `ctype_alpha`, `ctype_digit`, `ctype_lower`, `ctype_upper`, `ctype_space`, `ctype_xdigit`, `ctype_punct`, `ctype_print`, `ctype_graph`, `ctype_cntrl`)
+- [x] **filter functions** (`filter_var` with `FILTER_VALIDATE_INT/FLOAT/BOOL/URL/EMAIL/IP/REGEXP`, `FILTER_SANITIZE_STRING/NUMBER_INT/NUMBER_FLOAT/ENCODED`)
+- [x] **Additional string/array functions** (`array_key_first`, `array_key_last`, `array_is_list`, `str_word_count`, `strcoll`, `quoted_printable_decode`, `levenshtein`, `similar_text`)
 
 ## Planned 📋
 
@@ -283,7 +298,7 @@ Rust is used for the **interpreter implementation** because of memory safety in 
   - [x] mb_substr_count()
   - [x] mb_strwidth() and mb_strimwidth()
 - [x] **Introspection functions** - `class_exists()`, `interface_exists()`, `trait_exists()`, `method_exists()`, `property_exists()`, `function_exists()`, `get_class()`, `get_parent_class()`, `gettype()`
-- [ ] **XML parsing** - SimpleXML, XMLReader, XMLWriter
+- [x] **XML parsing** - SimpleXML (simplexml_load_string, simplexml_load_file, SimpleXMLElement class) — XMLReader, XMLWriter, DOM still pending
 - [x] **CSV handling** - `fgetcsv()`, `fputcsv()`, `str_getcsv()`
 - [x] **Compression** - `gzcompress()`, `gzuncompress()`, `gzencode()`, `gzdecode()`, `gzdeflate()`, `gzinflate()`
 - [ ] **Image processing** - GD library basics (create, resize, crop, filters)
@@ -352,7 +367,7 @@ Rust is used for the **interpreter implementation** because of memory safety in 
 - [ ] **Real database drivers**
   - [ ] MySQL/MariaDB native driver
   - [ ] PostgreSQL native driver  
-  - [ ] SQLite native driver
+  - [x] SQLite native driver (via rusqlite with bundled SQLite)
   - [ ] Connection pooling
   - [ ] Prepared statement caching
 - [ ] **Redis support**
@@ -375,7 +390,7 @@ Rust is used for the **interpreter implementation** because of memory safety in 
 - [ ] **GraphQL** - GraphQL query execution
 - [ ] **gRPC** - gRPC client and server
 - [ ] **SOAP client** - SOAP web services
-- [ ] **cURL wrapper** - Full cURL API compatibility
+- [x] **cURL wrapper** - Basic cURL API (curl_init, curl_setopt, curl_exec, curl_getinfo, curl_close, curl_version, curl_strerror) — full compatibility still pending
 - [ ] **Email parsing** - MIME message parsing
 - [ ] **OAuth2** - OAuth2 client implementation
 

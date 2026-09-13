@@ -1508,3 +1508,293 @@ echo $out;
     assert!(matches!(result, PhpResult::Success), "result: {result:?}");
     assert_eq!(out, "5 6 7 8 ");
 }
+
+#[test]
+fn test_ctype_functions() {
+    let code = r#"<?php
+echo ctype_alnum("abc123") ? "1" : "0";
+echo ctype_alpha("abc") ? "1" : "0";
+echo ctype_digit("123") ? "1" : "0";
+echo ctype_digit("12a") ? "1" : "0";
+echo ctype_lower("abc") ? "1" : "0";
+echo ctype_upper("ABC") ? "1" : "0";
+echo ctype_space(" \t\n") ? "1" : "0";
+echo ctype_xdigit("0123456789abcdef") ? "1" : "0";
+echo ctype_xdigit("xyz") ? "1" : "0";
+"#;
+    let (result, out) = run_php(code).expect("compile");
+    assert!(matches!(result, PhpResult::Success), "result: {result:?}");
+    assert_eq!(out, "111011110");
+}
+
+#[test]
+fn test_filter_var_validate() {
+    let code = r#"<?php
+echo filter_var("42", 257);
+echo "|";
+echo filter_var("3.14", 259);
+echo "|";
+echo filter_var("foo@bar.com", 274);
+echo "|";
+echo filter_var("not-email", 274) === false ? "false" : "ok";
+echo "|";
+echo filter_var("http://example.com", 273);
+echo "|";
+echo filter_var("not-url", 273) === false ? "false" : "ok";
+echo "|";
+echo filter_var("192.168.1.1", 275);
+echo "|";
+echo filter_var("not-ip", 275) === false ? "false" : "ok";
+"#;
+    let (result, out) = run_php(code).expect("compile");
+    assert!(matches!(result, PhpResult::Success), "result: {result:?}");
+    assert_eq!(out, "42|3.14|foo@bar.com|false|http://example.com|false|192.168.1.1|false");
+}
+
+#[test]
+fn test_filter_var_sanitize() {
+    let code = r#"<?php
+echo filter_var("hello world", 513);
+echo "|";
+echo filter_var("hello123", 519);
+echo "|";
+echo filter_var("3.14abc", 520);
+"#;
+    let (result, out) = run_php(code).expect("compile");
+    assert!(matches!(result, PhpResult::Success), "result: {result:?}");
+    assert!(out.contains("hello world|123|3.14"), "got: {out:?}");
+}
+
+#[test]
+fn test_array_helper_functions() {
+    let code = r#"<?php
+echo array_key_first([10, 20, 30]);
+echo "|";
+echo array_key_last([10, 20, 30]);
+echo "|";
+echo array_is_list([10, 20, 30]) ? "yes" : "no";
+echo "|";
+echo array_is_list(["a" => 1, "b" => 2]) ? "yes" : "no";
+echo "|";
+echo array_is_list([1 => "a", 0 => "b"]) ? "yes" : "no";
+"#;
+    let (result, out) = run_php(code).expect("compile");
+    assert!(matches!(result, PhpResult::Success), "result: {result:?}");
+    assert_eq!(out, "0|2|yes|no|no");
+}
+
+#[test]
+fn test_openssl_digest() {
+    let code = r#"<?php
+echo openssl_digest("hello", "sha256");
+echo "|";
+echo openssl_digest("hello", "sha256", true) === false ? "false" : "raw";
+"#;
+    let (result, out) = run_php(code).expect("compile");
+    assert!(matches!(result, PhpResult::Success), "result: {result:?}");
+    assert_eq!(out.split('|').next().unwrap(),
+        "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824");
+}
+
+#[test]
+fn test_openssl_md_methods() {
+    let code = r#"<?php
+$methods = openssl_get_md_methods();
+echo implode(",", $methods);
+"#;
+    let (result, out) = run_php(code).expect("compile");
+    assert!(matches!(result, PhpResult::Success), "result: {result:?}");
+    assert!(out.contains("sha256"), "got: {out:?}");
+    assert!(out.contains("sha512"), "got: {out:?}");
+}
+
+#[test]
+fn test_curl_init_and_version() {
+    let code = r#"<?php
+$ch = curl_init("http://example.com");
+echo is_object($ch) ? "object" : "no";
+echo "|";
+$v = curl_version();
+echo $v["version"];
+"#;
+    let (result, out) = run_php(code).expect("compile");
+    assert!(matches!(result, PhpResult::Success), "result: {result:?}");
+    assert_eq!(out, "object|7.88.1");
+}
+
+#[test]
+fn test_curl_strerror() {
+    let code = r#"<?php
+echo curl_strerror(0);
+echo "|";
+echo curl_strerror(28);
+"#;
+    let (result, out) = run_php(code).expect("compile");
+    assert!(matches!(result, PhpResult::Success), "result: {result:?}");
+    assert_eq!(out, "No error|Operation timed out");
+}
+
+#[test]
+fn test_simplexml_load_string() {
+    let code = r#"<?php
+$xml = simplexml_load_string('<root><name>John</name><age>30</age></root>');
+echo $xml->name;
+echo "|";
+echo $xml->age;
+echo "|";
+echo $xml->name . " is " . $xml->age;
+"#;
+    let (result, out) = run_php(code).expect("compile");
+    assert!(matches!(result, PhpResult::Success), "result: {result:?}");
+    assert_eq!(out, "John|30|John is 30");
+}
+
+#[test]
+fn test_simplexml_attributes() {
+    let code = r#"<?php
+$xml = simplexml_load_string('<book title="PHP Guide" lang="en"><author>John</author></book>');
+echo $xml["title"];
+echo "|";
+echo $xml["lang"];
+echo "|";
+echo $xml->author;
+"#;
+    let (result, out) = run_php(code).expect("compile");
+    assert!(matches!(result, PhpResult::Success), "result: {result:?}");
+    assert_eq!(out, "PHP Guide|en|John");
+}
+
+#[test]
+fn test_simplexml_multiple_children() {
+    let code = r#"<?php
+$xml = simplexml_load_string('<root><item>Apple</item><item>Banana</item><item>Cherry</item></root>');
+echo $xml->item[0];
+echo "|";
+echo $xml->item[1];
+echo "|";
+echo $xml->item[2];
+"#;
+    let (result, out) = run_php(code).expect("compile");
+    assert!(matches!(result, PhpResult::Success), "result: {result:?}");
+    assert_eq!(out, "Apple|Banana|Cherry");
+}
+
+#[test]
+fn test_simplexml_nested() {
+    let code = r#"<?php
+$xml = simplexml_load_string('<root><person><name>John</name><address><city>NYC</city><zip>10001</zip></address></person></root>');
+echo $xml->person->name;
+echo "|";
+echo $xml->person->address->city;
+echo "|";
+echo $xml->person->address->zip;
+"#;
+    let (result, out) = run_php(code).expect("compile");
+    assert!(matches!(result, PhpResult::Success), "result: {result:?}");
+    assert_eq!(out, "John|NYC|10001");
+}
+
+#[test]
+fn test_simplexml_count() {
+    let code = r#"<?php
+$xml = simplexml_load_string('<root><a>1</a><b>2</b><c>3</c></root>');
+echo $xml->count();
+"#;
+    let (result, out) = run_php(code).expect("compile");
+    assert!(matches!(result, PhpResult::Success), "result: {result:?}");
+    assert_eq!(out, "3");
+}
+
+#[test]
+fn test_html_entity_decode() {
+    let code = r#"<?php
+echo html_entity_decode("<hello>");
+echo "|";
+echo html_entity_decode("&");
+"#;
+    let (result, out) = run_php(code).expect("compile");
+    assert!(matches!(result, PhpResult::Success), "result: {result:?}");
+    assert_eq!(out, "<hello>|&");
+}
+
+#[test]
+fn test_pdo_sqlite_basic() {
+    let code = r#"<?php
+$pdo = new PDO("sqlite::memory:");
+$pdo->exec("CREATE TABLE users (id INTEGER PRIMARY KEY, name TEXT, email TEXT)");
+$pdo->exec("INSERT INTO users (name, email) VALUES ('Alice', 'alice@example.com')");
+$pdo->exec("INSERT INTO users (name, email) VALUES ('Bob', 'bob@example.com')");
+echo $pdo->lastInsertId();
+echo "|";
+$stmt = $pdo->query("SELECT * FROM users");
+$row = $stmt->fetch();
+echo $row["name"];
+echo "|";
+echo $row["email"];
+"#;
+    let (result, out) = run_php(code).expect("compile");
+    assert!(matches!(result, PhpResult::Success), "result: {result:?}");
+    assert_eq!(out, "2|Alice|alice@example.com");
+}
+
+#[test]
+fn test_pdo_sqlite_fetch_all() {
+    let code = r#"<?php
+$pdo = new PDO("sqlite::memory:");
+$pdo->exec("CREATE TABLE items (id INTEGER PRIMARY KEY, name TEXT)");
+$pdo->exec("INSERT INTO items (name) VALUES ('Apple')");
+$pdo->exec("INSERT INTO items (name) VALUES ('Banana')");
+$pdo->exec("INSERT INTO items (name) VALUES ('Cherry')");
+$stmt = $pdo->query("SELECT * FROM items");
+$rows = $stmt->fetchAll();
+echo count($rows);
+echo "|";
+echo $rows[0]["name"];
+echo "|";
+echo $rows[1]["name"];
+echo "|";
+echo $rows[2]["name"];
+"#;
+    let (result, out) = run_php(code).expect("compile");
+    assert!(matches!(result, PhpResult::Success), "result: {result:?}");
+    assert_eq!(out, "3|Apple|Banana|Cherry");
+}
+
+#[test]
+fn test_pdo_sqlite_prepared() {
+    let code = r#"<?php
+$pdo = new PDO("sqlite::memory:");
+$pdo->exec("CREATE TABLE users (id INTEGER PRIMARY KEY, name TEXT)");
+$pdo->exec("INSERT INTO users (name) VALUES ('Alice')");
+$pdo->exec("INSERT INTO users (name) VALUES ('Bob')");
+$stmt = $pdo->prepare("SELECT * FROM users WHERE name = ?");
+$stmt->execute(["Alice"]);
+$row = $stmt->fetch();
+echo $row["name"];
+echo "|";
+$stmt->execute(["Bob"]);
+$row2 = $stmt->fetch();
+echo $row2["name"];
+"#;
+    let (result, out) = run_php(code).expect("compile");
+    assert!(matches!(result, PhpResult::Success), "result: {result:?}");
+    assert_eq!(out, "Alice|Bob");
+}
+
+#[test]
+fn test_pdo_sqlite_row_count() {
+    let code = r#"<?php
+$pdo = new PDO("sqlite::memory:");
+$pdo->exec("CREATE TABLE t (id INTEGER PRIMARY KEY, val TEXT)");
+$affected = $pdo->exec("INSERT INTO t (val) VALUES ('hello')");
+echo $affected;
+echo "|";
+$stmt = $pdo->query("SELECT * FROM t");
+echo $stmt->rowCount();
+echo "|";
+echo $stmt->columnCount();
+"#;
+    let (result, out) = run_php(code).expect("compile");
+    assert!(matches!(result, PhpResult::Success), "result: {result:?}");
+    assert_eq!(out, "1|1|2");
+}

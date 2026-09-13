@@ -14,12 +14,94 @@ use crate::engine::jit::{increment_execution_counter, try_inline_operation};
 use crate::engine::string::string_init;
 use crate::engine::types::{PhpArray, PhpType, PhpValue, Val};
 
+/// Serialize a SimpleXMLElement PHP object back to XML string.
+fn simplexml_object_to_string(obj: &crate::engine::types::PhpObject) -> String {
+    fn serialize_obj(o: &crate::engine::types::PhpObject, indent: usize) -> String {
+        let pad = "  ".repeat(indent);
+        let name = o.properties.get("__name")
+            .map(|v| crate::engine::operators::zval_get_string(v).as_str().to_string())
+            .unwrap_or_else(|| "root".to_string());
+        let text = o.properties.get("__text")
+            .map(|v| crate::engine::operators::zval_get_string(v).as_str().to_string())
+            .unwrap_or_default();
+        let mut attrs = String::new();
+        let mut children = String::new();
+        for (k, v) in &o.properties {
+            if let Some(attr_name) = k.strip_prefix('@') {
+                let val_str = crate::engine::operators::zval_get_string(v).as_str().to_string();
+                attrs.push_str(&format!(" {attr_name}=\"{val_str}\""));
+            } else if !k.starts_with("__") {
+                if let PhpValue::Object(child) = &v.value {
+                    children.push_str(&serialize_obj(child, indent + 1));
+                    children.push('\n');
+                } else if let PhpValue::Array(arr) = &v.value {
+                    for bucket in &arr.ar_data {
+                        if let PhpValue::Object(child) = &bucket.val.value {
+                            children.push_str(&serialize_obj(child, indent + 1));
+                            children.push('\n');
+                        }
+                    }
+                }
+            }
+        }
+        if children.is_empty() && text.is_empty() {
+            format!("{pad}<{name}{attrs} />")
+        } else if children.is_empty() {
+            format!("{pad}<{name}{attrs}>{text}</{name}>")
+        } else {
+            format!("{pad}<{name}{attrs}>\n{children}{pad}</{name}>")
+        }
+    }
+    serialize_obj(obj, 0)
+}
+
+/// Convert an XmlNode to a SimpleXMLElement Val.
+fn simplexml_node_to_val(node: &crate::php::xml::XmlNode) -> Val {
+    let mut obj = crate::engine::types::PhpObject::new("SimpleXMLElement");
+    obj.properties.insert("__name".to_string(), Val::new(
+        PhpValue::String(Box::new(string_init(&node.name, false))), PhpType::String));
+    if !node.text.is_empty() {
+        obj.properties.insert("__text".to_string(), Val::new(
+            PhpValue::String(Box::new(string_init(&node.text, false))), PhpType::String));
+    }
+    for (k, v) in &node.attributes {
+        let key = format!("@{k}");
+        obj.properties.insert(key, Val::new(
+            PhpValue::String(Box::new(string_init(v, false))), PhpType::String));
+    }
+    let mut child_map: std::collections::HashMap<String, Vec<&crate::php::xml::XmlNode>> = std::collections::HashMap::new();
+    for child in &node.children {
+        child_map.entry(child.name.clone()).or_default().push(child);
+    }
+    for (name, children) in child_map {
+        if children.len() == 1 {
+            obj.properties.insert(name, simplexml_node_to_val(children[0]));
+        } else {
+            let mut arr = PhpArray::new();
+            for (i, child) in children.iter().enumerate() {
+                let _ = crate::engine::hash::hash_add_or_update(
+                    &mut arr, None, i as u64, simplexml_node_to_val(child), 0);
+            }
+            obj.properties.insert(name, Val::new(
+                PhpValue::Array(Box::new(arr)), PhpType::Array));
+        }
+    }
+    Val::new(PhpValue::Object(Box::new(obj)), PhpType::Object)
+}
+
 /// Call __toString magic method on an object if it exists
 #[inline]
 fn call_magic_tostring(
     val: &Val,
     execute_data: &mut ExecuteData,
 ) -> Option<crate::engine::types::PhpString> {
+    // Built-in classes with __toString handled directly
+    if let PhpValue::Object(ref obj) = val.value
+        && obj.class_name == "SimpleXMLElement" {
+            return obj.properties.get("__text").map(|v| {
+                crate::engine::operators::zval_get_string(v)
+            });
+        }
     if let PhpValue::Object(ref obj) = val.value
         && let Some(ce) = execute_data.class_table.get(&obj.class_name)
         && let Some(magic) = ce.methods.get("__toString")
@@ -1513,6 +1595,15 @@ pub fn execute_fetch_dim(op: &Op, execute_data: &mut ExecuteData) -> Result<Exec
                 .unwrap_or_else(missing),
             _ => missing(),
         }
+    } else if let PhpValue::Object(ref obj) = arr_val.value {
+        // SimpleXMLElement attribute access: $xml["attr"] → @attr property
+        if obj.class_name == "SimpleXMLElement" {
+            let key = crate::engine::operators::zval_get_string(&idx_val);
+            let attr_key = format!("@{}", key.as_str());
+            obj.properties.get(&attr_key).map(clone_val).unwrap_or_else(missing)
+        } else {
+            missing()
+        }
     } else {
         missing()
     };
@@ -1652,6 +1743,31 @@ pub fn execute_new_obj(op: &Op, execute_data: &mut ExecuteData) -> Result<ExecRe
             "__mode".to_string(),
             Val::new(PhpValue::Long(0), PhpType::Null),
         );
+    }
+    // Built-in SimpleXMLElement: parse XML string in __construct
+    if cn == "SimpleXMLElement" {
+        obj.properties.insert("__text".to_string(), Val::new(PhpValue::Long(0), PhpType::Null));
+        obj.properties.insert("__name".to_string(), Val::new(
+            PhpValue::String(Box::new(string_init("root", false))), PhpType::String));
+    }
+    // Built-in PDO: stores DSN for later connection in __construct
+    if cn == "PDO" {
+        obj.properties.insert("__dsn".to_string(), Val::new(PhpValue::Long(0), PhpType::Null));
+        obj.properties.insert("__connected".to_string(), Val::new(PhpValue::Long(0), PhpType::False));
+        obj.properties.insert("__driver".to_string(), Val::new(PhpValue::Long(0), PhpType::Null));
+        obj.properties.insert("__last_insert_id".to_string(), Val::new(PhpValue::Long(0), PhpType::Long));
+        obj.properties.insert("__error".to_string(), Val::new(
+            PhpValue::String(Box::new(string_init("", false))), PhpType::String));
+    }
+    // Built-in PDOStatement
+    if cn == "PDOStatement" {
+        obj.properties.insert("__sql".to_string(), Val::new(PhpValue::Long(0), PhpType::Null));
+        obj.properties.insert("__rows".to_string(), Val::new(
+            PhpValue::Array(Box::default()), PhpType::Array));
+        obj.properties.insert("__pos".to_string(), Val::new(PhpValue::Long(0), PhpType::Long));
+        obj.properties.insert("__params".to_string(), Val::new(
+            PhpValue::Array(Box::default()), PhpType::Array));
+        obj.properties.insert("__row_count".to_string(), Val::new(PhpValue::Long(0), PhpType::Long));
     }
     // Built-in Throwable constructors (Exception, RuntimeException, …) store
     // their `message`/`code`/`file` from the constructor call's args. Those
@@ -4122,6 +4238,569 @@ pub fn execute_do_method_call(
                 } else if is_var_ref(&op.op2) && let PhpValue::String(ref s) = op.op2.value {
                     let name = s.as_str().strip_prefix('$').unwrap_or(s.as_str());
                     execute_data.set_var(name, updated);
+                }
+                return Ok(ExecResult::Continue);
+            }
+        }
+
+        // Built-in SimpleXMLElement methods
+        if class_name == "SimpleXMLElement" {
+            let (base, _names_base) = execute_data.call_arg_stack.pop().unwrap_or((0, 0));
+            let args: Vec<Val> = execute_data.call_args.drain(base..).collect();
+            let mn = method_name.as_str();
+
+            if mn == "__construct" {
+                // Parse XML string and populate object properties
+                let xml_str = args.first()
+                    .map(crate::engine::operators::zval_get_string)
+                    .unwrap_or_else(|| string_init("", false));
+                if let Ok(node) = crate::php::xml::parse_xml(xml_str.as_str()) {
+                    let mut updated = crate::engine::types::PhpObject::new("SimpleXMLElement");
+                    updated.properties.insert("__name".to_string(), Val::new(
+                        PhpValue::String(Box::new(string_init(&node.name, false))), PhpType::String));
+                    if !node.text.is_empty() {
+                        updated.properties.insert("__text".to_string(), Val::new(
+                            PhpValue::String(Box::new(string_init(&node.text, false))), PhpType::String));
+                    }
+                    for (k, v) in &node.attributes {
+                        let key = format!("@{k}");
+                        updated.properties.insert(key, Val::new(
+                            PhpValue::String(Box::new(string_init(v, false))), PhpType::String));
+                    }
+                    let mut child_map: std::collections::HashMap<String, Vec<&crate::php::xml::XmlNode>> = std::collections::HashMap::new();
+                    for child in &node.children {
+                        child_map.entry(child.name.clone()).or_default().push(child);
+                    }
+                    for (name, children) in child_map {
+                        if children.len() == 1 {
+                            updated.properties.insert(name, simplexml_node_to_val(children[0]));
+                        } else {
+                            let mut arr = PhpArray::new();
+                            for (i, child) in children.iter().enumerate() {
+                                let _ = crate::engine::hash::hash_add_or_update(
+                                    &mut arr, None, i as u64, simplexml_node_to_val(child), 0);
+                            }
+                            updated.properties.insert(name, Val::new(
+                                PhpValue::Array(Box::new(arr)), PhpType::Array));
+                        }
+                    }
+                    let result = Val::new(PhpValue::Object(Box::new(updated)), PhpType::Object);
+                    if is_temp_ref(&op.op2) {
+                        if let PhpValue::Long(slot_idx) = op.op2.value {
+                            execute_data.set_temp(slot_idx as usize, result);
+                        }
+                    } else if is_var_ref(&op.op2) && let PhpValue::String(ref s) = op.op2.value {
+                        let name = s.as_str().strip_prefix('$').unwrap_or(s.as_str());
+                        execute_data.set_var(name, result);
+                    }
+                }
+                return Ok(ExecResult::Continue);
+            }
+
+            if mn == "asXML" || mn == "saveXML" {
+                // Serialize the object back to XML
+                let xml = simplexml_object_to_string(obj);
+                if let Some(slot) = result_slot(op) {
+                    execute_data.set_temp(slot, Val::new(
+                        PhpValue::String(Box::new(crate::engine::string::string_init(&xml, false))),
+                        PhpType::String));
+                }
+                return Ok(ExecResult::Continue);
+            }
+
+            if mn == "getName" {
+                // Return the element name (stored in __name property or class hint)
+                let name = obj.properties.get("__name")
+                    .map(crate::engine::operators::zval_get_string)
+                    .unwrap_or_else(|| crate::engine::string::string_init("", false));
+                if let Some(slot) = result_slot(op) {
+                    execute_data.set_temp(slot, Val::new(PhpValue::String(Box::new(name)), PhpType::String));
+                }
+                return Ok(ExecResult::Continue);
+            }
+
+            if mn == "__toString" {
+                let text = obj.properties.get("__text")
+                    .map(crate::engine::operators::zval_get_string)
+                    .unwrap_or_else(|| crate::engine::string::string_init("", false));
+                if let Some(slot) = result_slot(op) {
+                    execute_data.set_temp(slot, Val::new(PhpValue::String(Box::new(text)), PhpType::String));
+                }
+                return Ok(ExecResult::Continue);
+            }
+
+            if mn == "count" {
+                // Count child elements
+                let count = obj.properties.iter()
+                    .filter(|(k, _)| !k.starts_with('@') && !k.starts_with("__"))
+                    .count();
+                if let Some(slot) = result_slot(op) {
+                    execute_data.set_temp(slot, Val::new(PhpValue::Long(count as i64), PhpType::Long));
+                }
+                return Ok(ExecResult::Continue);
+            }
+        }
+
+        // Built-in PDO methods
+        if class_name == "PDO" {
+            let (base, _names_base) = execute_data.call_arg_stack.pop().unwrap_or((0, 0));
+            let args: Vec<Val> = execute_data.call_args.drain(base..).collect();
+            let mn = method_name.as_str();
+
+            if mn == "__construct" {
+                let dsn = args.first().map(crate::engine::operators::zval_get_string)
+                    .unwrap_or_else(|| string_init("", false));
+                let dsn_str = dsn.as_str().to_string();
+                let parts: Vec<&str> = dsn_str.splitn(2, ':').collect();
+                let driver = parts.first().unwrap_or(&"").to_string();
+                let path = parts.get(1).unwrap_or(&":memory:").to_string();
+
+                let mut updated = crate::engine::types::PhpObject::new("PDO");
+                updated.properties.insert("__dsn".to_string(), Val::new(
+                    PhpValue::String(Box::new(string_init(&dsn_str, false))), PhpType::String));
+                updated.properties.insert("__driver".to_string(), Val::new(
+                    PhpValue::String(Box::new(string_init(&driver, false))), PhpType::String));
+
+                if driver == "sqlite" {
+                    match crate::php::sqlite::SqlitePdo::new(&path) {
+                        Ok(pdo) => {
+                            let conn_id = crate::php::sqlite::register_connection(pdo);
+                            updated.properties.insert("__conn_id".to_string(),
+                                Val::new(PhpValue::Long(conn_id as i64), PhpType::Long));
+                            updated.properties.insert("__connected".to_string(),
+                                Val::new(PhpValue::Long(1), PhpType::True));
+                        }
+                        Err(e) => {
+                            updated.properties.insert("__error".to_string(), Val::new(
+                                PhpValue::String(Box::new(string_init(&e, false))), PhpType::String));
+                            updated.properties.insert("__connected".to_string(),
+                                Val::new(PhpValue::Long(0), PhpType::False));
+                        }
+                    }
+                } else {
+                    updated.properties.insert("__error".to_string(), Val::new(
+                        PhpValue::String(Box::new(string_init(
+                            &format!("Unsupported PDO driver: {driver}"), false))), PhpType::String));
+                    updated.properties.insert("__connected".to_string(),
+                        Val::new(PhpValue::Long(0), PhpType::False));
+                }
+
+                let result = Val::new(PhpValue::Object(Box::new(updated)), PhpType::Object);
+                if is_temp_ref(&op.op2) {
+                    if let PhpValue::Long(slot_idx) = op.op2.value {
+                        execute_data.set_temp(slot_idx as usize, result);
+                    }
+                } else if is_var_ref(&op.op2) && let PhpValue::String(ref s) = op.op2.value {
+                    let name = s.as_str().strip_prefix('$').unwrap_or(s.as_str());
+                    execute_data.set_var(name, result);
+                }
+                return Ok(ExecResult::Continue);
+            }
+
+            if mn == "query" {
+                let sql = args.first().map(crate::engine::operators::zval_get_string)
+                    .unwrap_or_else(|| string_init("", false));
+                let conn_id = obj.properties.get("__conn_id")
+                    .map(crate::engine::operators::zval_get_long).unwrap_or(0) as usize;
+
+                if let Some(mut pdo) = crate::php::sqlite::take_connection(conn_id) {
+                    match pdo.query(sql.as_str()) {
+                        Ok(rows) => {
+                            let row_count = rows.len() as i64;
+                            let mut stmt_obj = crate::engine::types::PhpObject::new("PDOStatement");
+                            let mut arr = PhpArray::new();
+                            for (i, row) in rows.iter().enumerate() {
+                                let mut row_arr = PhpArray::new();
+                                for (j, (k, v)) in row.iter().enumerate() {
+                                    let key = string_init(k, false);
+                                    let _ = crate::engine::hash::hash_add_or_update(
+                                        &mut row_arr, Some(&key), j as u64,
+                                        Val::new(PhpValue::String(Box::new(string_init(v, false))), PhpType::String), 0);
+                                }
+                                let _ = crate::engine::hash::hash_add_or_update(
+                                    &mut arr, None, i as u64,
+                                    Val::new(PhpValue::Array(Box::new(row_arr)), PhpType::Array), 0);
+                            }
+                            stmt_obj.properties.insert("__rows".to_string(),
+                                Val::new(PhpValue::Array(Box::new(arr)), PhpType::Array));
+                            stmt_obj.properties.insert("__row_count".to_string(),
+                                Val::new(PhpValue::Long(row_count), PhpType::Long));
+                            stmt_obj.properties.insert("__pos".to_string(),
+                                Val::new(PhpValue::Long(0), PhpType::Long));
+                            crate::php::sqlite::put_connection(conn_id, pdo);
+                            if let Some(slot) = result_slot(op) {
+                                execute_data.set_temp(slot, Val::new(
+                                    PhpValue::Object(Box::new(stmt_obj)), PhpType::Object));
+                            }
+                            return Ok(ExecResult::Continue);
+                        }
+                        Err(_e) => {
+                            crate::php::sqlite::put_connection(conn_id, pdo);
+                            if let Some(slot) = result_slot(op) {
+                                execute_data.set_temp(slot, Val::new(PhpValue::Long(0), PhpType::False));
+                            }
+                            return Ok(ExecResult::Continue);
+                        }
+                    }
+                }
+                if let Some(slot) = result_slot(op) {
+                    execute_data.set_temp(slot, Val::new(PhpValue::Long(0), PhpType::False));
+                }
+                return Ok(ExecResult::Continue);
+            }
+
+            if mn == "exec" {
+                let sql = args.first().map(crate::engine::operators::zval_get_string)
+                    .unwrap_or_else(|| string_init("", false));
+                let conn_id = obj.properties.get("__conn_id")
+                    .map(crate::engine::operators::zval_get_long).unwrap_or(0) as usize;
+
+                if let Some(mut pdo) = crate::php::sqlite::take_connection(conn_id) {
+                    let result = pdo.exec(sql.as_str());
+                    let last_id = pdo.last_insert_id();
+                    crate::php::sqlite::put_connection(conn_id, pdo);
+                    match result {
+                        Ok(affected) => {
+                            // Update last_insert_id on the PDO object
+                            let mut updated = clone_val(&obj_val);
+                            if let PhpValue::Object(ref mut o) = updated.value {
+                                o.properties.insert("__last_insert_id".to_string(),
+                                    Val::new(PhpValue::Long(last_id), PhpType::Long));
+                            }
+                            if is_temp_ref(&op.op2) {
+                                if let PhpValue::Long(slot_idx) = op.op2.value {
+                                    execute_data.set_temp(slot_idx as usize, updated);
+                                }
+                            } else if is_var_ref(&op.op2) && let PhpValue::String(ref s) = op.op2.value {
+                                let name = s.as_str().strip_prefix('$').unwrap_or(s.as_str());
+                                execute_data.set_var(name, updated);
+                            }
+                            if let Some(slot) = result_slot(op) {
+                                execute_data.set_temp(slot, Val::new(PhpValue::Long(affected), PhpType::Long));
+                            }
+                            return Ok(ExecResult::Continue);
+                        }
+                        Err(_) => {
+                            if let Some(slot) = result_slot(op) {
+                                execute_data.set_temp(slot, Val::new(PhpValue::Long(0), PhpType::False));
+                            }
+                            return Ok(ExecResult::Continue);
+                        }
+                    }
+                }
+                if let Some(slot) = result_slot(op) {
+                    execute_data.set_temp(slot, Val::new(PhpValue::Long(0), PhpType::False));
+                }
+                return Ok(ExecResult::Continue);
+            }
+
+            if mn == "lastInsertId" {
+                let last_id = obj.properties.get("__last_insert_id")
+                    .map(crate::engine::operators::zval_get_long).unwrap_or(0);
+                if let Some(slot) = result_slot(op) {
+                    execute_data.set_temp(slot, Val::new(PhpValue::Long(last_id), PhpType::Long));
+                }
+                return Ok(ExecResult::Continue);
+            }
+
+            if mn == "prepare" {
+                let sql = args.first().map(crate::engine::operators::zval_get_string)
+                    .unwrap_or_else(|| string_init("", false));
+                let mut stmt_obj = crate::engine::types::PhpObject::new("PDOStatement");
+                stmt_obj.properties.insert("__sql".to_string(), Val::new(
+                    PhpValue::String(Box::new(sql)), PhpType::String));
+                stmt_obj.properties.insert("__rows".to_string(), Val::new(
+                    PhpValue::Array(Box::default()), PhpType::Array));
+                stmt_obj.properties.insert("__pos".to_string(), Val::new(PhpValue::Long(0), PhpType::Long));
+                stmt_obj.properties.insert("__params".to_string(), Val::new(
+                    PhpValue::Array(Box::default()), PhpType::Array));
+                stmt_obj.properties.insert("__row_count".to_string(), Val::new(PhpValue::Long(0), PhpType::Long));
+                let conn_id = obj.properties.get("__conn_id")
+                    .map(crate::engine::operators::zval_get_long).unwrap_or(0) as usize;
+                stmt_obj.properties.insert("__conn_id".to_string(),
+                    Val::new(PhpValue::Long(conn_id as i64), PhpType::Long));
+                if let Some(slot) = result_slot(op) {
+                    execute_data.set_temp(slot, Val::new(
+                        PhpValue::Object(Box::new(stmt_obj)), PhpType::Object));
+                }
+                return Ok(ExecResult::Continue);
+            }
+
+            if mn == "beginTransaction" {
+                let conn_id = obj.properties.get("__conn_id")
+                    .map(crate::engine::operators::zval_get_long).unwrap_or(0) as usize;
+                if let Some(mut pdo) = crate::php::sqlite::take_connection(conn_id) {
+                    let result = pdo.begin_transaction();
+                    crate::php::sqlite::put_connection(conn_id, pdo);
+                    let ok = result.unwrap_or(false);
+                    if let Some(slot) = result_slot(op) {
+                        execute_data.set_temp(slot, Val::new(
+                            PhpValue::Long(if ok {1} else {0}),
+                            if ok {PhpType::True} else {PhpType::False}));
+                    }
+                    return Ok(ExecResult::Continue);
+                }
+                if let Some(slot) = result_slot(op) {
+                    execute_data.set_temp(slot, Val::new(PhpValue::Long(0), PhpType::False));
+                }
+                return Ok(ExecResult::Continue);
+            }
+
+            if mn == "commit" {
+                let conn_id = obj.properties.get("__conn_id")
+                    .map(crate::engine::operators::zval_get_long).unwrap_or(0) as usize;
+                if let Some(mut pdo) = crate::php::sqlite::take_connection(conn_id) {
+                    let result = pdo.commit();
+                    crate::php::sqlite::put_connection(conn_id, pdo);
+                    let ok = result.unwrap_or(false);
+                    if let Some(slot) = result_slot(op) {
+                        execute_data.set_temp(slot, Val::new(
+                            PhpValue::Long(if ok {1} else {0}),
+                            if ok {PhpType::True} else {PhpType::False}));
+                    }
+                    return Ok(ExecResult::Continue);
+                }
+                if let Some(slot) = result_slot(op) {
+                    execute_data.set_temp(slot, Val::new(PhpValue::Long(0), PhpType::False));
+                }
+                return Ok(ExecResult::Continue);
+            }
+
+            if mn == "rollBack" || mn == "rollback" {
+                let conn_id = obj.properties.get("__conn_id")
+                    .map(crate::engine::operators::zval_get_long).unwrap_or(0) as usize;
+                if let Some(mut pdo) = crate::php::sqlite::take_connection(conn_id) {
+                    let result = pdo.rollback();
+                    crate::php::sqlite::put_connection(conn_id, pdo);
+                    let ok = result.unwrap_or(false);
+                    if let Some(slot) = result_slot(op) {
+                        execute_data.set_temp(slot, Val::new(
+                            PhpValue::Long(if ok {1} else {0}),
+                            if ok {PhpType::True} else {PhpType::False}));
+                    }
+                    return Ok(ExecResult::Continue);
+                }
+                if let Some(slot) = result_slot(op) {
+                    execute_data.set_temp(slot, Val::new(PhpValue::Long(0), PhpType::False));
+                }
+                return Ok(ExecResult::Continue);
+            }
+
+            if mn == "errorCode" {
+                if let Some(slot) = result_slot(op) {
+                    execute_data.set_temp(slot, Val::new(
+                        PhpValue::String(Box::new(string_init("00000", false))), PhpType::String));
+                }
+                return Ok(ExecResult::Continue);
+            }
+
+            if mn == "errorInfo" {
+                let mut arr = PhpArray::new();
+                let _ = crate::engine::hash::hash_add_or_update(
+                    &mut arr, None, 0,
+                    Val::new(PhpValue::String(Box::new(string_init("00000", false))), PhpType::String), 0);
+                let _ = crate::engine::hash::hash_add_or_update(
+                    &mut arr, None, 1, Val::new(PhpValue::Long(0), PhpType::Null), 0);
+                let _ = crate::engine::hash::hash_add_or_update(
+                    &mut arr, None, 2, Val::new(PhpValue::Long(0), PhpType::Null), 0);
+                if let Some(slot) = result_slot(op) {
+                    execute_data.set_temp(slot, Val::new(
+                        PhpValue::Array(Box::new(arr)), PhpType::Array));
+                }
+                return Ok(ExecResult::Continue);
+            }
+        }
+
+        // Built-in PDOStatement methods
+        if class_name == "PDOStatement" {
+            let (base, _names_base) = execute_data.call_arg_stack.pop().unwrap_or((0, 0));
+            let args: Vec<Val> = execute_data.call_args.drain(base..).collect();
+            let mn = method_name.as_str();
+
+            if mn == "execute" {
+                let sql = obj.properties.get("__sql")
+                    .map(crate::engine::operators::zval_get_string)
+                    .unwrap_or_else(|| string_init("", false));
+                let conn_id = obj.properties.get("__conn_id")
+                    .map(crate::engine::operators::zval_get_long).unwrap_or(0) as usize;
+
+                // Collect params from args (array of values)
+                let params: Vec<String> = if let Some(PhpValue::Array(arr)) = args.first().map(|v| &v.value) {
+                    arr.ar_data.iter().map(|b| {
+                        crate::engine::operators::zval_get_string(&b.val).as_str().to_string()
+                    }).collect()
+                } else {
+                    Vec::new()
+                };
+
+                if let Some(mut pdo) = crate::php::sqlite::take_connection(conn_id) {
+                    let sql_upper = sql.as_str().trim().to_uppercase();
+                    if sql_upper.starts_with("SELECT") {
+                        match pdo.prepare_execute(sql.as_str(), &params) {
+                            Ok(rows) => {
+                                let row_count = rows.len() as i64;
+                                let mut updated = clone_val(&obj_val);
+                                if let PhpValue::Object(ref mut o) = updated.value {
+                                    let mut arr = PhpArray::new();
+                                    for (i, row) in rows.iter().enumerate() {
+                                        let mut row_arr = PhpArray::new();
+                                        for (j, (k, v)) in row.iter().enumerate() {
+                                            let key = string_init(k, false);
+                                            let _ = crate::engine::hash::hash_add_or_update(
+                                                &mut row_arr, Some(&key), j as u64,
+                                                Val::new(PhpValue::String(Box::new(string_init(v, false))), PhpType::String), 0);
+                                        }
+                                        let _ = crate::engine::hash::hash_add_or_update(
+                                            &mut arr, None, i as u64,
+                                            Val::new(PhpValue::Array(Box::new(row_arr)), PhpType::Array), 0);
+                                    }
+                                    o.properties.insert("__rows".to_string(),
+                                        Val::new(PhpValue::Array(Box::new(arr)), PhpType::Array));
+                                    o.properties.insert("__row_count".to_string(),
+                                        Val::new(PhpValue::Long(row_count), PhpType::Long));
+                                    o.properties.insert("__pos".to_string(),
+                                        Val::new(PhpValue::Long(0), PhpType::Long));
+                                }
+                                crate::php::sqlite::put_connection(conn_id, pdo);
+                                if is_temp_ref(&op.op2) {
+                                    if let PhpValue::Long(slot_idx) = op.op2.value {
+                                        execute_data.set_temp(slot_idx as usize, updated);
+                                    }
+                                } else if is_var_ref(&op.op2) && let PhpValue::String(ref s) = op.op2.value {
+                                    let name = s.as_str().strip_prefix('$').unwrap_or(s.as_str());
+                                    execute_data.set_var(name, updated);
+                                }
+                                if let Some(slot) = result_slot(op) {
+                                    execute_data.set_temp(slot, Val::new(PhpValue::Long(1), PhpType::True));
+                                }
+                                return Ok(ExecResult::Continue);
+                            }
+                            Err(_) => {
+                                crate::php::sqlite::put_connection(conn_id, pdo);
+                                if let Some(slot) = result_slot(op) {
+                                    execute_data.set_temp(slot, Val::new(PhpValue::Long(0), PhpType::False));
+                                }
+                                return Ok(ExecResult::Continue);
+                            }
+                        }
+                    } else {
+                        match pdo.prepare_exec(sql.as_str(), &params) {
+                            Ok(affected) => {
+                                let mut updated = clone_val(&obj_val);
+                                if let PhpValue::Object(ref mut o) = updated.value {
+                                    o.properties.insert("__row_count".to_string(),
+                                        Val::new(PhpValue::Long(affected), PhpType::Long));
+                                }
+                                crate::php::sqlite::put_connection(conn_id, pdo);
+                                if is_temp_ref(&op.op2) {
+                                    if let PhpValue::Long(slot_idx) = op.op2.value {
+                                        execute_data.set_temp(slot_idx as usize, updated);
+                                    }
+                                } else if is_var_ref(&op.op2) && let PhpValue::String(ref s) = op.op2.value {
+                                    let name = s.as_str().strip_prefix('$').unwrap_or(s.as_str());
+                                    execute_data.set_var(name, updated);
+                                }
+                                if let Some(slot) = result_slot(op) {
+                                    execute_data.set_temp(slot, Val::new(PhpValue::Long(1), PhpType::True));
+                                }
+                                return Ok(ExecResult::Continue);
+                            }
+                            Err(_) => {
+                                crate::php::sqlite::put_connection(conn_id, pdo);
+                                if let Some(slot) = result_slot(op) {
+                                    execute_data.set_temp(slot, Val::new(PhpValue::Long(0), PhpType::False));
+                                }
+                                return Ok(ExecResult::Continue);
+                            }
+                        }
+                    }
+                }
+                if let Some(slot) = result_slot(op) {
+                    execute_data.set_temp(slot, Val::new(PhpValue::Long(0), PhpType::False));
+                }
+                return Ok(ExecResult::Continue);
+            }
+
+            if mn == "fetch" || mn == "fetchAssoc" {
+                let pos = obj.properties.get("__pos")
+                    .map(crate::engine::operators::zval_get_long).unwrap_or(0) as usize;
+                if let Some(PhpValue::Array(arr)) = obj.properties.get("__rows").map(|v| &v.value)
+                    && pos < arr.ar_data.len() {
+                        let row = clone_val(&arr.ar_data[pos].val);
+                        let mut updated = clone_val(&obj_val);
+                        if let PhpValue::Object(ref mut o) = updated.value {
+                            o.properties.insert("__pos".to_string(),
+                                Val::new(PhpValue::Long(pos as i64 + 1), PhpType::Long));
+                        }
+                        if is_temp_ref(&op.op2) {
+                            if let PhpValue::Long(slot_idx) = op.op2.value {
+                                execute_data.set_temp(slot_idx as usize, updated);
+                            }
+                        } else if is_var_ref(&op.op2) && let PhpValue::String(ref s) = op.op2.value {
+                            let name = s.as_str().strip_prefix('$').unwrap_or(s.as_str());
+                            execute_data.set_var(name, updated);
+                        }
+                        if let Some(slot) = result_slot(op) {
+                            execute_data.set_temp(slot, row);
+                        }
+                        return Ok(ExecResult::Continue);
+                    }
+                if let Some(slot) = result_slot(op) {
+                    execute_data.set_temp(slot, Val::new(PhpValue::Long(0), PhpType::False));
+                }
+                return Ok(ExecResult::Continue);
+            }
+
+            if mn == "fetchAll" {
+                if let Some(PhpValue::Array(arr)) = obj.properties.get("__rows").map(|v| &v.value) {
+                    let mut result_arr = PhpArray::new();
+                    for (i, bucket) in arr.ar_data.iter().enumerate() {
+                        let _ = crate::engine::hash::hash_add_or_update(
+                            &mut result_arr, None, i as u64, clone_val(&bucket.val), 0);
+                    }
+                    if let Some(slot) = result_slot(op) {
+                        execute_data.set_temp(slot, Val::new(
+                            PhpValue::Array(Box::new(result_arr)), PhpType::Array));
+                    }
+                    return Ok(ExecResult::Continue);
+                }
+                if let Some(slot) = result_slot(op) {
+                    execute_data.set_temp(slot, Val::new(
+                        PhpValue::Array(Box::default()), PhpType::Array));
+                }
+                return Ok(ExecResult::Continue);
+            }
+
+            if mn == "rowCount" {
+                let count = obj.properties.get("__row_count")
+                    .map(crate::engine::operators::zval_get_long).unwrap_or(0);
+                if let Some(slot) = result_slot(op) {
+                    execute_data.set_temp(slot, Val::new(PhpValue::Long(count), PhpType::Long));
+                }
+                return Ok(ExecResult::Continue);
+            }
+
+            if mn == "columnCount" {
+                if let Some(PhpValue::Array(arr)) = obj.properties.get("__rows").map(|v| &v.value) {
+                    let count = arr.ar_data.first().map(|b| {
+                        if let PhpValue::Array(row) = &b.val.value {
+                            row.ar_data.len() as i64
+                        } else { 0 }
+                    }).unwrap_or(0);
+                    if let Some(slot) = result_slot(op) {
+                        execute_data.set_temp(slot, Val::new(PhpValue::Long(count), PhpType::Long));
+                    }
+                    return Ok(ExecResult::Continue);
+                }
+                if let Some(slot) = result_slot(op) {
+                    execute_data.set_temp(slot, Val::new(PhpValue::Long(0), PhpType::Long));
+                }
+                return Ok(ExecResult::Continue);
+            }
+
+            if mn == "bindParam" || mn == "bindValue" {
+                if let Some(slot) = result_slot(op) {
+                    execute_data.set_temp(slot, Val::new(PhpValue::Long(1), PhpType::True));
                 }
                 return Ok(ExecResult::Continue);
             }
