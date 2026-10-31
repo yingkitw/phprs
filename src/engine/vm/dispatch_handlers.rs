@@ -4927,8 +4927,14 @@ pub fn execute_do_method_call(
             return Ok(ExecResult::Continue);
         }
 
-        // Method not found — try __call magic method
-        let magic_info = execute_data
+        // Method not found — try __call magic method. Never for
+        // `__construct`: `new X()` must not invoke `__call` when the class
+        // has no user-declared constructor, and running it here would let the
+        // callee's temporaries clobber the not-yet-assigned NewObj result.
+        let magic_info = if method_name.as_str() == "__construct" {
+            None
+        } else {
+            execute_data
             .class_table
             .get(&class_name)
             .and_then(|ce| ce.methods.get("__call"))
@@ -4955,7 +4961,8 @@ pub fn execute_do_method_call(
                     .filter(|f| !f.is_empty())
                     .unwrap_or_else(|| format!("{}::__call", class_name));
                 (params, ops, file_label)
-            });
+            })
+        };
 
         if let Some((params, ops, oparray_filename)) = magic_info {
             let saved_current_op = execute_data.current_op;
