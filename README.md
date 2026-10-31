@@ -7,7 +7,7 @@ Use phprs to run PHP CLI scripts, try PHP snippets in a local playground, or exp
 [![Rust](https://img.shields.io/badge/rust-2024-orange.svg)](https://www.rust-lang.org/)
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
 [![Build Status](https://img.shields.io/badge/build-passing-brightgreen.svg)]()
-[![Tests](https://img.shields.io/badge/tests-688%20passing-brightgreen.svg)]()
+[![Tests](https://img.shields.io/badge/tests-714%20passing-brightgreen.svg)]()
 
 ---
 
@@ -55,7 +55,7 @@ The project is primarily a research and engineering playground: it proves PHP se
 - 🔤 **ctype & filter** — `ctype_alnum`/`ctype_alpha`/`ctype_digit`/…, `filter_var` with integer filter ids (`FILTER_VALIDATE_*` / `FILTER_SANITIZE_*` constants are **not** defined; pass the numeric id).
 - 🌐 **Development playground** — `phprs serve` for local PHP snippets over a JSON API.
 - 📦 **PHP package manager** — install packages from Packagist / private Composer repositories.
-- 🧪 **Extensive test suite** — 688 workspace tests pass (`cargo test --workspace`); root PHP examples + framework entrypoints covered; `tests/exception_propagation.rs`, `tests/string_interpolation.rs`, and `tests/php8x_features.rs` document the recent surfaces (cross-frame try/catch, complex `"{$expr}"` / `"$arr[key]"`, final class constants, `__unset`, Fibers, SPL classes, Generators).
+- 🧪 **Extensive test suite** — 714 workspace tests pass (`cargo test --workspace`); root PHP examples + framework entrypoints covered; `tests/exception_propagation.rs`, `tests/string_interpolation.rs`, and `tests/php8x_features.rs` document the recent surfaces (cross-frame try/catch, complex `"{$expr}"` / `"$arr[key]"`, final class constants, `__unset`, Fibers, SPL classes, Generators).
 - 🔌 **Embeddable library** — use `phprs` as a crate in Rust projects.
 
 ## Why phprs? The Rust Advantage
@@ -65,7 +65,7 @@ PHP powers much of the web; many production runtimes are implemented in C and C+
 - **Safer by construction (Rust)**: Memory errors that plague C/C++ code are largely ruled out in safe Rust; the interpreter still has correctness and parity work ahead.
 - **A performance-minded design**: Opcode dispatch, JIT hooks, and LLVM for the host binary — without promising a given speedup over Zend until we publish reproducible benchmarks.
 - **Concurrency-friendly host code**: Rust’s type system helps avoid data races in the engine itself; PHP’s shared mutable runtime model is still evolving in phprs.
-- **Test-backed**: 688 workspace tests; every root `examples/*.php` runs in `tests/examples_runtime.rs`; framework demos (WordPress, CodeIgniter, Drupal) have entrypoint tests; Rust demos compile via `build_rust_examples`.
+- **Test-backed**: 714 workspace tests; every root `examples/*.php` runs in `tests/examples_runtime.rs`; framework demos (WordPress, CodeIgniter, Drupal) have entrypoint tests; Rust demos compile via `build_rust_examples`.
 
 **phprs** brings PHP into the future by:
 
@@ -389,7 +389,7 @@ cargo run -p phprs-cli -- run examples/wordpress/index.php
 - **Control Flow**: if/else, switch, `match`, **for**, **foreach** (value and `as $key => $value`), **while**, **do-while**, `break`/`continue` (with explicit levels); legacy **`array()`** and short **`[]`** literals
 - **String Interpolation**: `"$var"`, simple accessors (`"$arr[key]"`, `"$arr[0]"`, `"$obj->prop"`), and complex syntax (`"{$arr['key']}"`, `"{$obj->prop}"`, `"{$obj->method()}"`)
 - **Functions**: User-defined functions, closures, arrow functions, variadic params (`...$args`), named arguments (`func(param: value)`)
-- **Classes**: OOP with inheritance, traits, namespaces, static properties/methods (`ClassName::$prop`, `ClassName::method()`). ⚠️ The `implements` clause is **not yet parsed** — `class C implements I {}` currently fails to compile.
+- **Classes**: OOP with inheritance, traits, **interfaces** (`implements`), namespaces, static properties/methods (`ClassName::$prop`, `ClassName::method()`). Interfaces may declare bodyless methods (contract, enforced at compile time) or methods with default bodies the implementing class inherits. Member resolution walks the parent chain and interface list, so `extends` inheritance (methods, properties, constants, statics) works too.
 - **Late Static Binding**: `static::` keyword resolved at runtime via `called_class`
 - **Magic Methods**: `__get`, `__set`, `__call`, `__callStatic` fallbacks in VM handlers
 - **Anonymous Classes**: `new class { ... }` with optional extends/implements
@@ -531,7 +531,7 @@ cargo run -p phprs-cli -- run examples/test-streams-regex-pdo.php
 cargo run -p phprs-cli -- run examples/wordpress/test-theme-plugin.php
 ```
 
-The workspace passes `cargo build --workspace`, `cargo clippy --workspace` (0 warnings) and `cargo test --workspace` (688 passing, 1 ignored).
+The workspace passes `cargo build --workspace`, `cargo clippy --workspace` (0 warnings) and `cargo test --workspace` (714 passing, 1 ignored).
 
 ## Documentation
 
@@ -583,7 +583,7 @@ The workspace passes `cargo build --workspace`, `cargo clippy --workspace` (0 wa
 - Distributed caching (Redis, Memcached)
 - Real database drivers (MySQL, PostgreSQL)
 - HTTP/2 and HTTP/3 support
-- `implements` clause parsing, `file_put_contents`/`basename` builtins, `str_pad`/`str_shuffle`
+- `file_put_contents`/`basename` builtins, `str_pad`/`str_shuffle`, `instanceof` operator, `(new X())->method()` access chains
 
 See [TODO.md](TODO.md) for detailed roadmap.
 

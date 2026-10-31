@@ -358,6 +358,7 @@ pub fn execute_ex(execute_data: &mut ExecuteData, op_array: &OpArray) -> PhpResu
         if !execute_data.class_table.contains_key(name) {
             let mut new_ce = crate::engine::types::ClassEntry::new(name);
             new_ce.parent_name = ce.parent_name.clone();
+            new_ce.interfaces = ce.interfaces.clone();
             new_ce.is_final = ce.is_final;
             new_ce.is_abstract = ce.is_abstract;
             new_ce.is_enum = ce.is_enum;

@@ -479,6 +479,11 @@ impl Default for PropertyFlags {
 pub struct ClassEntry {
     pub name: String,
     pub parent_name: Option<String>,
+    /// Interfaces implemented by this class (`implements A, B`). Names are
+    /// resolved (namespace + use-imports applied) and point at the class-table
+    /// key of the interface, which uses the `__interface_` prefix so it never
+    /// collides with a class of the same name.
+    pub interfaces: Vec<String>,
     pub methods: std::collections::HashMap<String, ClassMethod>,
     pub default_properties: std::collections::HashMap<String, Val>,
     pub static_properties: std::collections::HashMap<String, Val>,
@@ -497,6 +502,7 @@ impl ClassEntry {
         Self {
             name: name.to_string(),
             parent_name: None,
+            interfaces: Vec::new(),
             methods: std::collections::HashMap::new(),
             default_properties: std::collections::HashMap::new(),
             static_properties: std::collections::HashMap::new(),

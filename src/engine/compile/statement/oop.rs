@@ -212,13 +212,43 @@ pub(crate) fn compile_class(
     }
 
     // Optional: implements Interface1, Interface2
+    //
+    // The lexer emits punctuation as `T_STRING`, so an interface name cannot be
+    // told apart from `{` or `,` by token type alone — the *value* has to be
+    // inspected. The previous implementation looped while the token type was
+    // `T_STRING`, which swallowed the class body and then failed with
+    // "Expected '{' after class declaration".
     if next.token_type == TokenType::T_IMPLEMENTS {
-        // Skip interface names (just parse past them for now)
         next = lexer.next_token()?;
-        while next.token_type == TokenType::T_STRING {
-            next = lexer.next_token()?;
-            if token_is_punct(&next, ",") {
+        loop {
+            if next.token_type == TokenType::T_EOF {
+                return Err("Unexpected EOF in implements list".to_string());
+            }
+            // A namespace-qualified name arrives as `Name`, `\` , `Name`; the
+            // lexer reports the separator separately, so join the pieces.
+            if next.token_type == TokenType::T_NS_SEPARATOR {
                 next = lexer.next_token()?;
+                continue;
+            }
+            let raw = next
+                .value
+                .as_ref()
+                .ok_or("Expected interface name after 'implements'")?
+                .as_str();
+            // Stop at the class body — `{` is punctuation, not a name.
+            if raw == "{" {
+                break;
+            }
+            if raw == "," {
+                next = lexer.next_token()?;
+                continue;
+            }
+            let resolved = context.resolve_class_name(raw);
+            ce.interfaces
+                .push(crate::engine::vm::class_hierarchy::interface_key(&resolved));
+            next = lexer.next_token()?;
+            if ce.interfaces.len() > crate::engine::vm::class_hierarchy::MAX_EXTENDED_INTERFACES {
+                return Err("Too many implemented interfaces".to_string());
             }
         }
     }
@@ -229,8 +259,73 @@ pub(crate) fn compile_class(
 
     parse_class_body(lexer, context, &mut ce)?;
     check_final_const_override(context, &ce)?;
+    check_interface_contract(context, &ce)?;
     context.register_class(ce);
     lexer.next_token()
+}
+
+/// Verify the class implements every method its interfaces declare.
+///
+/// PHP raises a fatal error when a class does not implement an interface's
+/// method, so this is a compile-time error here too. The check is skipped
+/// when the interface is not yet known (an interface declared *after* the
+/// implementing class is not an error in PHP either, since the check happens
+/// at link time).
+fn check_interface_contract(context: &CompileContext, ce: &ClassEntry) -> Result<(), String> {
+    for iface_key in &ce.interfaces {
+        // An interface that is not yet known is not an error here — PHP checks
+        // the contract at link time, so a forward reference is fine.
+        if !context.class_table.contains_key(iface_key) {
+            continue;
+        }
+        let required = crate::engine::vm::class_hierarchy::interface_required_methods(
+            &context.class_table,
+            iface_key,
+        );
+        for method_name in required {
+            // The class itself, or any ancestor, may satisfy the contract.
+            if class_or_ancestor_has_method(context, ce, &method_name) {
+                continue;
+            }
+            let iface_name =
+                crate::engine::vm::class_hierarchy::interface_display_name(iface_key);
+            return Err(format!(
+                "Class {} contains 1 abstract method and must therefore be declared abstract or implement the remaining methods ({}::{})",
+                ce.name, iface_name, method_name
+            ));
+        }
+    }
+    Ok(())
+}
+
+/// Whether the class or any of its ancestors declares the method.
+///
+/// The class being checked is not yet in the class table (it is registered
+/// after the check runs), so its own methods are consulted first via `ce`.
+fn class_or_ancestor_has_method(
+    context: &CompileContext,
+    ce: &ClassEntry,
+    method_name: &str,
+) -> bool {
+    if ce.methods.contains_key(method_name) {
+        return true;
+    }
+    let mut current = ce.parent_name.clone();
+    let mut hops = 0;
+    while let Some(name) = current {
+        if hops > 64 {
+            break;
+        }
+        hops += 1;
+        let Some(ancestor) = context.class_table.get(&name) else {
+            return false;
+        };
+        if ancestor.methods.contains_key(method_name) {
+            return true;
+        }
+        current = ancestor.parent_name.clone();
+    }
+    false
 }
 
 /// Enforce PHP 8.1 final class constants: a child class may not redeclare a
@@ -296,6 +391,213 @@ pub(crate) fn compile_trait(
     ce.name = trait_key.clone();
     context.register_class(ce);
     lexer.next_token()
+}
+
+/// Compile an interface definition: `interface Foo { public function bar(); }`
+///
+/// An interface declares a *contract*. Its methods normally have no body —
+/// `public function bar();` — but a body is allowed and provides a default
+/// implementation that the implementing class may inherit.
+///
+/// The interface is stored in the class table under the `__interface_` prefix
+/// (mirroring the `__trait_` prefix) so it never collides with a class of the
+/// same name.
+pub(crate) fn compile_interface(
+    lexer: &mut Lexer,
+    context: &mut CompileContext,
+) -> Result<Token, String> {
+    let name_token = lexer.next_token()?;
+    let interface_name = name_token
+        .value
+        .as_ref()
+        .ok_or("Expected interface name")?
+        .as_str()
+        .to_string();
+    let resolved_name = context.resolve_class_name(&interface_name);
+    let mut ce = ClassEntry::new(&resolved_name);
+
+    // Optional: `interface Foo extends Bar, Baz` — an interface may extend
+    // other interfaces and inherits their contract.
+    let mut next = lexer.next_token()?;
+    if next.token_type == TokenType::T_EXTENDS {
+        next = lexer.next_token()?;
+        loop {
+            if next.token_type == TokenType::T_EOF {
+                return Err("Unexpected EOF in interface extends list".to_string());
+            }
+            if next.token_type == TokenType::T_NS_SEPARATOR {
+                next = lexer.next_token()?;
+                continue;
+            }
+            let raw = next
+                .value
+                .as_ref()
+                .ok_or("Expected interface name after 'extends'")?
+                .as_str();
+            if raw == "{" {
+                break;
+            }
+            if raw == "," {
+                next = lexer.next_token()?;
+                continue;
+            }
+            let resolved = context.resolve_class_name(raw);
+            ce.interfaces
+                .push(crate::engine::vm::class_hierarchy::interface_key(&resolved));
+            next = lexer.next_token()?;
+            if ce.interfaces.len() > crate::engine::vm::class_hierarchy::MAX_EXTENDED_INTERFACES {
+                return Err("Too many extended interfaces".to_string());
+            }
+        }
+    }
+
+    if !token_is_punct(&next, "{") {
+        return Err("Expected '{' after interface name".to_string());
+    }
+
+    parse_interface_body(lexer, context, &mut ce)?;
+
+    let iface_key = crate::engine::vm::class_hierarchy::interface_key(&resolved_name);
+    ce.name = iface_key.clone();
+    context.register_class(ce);
+    lexer.next_token()
+}
+
+/// Parse an interface body.
+///
+/// Unlike a class body, an interface member may be a bodyless method
+/// declaration (`public function foo();`). Such a method contributes only its
+/// *name* to the contract — there is no body to execute — so it is recorded
+/// with an empty op array.
+fn parse_interface_body(
+    lexer: &mut Lexer,
+    context: &mut CompileContext,
+    ce: &mut ClassEntry,
+) -> Result<(), String> {
+    let mut next = lexer.next_token()?;
+    loop {
+        if token_is_punct(&next, "}") {
+            return Ok(());
+        }
+        if next.token_type == TokenType::T_EOF {
+            return Err("Unexpected EOF in interface body".to_string());
+        }
+
+        if next.token_type == TokenType::T_ATTRIBUTE {
+            next = skip_attribute_block(lexer)?;
+            continue;
+        }
+
+        // Visibility modifier (interfaces default to public).
+        let visibility = match next.token_type {
+            TokenType::T_PUBLIC => {
+                next = lexer.next_token()?;
+                Visibility::Public
+            }
+            TokenType::T_PROTECTED => {
+                next = lexer.next_token()?;
+                Visibility::Protected
+            }
+            TokenType::T_PRIVATE => {
+                next = lexer.next_token()?;
+                Visibility::Private
+            }
+            _ => Visibility::Public,
+        };
+
+        let is_static = if next.token_type == TokenType::T_STATIC {
+            next = lexer.next_token()?;
+            true
+        } else {
+            false
+        };
+
+        if next.token_type != TokenType::T_FUNCTION {
+            // Constants are allowed in interfaces; anything else is skipped.
+            if next.token_type == TokenType::T_CONST {
+                next = compile_class_const(lexer, context, ce, visibility, false)?;
+                continue;
+            }
+            next = lexer.next_token()?;
+            continue;
+        }
+
+        // Method declaration.
+        let method_name_token = lexer.next_token()?;
+        let method_name = method_name_token
+            .value
+            .as_ref()
+            .ok_or("Expected method name")?
+            .as_str()
+            .to_string();
+
+        let open_paren = lexer.next_token()?;
+        if !token_is_punct(&open_paren, "(") {
+            return Err("Expected '(' after method name".to_string());
+        }
+        let (param_names, variadic, ref_flags) = parse_params(lexer, context)?;
+        let params: Vec<String> = param_names
+            .iter()
+            .map(|p| p.strip_prefix('$').unwrap_or(p).to_string())
+            .collect();
+
+        // A bodyless declaration ends with `;`; a default implementation has
+        // a `{ ... }` body.
+        let after_params = lexer.next_token()?;
+        if token_is_punct(&after_params, ";") {
+            let mut method = ClassMethod {
+                name: method_name.clone(),
+                visibility,
+                is_static,
+                params,
+                op_array: crate::engine::vm::OpArray::new(String::new()),
+            };
+            method.op_array.variadic_param = variadic;
+            method.op_array.ref_params = ref_flags;
+            ce.methods.insert(method_name, method);
+            next = lexer.next_token()?;
+            continue;
+        }
+
+        if !token_is_punct(&after_params, "{") {
+            return Err("Expected '{' or ';' after method parameters".to_string());
+        }
+
+        // Default implementation — compile the body like a class method.
+        let mut method_context = CompileContext::new();
+        if let Some(ref f) = context.filename {
+            method_context.set_filename(f);
+        }
+        let mut body_token = lexer.next_token()?;
+        let mut brace_depth = 1;
+        while brace_depth > 0 {
+            if token_is_punct(&body_token, "{") {
+                brace_depth += 1;
+            }
+            if token_is_punct(&body_token, "}") {
+                brace_depth -= 1;
+                if brace_depth == 0 {
+                    break;
+                }
+            }
+            if body_token.token_type == TokenType::T_EOF {
+                return Err("Unexpected EOF in method body".to_string());
+            }
+            body_token = parse_statement(lexer, &mut method_context, body_token)?;
+        }
+
+        let mut method = ClassMethod {
+            name: method_name.clone(),
+            visibility,
+            is_static,
+            params,
+            op_array: method_context.take_op_array(),
+        };
+        method.op_array.variadic_param = variadic;
+        method.op_array.ref_params = ref_flags;
+        ce.methods.insert(method_name, method);
+        next = lexer.next_token()?;
+    }
 }
 
 /// Compile an enum definition: enum Status { case Pending; case Active; }

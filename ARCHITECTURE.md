@@ -19,6 +19,7 @@ src/
 │   │   ├── builtin_capability_tests.rs  # Broad builtin tests
 │   │   ├── execute.rs            # Main loop, __FILE__/__DIR__
 │   │   ├── exception_dispatch.rs # try/catch/finally + cross-frame propagation
+│   │   ├── class_hierarchy.rs      # extends/implements member resolution
 │   │   └── callable.rs           # invoke_user_function + call_user_func helpers
 │   ├── jit.rs
 │   ├── function_optimizer.rs
@@ -100,6 +101,7 @@ All **root** `examples/*.php` files: `examples_root_php_scripts_all_run`.
 | `tests/build_rust_examples.rs` | Rust `examples/rust/` compile |
 | `tests/php_examples.rs` | PHP compile smoke |
 | `tests/exception_propagation.rs` | Cross-frame try/catch dispatch (18 cases) |
+| `tests/interface_implements.rs` | `interface`/`implements` + hierarchy resolution (20 cases) |
 | `tests/string_interpolation.rs` | `"$arr[key]"` / `"{$expr}"` interpolation (16 cases) |
 | `tests/php8x_features.rs` | PHP 8.x surface (`final const`, `__unset` etc., 93 cases) |
 | `tests/call_arg_expressions.rs` | Full precedence in call/ctor/array arguments (4 cases) |

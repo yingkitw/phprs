@@ -19,6 +19,7 @@ This directory contains integration and workspace-level tests for phprs. Unit te
 | `exception_propagation.rs` | Cross-frame try/catch/finally dispatch (18 cases) |
 | `integer_arithmetic.rs` | Integer arithmetic edge cases (overflow, division, modulo) |
 | `integration_tests.rs` | Cross-module integration |
+| `interface_implements.rs` | `interface`/`implements` contracts + class-hierarchy member resolution |
 | `loop_control.rs` | `break` / `continue` with explicit levels |
 | `opt_passes.rs` | Constant folding + dead code elimination regression |
 | `php8x_features.rs` | PHP 8.x language feature tests (match, enums, readonly, etc.) |

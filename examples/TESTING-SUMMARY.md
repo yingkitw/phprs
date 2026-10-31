@@ -4,15 +4,15 @@ Overview of how examples and tests relate in phprs.
 
 ## Workspace tests
 
-Roughly **688** tests across:
+Roughly **714** tests across:
 
-- **393** library unit tests (`cargo test --lib`)
-- Integration crates: `array_key_normalization` (5), `bitwise_operators` (11), `build_rust_examples` (1), `call_arg_expressions` (4), `compound_assignment` (10), `comprehensive_tests` (25), `edge_cases` (13), `error_handling` (4), `example_verification` (7), `examples_runtime` (15), `exception_propagation` (18), `integer_arithmetic` (3), `integration_tests` (4), `loop_control` (16), `opt_passes` (11), `php8x_features` (93), `php_examples` (16), `string_interpolation` (16), `switch_statement` (15)
+- **399** library unit tests (`cargo test --lib`)
+- Integration crates: `array_key_normalization` (5), `bitwise_operators` (11), `build_rust_examples` (1), `call_arg_expressions` (4), `compound_assignment` (10), `comprehensive_tests` (25), `edge_cases` (13), `error_handling` (4), `example_verification` (7), `examples_runtime` (15), `exception_propagation` (18), `integer_arithmetic` (3), `integration_tests` (4), `interface_implements` (20), `loop_control` (16), `opt_passes` (11), `php8x_features` (93), `php_examples` (16), `string_interpolation` (16), `switch_statement` (15)
 - CLI crate unit tests (`bin/phprs`): 8 (1 ignored — network-dependent packagist metadata test)
 
 ## Example entrypoints
 
-### Root PHP (`examples/*.php`) — 26 files
+### Root PHP (`examples/*.php`) — 27 files
 
 **Enforced by** `examples_root_php_scripts_all_run` in `tests/examples_runtime.rs`:
 

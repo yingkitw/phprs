@@ -1613,6 +1613,38 @@ pub fn execute_fetch_dim(op: &Op, execute_data: &mut ExecuteData) -> Result<Exec
     Ok(ExecResult::Continue)
 }
 
+/// Collect the default property values a class inherits from its ancestors
+/// and interfaces.
+///
+/// The class's own properties are *not* included — the caller seeds those
+/// first and only fills in the gaps — so a redeclared property keeps the
+/// child's value, as PHP requires.
+fn collect_inherited_properties(
+    class_table: &std::collections::HashMap<String, crate::engine::types::ClassEntry>,
+    class_name: &str,
+    out: &mut Vec<(String, crate::engine::types::Val)>,
+    visited: &mut Vec<String>,
+) {
+    if visited.iter().any(|v| v == class_name) {
+        return;
+    }
+    visited.push(class_name.to_string());
+    let Some(ce) = class_table.get(class_name) else {
+        return;
+    };
+    if let Some(parent) = &ce.parent_name {
+        collect_inherited_properties(class_table, parent, out, visited);
+    }
+    for iface in &ce.interfaces {
+        collect_inherited_properties(class_table, iface, out, visited);
+    }
+    for (prop_name, prop_val) in &ce.default_properties {
+        if !out.iter().any(|(n, _)| n == prop_name) {
+            out.push((prop_name.clone(), clone_val(prop_val)));
+        }
+    }
+}
+
 #[inline]
 pub fn execute_new_obj(op: &Op, execute_data: &mut ExecuteData) -> Result<ExecResult, String> {
     let class_name_val = resolve_operand(&op.op1, execute_data);
@@ -1624,6 +1656,20 @@ pub fn execute_new_obj(op: &Op, execute_data: &mut ExecuteData) -> Result<ExecRe
         for (prop_name, prop_val) in &ce.default_properties {
             obj.properties
                 .insert(prop_name.clone(), clone_val(prop_val));
+        }
+        // Inherited properties: a property declared only on a parent (or on an
+        // interface's default implementation) is available on the child, so
+        // seed it from the hierarchy. The class's own value wins.
+        let mut inherited: Vec<(String, crate::engine::types::Val)> = Vec::new();
+        let mut visited: Vec<String> = Vec::new();
+        collect_inherited_properties(
+            &execute_data.class_table,
+            cn,
+            &mut inherited,
+            &mut visited,
+        );
+        for (prop_name, prop_val) in inherited {
+            obj.properties.entry(prop_name).or_insert(prop_val);
         }
     }
     // Built-in DateTime: initialize with current timestamp (constructor
@@ -4806,37 +4852,20 @@ pub fn execute_do_method_call(
             }
         }
 
-        // Extract method info (owned copies to avoid borrow conflict)
-        let method_info: Option<(Vec<String>, Vec<Op>, String)> = execute_data
-            .class_table
-            .get(&class_name)
-            .and_then(|ce| ce.methods.get(method_name.as_str()))
-            .map(|m| {
-                let params = m.params.clone();
-                let ops: Vec<Op> = m
-                    .op_array
-                    .ops
-                    .iter()
-                    .map(|op| {
-                        Op::new(
-                            op.opcode,
-                            clone_val(&op.op1),
-                            clone_val(&op.op2),
-                            clone_val(&op.result),
-                            op.extended_value,
-                        )
-                    })
-                    .collect();
-                let file_label = m
-                    .op_array
-                    .filename
-                    .clone()
-                    .filter(|f| !f.is_empty())
-                    .unwrap_or_else(|| format!("{}::{}", class_name, method_name.as_str()));
-                (params, ops, file_label)
-            });
+        // Extract method info (owned copies to avoid borrow conflict).
+        // Resolution walks the class, then its parent chain, then its
+        // interfaces, so inherited and interface-provided methods are found.
+        let method_info: Option<crate::engine::vm::class_hierarchy::MethodInfo> =
+            crate::engine::vm::class_hierarchy::resolve_method(
+                &execute_data.class_table,
+                &class_name,
+                method_name.as_str(),
+            );
 
-        if let Some((params, ops, oparray_filename)) = method_info {
+        if let Some(info) = method_info {
+            let params = info.params;
+            let ops = info.ops;
+            let oparray_filename = info.file_label;
             let saved_current_op = execute_data.current_op;
             let saved_op_array = execute_data.op_array.take();
             let saved_script_dir = execute_data.current_script_dir.clone();
@@ -4853,17 +4882,8 @@ pub fn execute_do_method_call(
             let arg_names: Vec<Option<String>> =
                 execute_data.call_arg_names.drain(names_base..).collect();
             let arg_by_ref: Vec<bool> = execute_data.call_arg_by_ref.drain(base..).collect();
-            let variadic = execute_data
-                .class_table
-                .get(&class_name)
-                .and_then(|ce| ce.methods.get(method_name.as_str()))
-                .and_then(|m| m.op_array.variadic_param.clone());
-            let ref_params = execute_data
-                .class_table
-                .get(&class_name)
-                .and_then(|ce| ce.methods.get(method_name.as_str()))
-                .map(|m| m.op_array.ref_params.clone())
-                .unwrap_or_default();
+            let variadic = info.variadic_param.clone();
+            let ref_params = info.ref_params.clone();
             bind_call_args(
                 execute_data,
                 &params,
@@ -5117,7 +5137,7 @@ pub fn execute_fetch_static_prop(
     let prop_name_str = prop_name_raw.as_str();
     let prop_name = prop_name_str.strip_prefix('$').unwrap_or(prop_name_str);
 
-    let result_val = if let Some(ce) = execute_data.class_table.get(&class_name) {
+    let result_val = if execute_data.class_table.contains_key(&class_name) {
         if prop_name == "class" {
             Val::new(
                 PhpValue::String(Box::new(crate::engine::string::string_init(
@@ -5127,23 +5147,24 @@ pub fn execute_fetch_static_prop(
                 PhpType::String,
             )
         } else {
-            // Walk the class and its parent chain for static properties
-            // and constants (PHP inherits both from parent classes).
+            // Walk the class, its parent chain and its interfaces for static
+            // properties and constants (PHP inherits all three).
             let mut found: Option<Val> = None;
-            let mut current_ce = Some(ce);
-            while let Some(cur) = current_ce {
-                if let Some(v) = cur.static_properties.get(prop_name) {
-                    found = Some(clone_val(v));
-                    break;
-                }
-                if let Some(v) = cur.constants.get(prop_name) {
-                    found = Some(clone_val(v));
-                    break;
-                }
-                current_ce = cur
-                    .parent_name
-                    .as_ref()
-                    .and_then(|p| execute_data.class_table.get(p));
+            if let Some(v) = crate::engine::vm::class_hierarchy::resolve_static_property(
+                &execute_data.class_table,
+                &class_name,
+                prop_name,
+            ) {
+                found = Some(v);
+            }
+            if found.is_none()
+                && let Some(v) = crate::engine::vm::class_hierarchy::resolve_constant(
+                    &execute_data.class_table,
+                    &class_name,
+                    prop_name,
+                )
+            {
+                found = Some(v);
             }
             found.unwrap_or_else(|| Val::new(PhpValue::Long(0), PhpType::Null))
         }
@@ -5220,36 +5241,17 @@ pub fn execute_do_static_call(
         return Ok(ExecResult::Continue);
     }
 
-    let method_info: Option<(Vec<String>, Vec<Op>, String)> = execute_data
-        .class_table
-        .get(&resolved_class)
-        .and_then(|ce| ce.methods.get(method_name.as_str()))
-        .map(|m| {
-            let params = m.params.clone();
-            let ops: Vec<Op> = m
-                .op_array
-                .ops
-                .iter()
-                .map(|op| {
-                    Op::new(
-                        op.opcode,
-                        clone_val(&op.op1),
-                        clone_val(&op.op2),
-                        clone_val(&op.result),
-                        op.extended_value,
-                    )
-                })
-                .collect();
-            let file_label = m
-                .op_array
-                .filename
-                .clone()
-                .filter(|f| !f.is_empty())
-                .unwrap_or_else(|| format!("{}::{}", resolved_class, method_name.as_str()));
-            (params, ops, file_label)
-        });
+    let method_info: Option<crate::engine::vm::class_hierarchy::MethodInfo> =
+        crate::engine::vm::class_hierarchy::resolve_method(
+            &execute_data.class_table,
+            &resolved_class,
+            method_name.as_str(),
+        );
 
-    if let Some((params, ops, oparray_filename)) = method_info {
+    if let Some(info) = method_info {
+        let params = info.params;
+        let ops = info.ops;
+        let oparray_filename = info.file_label;
         let saved_current_op = execute_data.current_op;
         let saved_op_array = execute_data.op_array.take();
         let saved_script_dir = execute_data.current_script_dir.clone();
@@ -5263,17 +5265,8 @@ pub fn execute_do_static_call(
         let arg_names: Vec<Option<String>> =
             execute_data.call_arg_names.drain(names_base..).collect();
         let arg_by_ref: Vec<bool> = execute_data.call_arg_by_ref.drain(base..).collect();
-        let variadic = execute_data
-            .class_table
-            .get(&resolved_class)
-            .and_then(|ce| ce.methods.get(method_name.as_str()))
-            .and_then(|m| m.op_array.variadic_param.clone());
-        let ref_params = execute_data
-            .class_table
-            .get(&resolved_class)
-            .and_then(|ce| ce.methods.get(method_name.as_str()))
-            .map(|m| m.op_array.ref_params.clone())
-            .unwrap_or_default();
+        let variadic = info.variadic_param.clone();
+        let ref_params = info.ref_params.clone();
         bind_call_args(
             execute_data,
             &params,

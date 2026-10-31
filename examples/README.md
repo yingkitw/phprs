@@ -1,6 +1,6 @@
 # phprs Examples
 
-Curated demos for language features, standard-library subsets, and minimal framework bootstraps. **26** root-level PHP scripts plus **9** Rust library examples.
+Curated demos for language features, standard-library subsets, and minimal framework bootstraps. **27** root-level PHP scripts plus **9** Rust library examples.
 
 ## Quick start
 
@@ -51,6 +51,7 @@ cargo run --example performance_demo
 | `array_operations.php` | Arrays and foreach |
 | `functions.php` | Functions: defaults, recursion, closures, arrow fns |
 | `classes.php` | Classes and methods (partial parity) |
+| `interfaces.php` | `interface` / `implements`, default method bodies, `extends` inheritance |
 | `error_handling.php` | Error handlers |
 | `filesystem.php` | File/dir helpers |
 | `match_expression.php` | `match` expressions (single-condition arms) |

@@ -22,6 +22,7 @@ mod builtin_capability_tests;
 
 mod builtins;
 pub mod callable;
+pub mod class_hierarchy;
 pub mod dispatch_handlers;
 pub mod exception_dispatch;
 pub mod execute;

@@ -143,6 +143,7 @@ pub fn parse_statement(
         TokenType::T_CLASS => oop::compile_class(lexer, context),
         TokenType::T_ENUM => oop::compile_enum(lexer, context),
         TokenType::T_TRAIT => oop::compile_trait(lexer, context),
+        TokenType::T_INTERFACE => oop::compile_interface(lexer, context),
         TokenType::T_RETURN => compile_return(lexer, context),
         TokenType::T_GLOBAL => compile_global(lexer, context),
         TokenType::T_YIELD => compile_yield(lexer, context),
