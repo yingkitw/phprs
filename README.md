@@ -192,14 +192,18 @@ phprs targets **PHP language compatibility**, but many extensions, ini settings,
 
 ```php
 <?php
-// Example that may run once the engine supports the features you use
+// Example that runs today on phprs
+// (class-method return types `: string` are not yet supported — see TODO.md)
 class User {
-    public function __construct(
-        private string $name,
-        private string $email
-    ) {}
-    
-    public function greet(): string {
+    public $name;
+    public $email;
+
+    public function __construct($name, $email) {
+        $this->name = $name;
+        $this->email = $email;
+    }
+
+    public function greet() {
         return "Hello, {$this->name}!";
     }
 }

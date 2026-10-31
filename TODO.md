@@ -28,7 +28,7 @@
 - [x] Null coalescing (`??`)
 - [x] Closures / anonymous functions (`function() use () { ... }`)
 - [x] Callable variables (`$fn()`)
-- [x] Type declarations (parameter types, return types, nullable)
+- [x] Type declarations (parameter types, return types, nullable) — ⚠️ return types work on plain `function`s but **not yet on class methods** (`public function f(): string {}` fails to compile; see the competitive-intelligence list)
 - [x] Function return values (`return expr;`)
 - [x] Statement parsing (echo, assign, return, include)
 - [x] Control flow (if/else, while, for, foreach; `break`/`continue` with explicit levels — `break 2`, `continue 2` — since 2026-10-14; `switch` with fallthrough/first-match-wins/position-independent `default`, and `do-while`, same date)
@@ -275,6 +275,7 @@ Rust is used for the **interpreter implementation** because of memory safety in 
 - [x] **Magic methods** (partial) - `__debugInfo` (object dumping in var_dump; method invocation requires ExecuteData in builtins)
 - [x] **Magic methods** - `__unset` implemented (UnsetObjProp opcode + `unset($obj->prop)` compiler path); `__serialize`/`__unserialize` implemented via `invoke_magic_method`/`invoke_magic_method_with_this` helpers in `callable.rs`
 - [x] **Anonymous classes** - `new class { ... }` with optional extends/implements
+- [x] **Interfaces** (2026-10-31) - `interface` declarations (incl. `interface A extends B`), `implements` parsing, compile-time contract enforcement, default method bodies, constants/statics via the implementing class; centralized hierarchy resolution in `src/engine/vm/class_hierarchy.rs` (also fixed `extends` method/property inheritance and LSB-through-override). Covered by `tests/interface_implements.rs`.
 - [x] **Variadic functions** - `...$args` parameter unpacking in VM
 - [x] **Named arguments** (PHP 8.0) - `func(param: value)` via `SendValNamed` opcode
 - [x] **Union types** (PHP 8.0) - `int|string` parsing in params and return types
@@ -291,6 +292,18 @@ Rust is used for the **interpreter implementation** because of memory safety in 
 - [x] **Final class constants** (PHP 8.1) - `final public const X = ...` (and `public final const X`); child override of a final constant is a compile error
 - [x] **Inherited class constant / static property lookup** - `execute_fetch_static_prop` walks `parent_name` chain; `Child::PARENT_CONST` and multi-level inheritance work
 - [x] **New in initializers** (PHP 8.1) - `new` in property defaults and param defaults. ⚠️ The object is constructed but the **constructor is not invoked** in these positions, and `new` in a param default yields `null`.
+
+### Competitive intelligence — natural next steps (2026-10-31, post-interfaces)
+
+Seeded from comparing against Zend/HHVM/PeachPie feature surfaces, ordered by value-per-effort given what just landed:
+
+0. **Class-method return types** (found 2026-10-31 while validating the README example) — `public function greet(): string {}` on a *class method* fails with "Expected '{' after method parameters", while the identical return type on a plain `function` works (`tests` cover the plain-function path). This makes several README/PHP-8-style examples fail. Same parser area: a bare `new U();` expression statement (no assignment) is misparsed as a function call `u()` → "Call to undefined function".
+1. **Constructor property promotion** (PHP 8.0, `public function __construct(private string $name)`) — not supported ("Expected variable parameter in function definition, got T_PRIVATE"); the README example previously showed it as if it worked.
+2. **`instanceof` operator** — near-free now: `class_hierarchy::is_a` (implemented + unit-tested) is the ready-made relation; only the compiler arm is missing (`T_INSTANCEOF` exists in the lexer; `$b instanceof A` currently errors with "Expected ',' or ')' after function argument"). Unblocks framework code that type-guards (WordPress/Drupal internals use it heavily).
+3. **`parent::method()` explicit parent-scope calls** — an override currently cannot delegate to its parent by name; common in real hierarchies.
+4. **Interface signature/visibility compatibility checks** — PHP fatals when an implementing method's signature is incompatible; we only check presence.
+5. **Readonly enforcement at runtime** — the parse-side exists; reassignment still succeeds (PHP 8.1 fatals).
+6. **`str_pad`/`str_shuffle`** are registered but return `null`; `file_put_contents`/`basename` exist as helpers in `src/php/filesystem.rs` but are not exposed as global builtins.
 
 ### Standard Library Extensions
 - [x] **DateTime/DateTimeImmutable** - Basic date/time manipulation
