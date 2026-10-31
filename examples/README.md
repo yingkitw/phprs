@@ -1,6 +1,6 @@
 # phprs Examples
 
-Curated demos for language features, standard-library subsets, and minimal framework bootstraps. **24** root-level PHP scripts plus **9** Rust library examples.
+Curated demos for language features, standard-library subsets, and minimal framework bootstraps. **26** root-level PHP scripts plus **9** Rust library examples.
 
 ## Quick start
 
@@ -53,19 +53,21 @@ cargo run --example performance_demo
 | `classes.php` | Classes and methods (partial parity) |
 | `error_handling.php` | Error handlers |
 | `filesystem.php` | File/dir helpers |
-| `match_expression.php` | `match` expressions |
-| `attributes.php` | Attributes (partial) |
+| `match_expression.php` | `match` expressions (single-condition arms) |
+| `attributes.php` | Attributes (parsed and discarded) |
 | `generators.php` | `yield` (partial) |
 | `mbstring.php` | `mb_*` subset |
 | `interpolation.php` | String interpolation: `"$var"`, `"$arr[key]"`, `"{$arr['key']}"`, `"{$obj->prop}"` |
 | `regex-examples.php` | `preg_*` demos (look-around via fancy-regex) |
 | `http-stream-examples.php` | HTTP stream patterns |
 | `session-examples.php` | `session_start()` + `$_SESSION` patterns |
-| `pdo-examples.php` | PDO stub API |
+| `pdo-examples.php` | PDO API (real SQLite driver) |
 | `integration-test.php` | Combined PDO/regex/password/json smoke script |
 | `test-streams-regex-pdo.php` | Streams/regex/PDO checklist |
 | `stdlib_callbacks.php` | Callback builtins, array/string/math helpers, Reflection API |
 | `strings_and_serialize.php` | String helpers, printf, base conversion, `serialize`/`unserialize` |
+| `call_arg_expressions.php` | Full expression precedence in call / ctor / array / match arguments |
+| `loop_control.php` | `break` / `continue` with explicit levels, `switch`, `do-while` |
 
 ## Framework-style trees
 

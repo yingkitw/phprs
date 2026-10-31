@@ -31,10 +31,16 @@ cargo run -p phprs-cli -- run hello.php
 
 ```bash
 phprs run script.php
-phprs serve                  # dev server (default port 3080)
+phprs serve                  # dev playground (default port 3080)
 phprs serve --port 8080
 phprs pkg init               # Composer-style project stub
+phprs pkg install            # install dependencies from composer.json
+phprs pkg update             # update dependencies to their latest versions
 ```
+
+`phprs serve` is an HTML playground + JSON API (`GET /api/health`,
+`GET /api/examples`, `POST /api/execute`). It is **not** a `php -S` work-alike —
+it does not serve `.php` files from disk.
 
 ## Try bundled examples
 
@@ -61,7 +67,7 @@ phprs run examples/drupal/index.php               # covered by example_drupal_in
 
 - **Not a drop-in Zend replacement** — try your script, read errors, check [TODO.md](TODO.md).
 - **Sessions** — `session_start()`, `session_destroy()`, `session_id()`, `session_name()`; persisted via JSON files (cookie in `phprs serve`).
-- **PDO** — stub/in-memory API for demos, not a real DB driver.
+- **PDO** — real **SQLite** driver (bundled via `rusqlite`); other DSNs (`mysql:`, `pgsql:`) parse but do not connect. `bindParam`/`bindValue` are accepted but are no-ops — use positional `execute([...])` placeholders.
 - **Regex** — Rust `regex` + `fancy-regex` for look-around; not full PCRE.
 - **Performance** — use `cargo build --release`; see [PERFORMANCE.md](PERFORMANCE.md) (no invented PHP speedup tables).
 

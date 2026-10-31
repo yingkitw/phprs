@@ -46,7 +46,7 @@ cd examples && chmod +x run-all-tests.sh && ./run-all-tests.sh
 - `$arr[] = …`, `$x += $y['z']`, and chained `$a['b']['c'] = …` are supported (compound assignment, append, and chained dim assignment all work)
 
 ### pdo-examples.php
-- Exercises **PDO stub** (`src/php/pdo.rs`) — no real MySQL/PostgreSQL connections
+- Exercises **PDO** (`src/php/pdo.rs` + real SQLite driver in `src/php/sqlite.rs`) — no real MySQL/PostgreSQL connections
 
 ### integration-test.php
 - Short runnable smoke script (PDO, regex, password, json)

@@ -10,7 +10,8 @@ phprs is a PHP interpreter implemented in Rust. The architecture separates **com
 src/
 ├── engine/           # Compiler, VM, types, memory, GC
 │   ├── types.rs
-│   ├── compile/      # Lexer, parser, statements, expressions
+│   ├── compile/      # Parser + AST → OpArray compilation (lexer is a sibling module)
+│   ├── lexer/        # Tokenizer (PHP 7/8 tokens)
 │   ├── vm/
 │   │   ├── opcodes.rs
 │   │   ├── dispatch_handlers.rs  # Opcode handlers + include path resolution
@@ -21,9 +22,13 @@ src/
 │   │   └── callable.rs           # invoke_user_function + call_user_func helpers
 │   ├── jit.rs
 │   ├── function_optimizer.rs
+│   ├── opt.rs              # Post-compile passes: constant folding + DCE
 │   ├── opcode_cache.rs
+│   ├── operators.rs        # PHP operator semantics
+│   ├── hash.rs             # Hash tables (DJBX33A lives in string.rs)
+│   ├── alloc.rs / gc.rs / string.rs / string_intern.rs
 │   └── benchmark.rs              # phprs-only benchmark export
-└── php/              # Runtime (regex, pdo stub, streams, filesystem, …)
+└── php/              # Runtime (25 modules: regex, pdo, sqlite, streams, filesystem, …)
 ```
 
 ## Execution flow
@@ -32,6 +37,7 @@ src/
 PHP source
     → Lexer
     → Compiler (OpArray + optional FunctionTable)
+    → opt::optimize_script (constant folding + dead code elimination)
     → execute_ex (VM)
     → stdout / return value
 ```
@@ -60,7 +66,7 @@ Magic constants `__FILE__` and `__DIR__` are set per script in `execute.rs` from
 
 ## Virtual machine
 
-- **77 opcodes** (arithmetic, control flow, calls, OOP, includes, exceptions, …)
+- **77 opcodes** (arithmetic, control flow, calls, OOP, includes, exceptions, …). 76 have dispatch handlers; `AssignOp` (28) is a reserved slot with no handler and is never emitted.
 - **Direct dispatch table** in `dispatch_handlers.rs`
 - **Built-ins** delegated from `builtins.rs` to `src/php/*` modules
 - **Cross-frame exception propagation**: every call site that runs a callee op-array restores caller state, then `propagate_after_call` (`src/engine/vm/exception_dispatch.rs`) re-dispatches the pending exception against the caller's try regions. `try_stack` entries carry `(TryCatchBegin idx, op_array filename)` so `dispatch_exception` only considers catches in the current op_array.
@@ -72,7 +78,7 @@ Authoritative builtin coverage: `src/engine/vm/builtin_capability_tests.rs`.
 ```bash
 phprs run file.php
 phprs serve [--port N]
-phprs pkg init | install | require | build
+phprs pkg init | install | update | build | run | publish
 ```
 
 ## Framework demos (`examples/`)
@@ -94,8 +100,12 @@ All **root** `examples/*.php` files: `examples_root_php_scripts_all_run`.
 | `tests/build_rust_examples.rs` | Rust `examples/rust/` compile |
 | `tests/php_examples.rs` | PHP compile smoke |
 | `tests/exception_propagation.rs` | Cross-frame try/catch dispatch (18 cases) |
-| `tests/string_interpolation.rs` | `"$arr[key]"` / `"{$expr}"` interpolation |
-| `tests/php8x_features.rs` | PHP 8.x surface (`final const`, `__unset` etc.) |
+| `tests/string_interpolation.rs` | `"$arr[key]"` / `"{$expr}"` interpolation (16 cases) |
+| `tests/php8x_features.rs` | PHP 8.x surface (`final const`, `__unset` etc., 93 cases) |
+| `tests/call_arg_expressions.rs` | Full precedence in call/ctor/array arguments (4 cases) |
+| `tests/loop_control.rs` | `break`/`continue` with explicit levels (16 cases) |
+| `tests/switch_statement.rs` | `switch` + `do-while` semantics (15 cases) |
+| `tests/opt_passes.rs` | Constant folding + DCE regression (11 cases) |
 
 ## Performance notes
 

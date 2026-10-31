@@ -6,7 +6,7 @@ This document describes **optimization techniques used in phprs** and **how to m
 
 - **Do not** treat language-level or design arguments as proof that phprs beats stock PHP. Those are *hypotheses* until measured.
 - **Do** report numbers only when you can point to: PHP and phprs versions, exact commands or scripts, hardware/OS, iteration counts, and (for memory) how usage was measured.
-- The in-tree benchmark suite reports **phprs-only** throughput in `benchmark_results.json` (no bundled stock-PHP baseline).
+- The in-tree benchmark suite reports **phprs-only** throughput and writes it to `benchmark_results.json` at runtime (the file is generated, not checked in; no bundled stock-PHP baseline).
 
 ## What phprs implements (implementation facts)
 
@@ -20,9 +20,10 @@ These are features that exist in the codebase; they are **not** automatic proof 
 
 ### JIT, opcode cache, and function optimizer
 
-- **JIT**: Hot-function detection (e.g. threshold around 100 invocations), limited native-style compilation paths for small/hot regions.
-- **Opcode cache**: LRU-style caching with basic vs more aggressive optimization passes (constant folding, DCE, etc., as implemented).
-- **Function optimizer**: Call-frequency tracking, complexity heuristics, selective inlining.
+- **JIT**: Hot-function detection (e.g. threshold around 100 invocations), limited native-style compilation paths for small/hot regions. ⚠️ **Scaffolding only** — not wired into the compile or VM execution path; reachable today from `src/engine/benchmark.rs`.
+- **Post-compile optimization passes** (`src/engine/opt.rs`): constant folding (pure ops over literal operands, reusing the real dispatch handlers on a scratch `ExecuteData`) and dead code elimination (reachability + `extended_value` target renumbering). Applied once per compilation inside `compile_string_with_functions`. Behavioral parity is enforced by the full test suite plus `tests/opt_passes.rs`.
+- **Opcode cache** (`src/engine/opcode_cache.rs`): LRU-style caching; its `OptimizationHints` metadata is advisory only — the real op-stream transformation lives in `opt.rs`. The cache is **not** wired into the compile or VM execution path.
+- **Function optimizer**: Call-frequency tracking, complexity heuristics, selective inlining. ⚠️ **Scaffolding only** — not wired into the compile or VM execution path.
 
 ### Memory and strings
 

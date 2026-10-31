@@ -4,7 +4,7 @@
 **Audited against:** `SPEC.md`, `ARCHITECTURE.md`, `README.md`, `TODO.md`, `AGENTS.md`, plus automated checks (`cargo build`, `cargo test --workspace`, `cargo clippy --workspace --all-targets`, `cargo fmt -- --check`).  
 **Date:** 2026-07-25  
 **Commit:** `5ede6a3` on `main` (with two uncommitted worktree changes).  
-**Note:** Counts and statuses below are as of the audit date; see `TODO.md` and `README.md` for current numbers.
+**Note:** Counts and statuses below are as of the audit date; see `TODO.md` and `README.md` for current numbers. See the **2026-10-31 documentation audit** addendum at the end of this file for which findings remain open.
 
 > **Update after fixes:** The critical/high issues below have been addressed. `cargo build --workspace`, `cargo test --workspace`, and `cargo fmt -- --check` now pass; `cargo clippy --workspace --all-targets` reports no errors and ~50 style warnings (down from ~210).
 
@@ -25,7 +25,7 @@ The project is now in a **green build/test/format state**. All workspace tests p
 **Most critical issues (now fixed):**
 1. The failing `function_result_array_access` test has been fixed by applying access-chain parsing after function-call and parenthesized expressions in `src/engine/compile/expression/operators.rs`.
 2. The dead duplicate `src/engine/vm/handlers.rs` module has been removed.
-3. `TODO.md` and `ARCHITECTURE.md` now correctly reflect implemented exception handling and 73 opcodes.
+3. `TODO.md` and `ARCHITECTURE.md` now correctly reflect implemented exception handling and the opcode count (then 73; **now 77**).
 
 **Overall quality score:** 8/10 — strong test coverage and now clean CI basics; remaining work is to drive down clippy style warnings and resolve the medium/low design notes below.
 
@@ -387,9 +387,69 @@ All eight previously no-op opcodes now have dispatch handlers:
 ### Updated metrics
 | Metric | Value |
 |--------|-------|
-| `cargo test --workspace` | ✅ 628 passed, 0 failed, 1 `#[ignore]` |
+| `cargo test --workspace` | ✅ 628 passed, 0 failed, 1 `#[ignore]` (see the 2026-10-31 addendum for the current count) |
 | `cargo clippy --workspace --all-targets` | ✅ 0 warnings |
 | Opcode count | 77 |
 | Built-in function count | 279+ |
-| Test count | 628+ |
+| Test count | 628+ (see the 2026-10-31 addendum for the current count) |
 | New dependencies | `rusqlite` (bundled) |
+
+---
+
+## Addendum: Documentation Audit (2026-10-31)
+
+**Scope:** All 20 markdown files in the repository (`README.md`, `SPEC.md`, `ARCHITECTURE.md`, `TODO.md`, `PERFORMANCE.md`, `QUICKSTART.md`, `MEMORY.md`, `AGENTS.md`, `tests/README.md`, `examples/*.md`).
+**Method:** Every countable/verifiable claim was re-measured against the source, and runtime-behaviour claims were executed through `phprs run`. No source behaviour was changed except the CLI version field (finding #19), which is noted below.
+**Baseline:** `cargo test --workspace` → **688 passed, 0 failed, 1 ignored**; `cargo clippy --workspace` → 0 warnings.
+
+### Metrics corrected
+
+| Metric | Previously stated | Actual |
+|--------|-------------------|--------|
+| Workspace tests | 628+ / 610+ / 680+ (684) | **688** passing, 1 ignored |
+| Library unit tests | 380 | **393** |
+| `src/php/` runtime modules | 21 | **25** |
+| Root `examples/*.php` | 24 | **26** |
+| Opcodes | 76 / 77 | **77** (76 wired — `AssignOp` is a reserved, never-emitted slot) |
+| Built-in functions | 195+ / 210+ | **279** (allowlist in `builtins.rs`) |
+
+### False claims corrected
+
+| Claim | Reality |
+|-------|---------|
+| "All 77 opcodes now have dispatch handlers" | `AssignOp` (28) has no handler and is never emitted |
+| "PDO is a stub / no real database drivers" | SQLite is a **real** driver (`src/php/sqlite.rs`, bundled `rusqlite`); MySQL/PostgreSQL DSNs parse-only |
+| "FTP stream wrapper (stub)" | No FTP code exists anywhere in the tree |
+| "Custom stream contexts (basic)" | `stream_context_create()` does not exist |
+| `set_error_handler` / `set_exception_handler` / `register_shutdown_function` | Callbacks are **recorded but never invoked** |
+| "`finally` blocks only run on the normal path" (MEMORY.md) | `finally` runs during unwinding too (`tests/exception_propagation.rs`, 18 cases) |
+| "`var_dump(1 < 2)` is a compile error" (MEMORY.md) | Fixed — call args parse through ternary (`tests/call_arg_expressions.rs`) |
+| "New in initializers (PHP 8.1)" | Constructor is **not invoked** in property/param defaults |
+| `phprs pkg require <pkg>` | Subcommand does not exist (`init`/`install`/`update`/`build`/`run`/`publish`) |
+| "`phprs serve` runs PHP pages locally" | It is a JSON playground/API; `.php` files are **not** served from disk |
+| "`file_put_contents`, `basename`" | **Undefined functions** at runtime (helpers exist but are only bound to `SplFileObject::fwrite` / `SplFileInfo::getFilename`) |
+| "`str_pad`" | Registered but **not implemented** (returns `null`) |
+| "HTTP streams: timeout protection, size limits on responses" | `src/php/http_stream.rs` has **no** timeout, URL allowlist, or size cap |
+| "`bindParam`/`bindValue`" | **No-ops** — named parameters return zero rows; use positional `execute([...])` |
+| "Attributes (PHP 8.0)" | Parse-and-discard — no storage or reflection |
+| "Readonly properties" | Parsed but **not enforced** at runtime |
+| "CodeIgniter routing / controllers", "Drupal DrupalKernel / module system" | All **implemented** in `examples/` — checkboxes were stale |
+
+### Partial-feature claims now qualified in place
+
+`filter_var` needs integer filter ids (the `FILTER_*` constants are undefined); `array_walk` cannot mutate by reference; `match` rejects comma-separated conditions; enums are class constants (no `->name`/`->value`); `class C implements I {}` fails to compile; `foreach` over a `PDOStatement` yields nothing; `ob_start` callbacks only resolve builtins; `spl_autoload_register` never fires; the JIT, function optimizer and opcode cache are **not wired** into the compile or VM path; `string_intern.rs` is unreferenced by the engine.
+
+### Code change made during this audit
+
+- `bin/phprs/Cargo.toml`: `version = "0.1.0"` → `"0.1.19"`, so `phprs --version` no longer reports a stale version (AUDIT finding #19).
+
+### Still-open findings from the 2026-07-25 audit
+
+| # | Finding | Status |
+|---|---------|--------|
+| 4 | `cargo fmt -- --check` drift | **Still open** — ~350 hunks across ~24 files, including committed ones |
+| 9 | `unsafe impl Send/Sync` at `types.rs:181-182`, `432-433` | **Still open** |
+| 11 | `random_int` bias via `i64::from_ne_bytes(...).abs() % range` | **Still open** (`hash.rs:~526`) |
+| 13 | `file_get_contents` HTTP: no allowlist/timeout/size limit | **Still open** (`src/php/http_stream.rs`) |
+| 18 | README WordPress status wording | **Partially open** — status symbol is now consistent; the demo/partial framing remains |
+| 19 | CLI version | **Fixed** in this addendum |

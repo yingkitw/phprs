@@ -9,16 +9,22 @@ This directory contains integration and workspace-level tests for phprs. Unit te
 | `array_key_normalization.rs` | Numeric-string array key normalization (PHP `"1"` ↔ `1` semantics) |
 | `bitwise_operators.rs` | Bitwise operator compilation and execution |
 | `build_rust_examples.rs` | `cargo build --examples` for all `examples/rust/*.rs` |
+| `call_arg_expressions.rs` | Full expression precedence in call / constructor / array / match arguments |
 | `compound_assignment.rs` | Compound assignment operators (`+=`, `.=`, `??=`, etc.) |
 | `comprehensive_tests.rs` | Lexer, stream, and factory integration tests |
 | `edge_cases.rs` | Boundary and stress cases |
 | `error_handling.rs` | Error handlers and reporting |
 | `example_verification.rs` | Rust `examples/rust/` smoke tests |
 | `examples_runtime.rs` | End-to-end: compile + VM + stdout for **every root** `examples/*.php` (`examples_root_php_scripts_all_run`) plus curated framework entrypoints (WordPress, CodeIgniter, Drupal) |
+| `exception_propagation.rs` | Cross-frame try/catch/finally dispatch (18 cases) |
 | `integer_arithmetic.rs` | Integer arithmetic edge cases (overflow, division, modulo) |
 | `integration_tests.rs` | Cross-module integration |
+| `loop_control.rs` | `break` / `continue` with explicit levels |
+| `opt_passes.rs` | Constant folding + dead code elimination regression |
 | `php8x_features.rs` | PHP 8.x language feature tests (match, enums, readonly, etc.) |
 | `php_examples.rs` | Compile checks and existence tests for tutorial PHP files |
+| `string_interpolation.rs` | `"$arr[key]"` / `"{$expr}"` interpolation |
+| `switch_statement.rs` | `switch` + `do-while` semantics |
 | `fixtures/` | Shared fixtures used by integration tests |
 
 See also [../ARCHITECTURE.md](../ARCHITECTURE.md) for testing patterns and known gaps.
@@ -27,7 +33,8 @@ See also [../ARCHITECTURE.md](../ARCHITECTURE.md) for testing patterns and known
 
 - `src/engine/vm/builtin_capability_tests.rs` — broad `execute_builtin_function` coverage (regex, hash, math, PDO-shaped stubs, output, etc.)
 - `src/engine/vm/tests.rs` — compile/execute paths for language features
-- `src/php/*/tests.rs` — runtime module tests (regex, PDO, streams, filesystem, …)
+- `src/engine/opt.rs` — white-box structural assertions for the post-compile optimizer passes
+- `src/php/*/tests.rs` — runtime module tests (filesystem, globals, ini, output, runtime, sapi, session, streams, variables)
 
 ## Running tests
 

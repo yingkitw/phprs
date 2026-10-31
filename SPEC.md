@@ -33,19 +33,24 @@ phprs is a **PHP interpreter implemented in Rust**. It aims to execute PHP code 
 - **Compiler**: … legacy `array()` constructor (`array()`, `array('k' => v)`, indexed elements) plus short `[]` literals
 - **VM**: Opcode dispatch table, built-in functions (see `src/engine/vm/builtins.rs` and `builtin_capability_tests.rs`), exceptions, includes, static members, magic-method fallbacks.
 - **Runtime**: INI, variables, streams, SAPI (CLI), output buffering, filesystem helpers, extension framework.
-- **Standard library (partial)**: Math, hash, datetime, mbstring subset, URL helpers, regex (`preg_*` via Rust `regex`), HTTP `file_get_contents`, PDO **stub**, JSON, introspection helpers.
+- **Standard library (partial)**: Math, hash, datetime, mbstring subset, URL helpers, regex (`preg_*` via Rust `regex`), HTTP `file_get_contents`, PDO (real SQLite driver; other DSNs parse-only), JSON, introspection helpers.
 - **Tooling**: CLI (`run`, `serve`, `pkg`), Composer-style package manager (partial).
 - **Performance scaffolding**: JIT hooks, function optimizer, opcode cache, phprs-only benchmark export (no bundled PHP baseline).
 - **Framework demos**: Minimal trees under `examples/` for WordPress-shaped, CodeIgniter 4, and Drupal bootstraps (not full framework parity).
-- **Tests**: 628+ workspace tests including `examples_runtime` (all root `examples/*.php`), `build_rust_examples`, and broad builtin capability tests.
+- **Tests**: 688 workspace tests passing (1 ignored) including `examples_runtime` (all root `examples/*.php`), `build_rust_examples`, and broad builtin capability tests.
 
 ### Explicitly Limited or Not Implemented
 
 - **PHP session extension (partial)** — only the core builtins (`session_start`, `session_destroy`, `session_id`, `session_name`) with JSON file backing (cookie support in `phprs serve`); no `session_set_save_handler`, `session_status`, `session_regenerate_id`, etc.
 - **User-defined function calls from CLI** — same-file top-level functions work (see `examples/functions.php`, covered by the examples matrix); exotic definition/call orders may still differ from Zend
 - **Full PCRE** — Rust `regex` + `fancy-regex` for look-around; backreferences and other advanced PCRE features may still need rewriting
-- **Real PDO drivers** — in-memory/stub behavior only
+- **Real PDO drivers** — SQLite is backed by `rusqlite` (bundled) and is real; MySQL/PostgreSQL DSNs parse but do not connect, and `bindParam`/`bindValue` are accepted but currently no-ops (use positional `execute([...])` placeholders)
+- **PDOStatement iteration** — `foreach` over a `PDOStatement` yields nothing; use `fetchAll()`
 - **Production WordPress / Laravel / Symfony** — demo stubs only
+- **`implements` clause** — `class C implements I {}` is not yet parsed and fails to compile
+- **Enum objects** — enum cases are stored as class constants; `->name` / `->value` are not available
+- **Committed error/exception/shutdown handlers** — `set_error_handler()`, `set_exception_handler()` and `register_shutdown_function()` record their callbacks but never invoke them
+- **Custom stream contexts / FTP wrapper** — `stream_context_create()` and an FTP stream wrapper are not implemented
 
 ### Rust-Specific Features
 

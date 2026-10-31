@@ -4,15 +4,15 @@ Overview of how examples and tests relate in phprs.
 
 ## Workspace tests
 
-Roughly **628+** tests across:
+Roughly **688** tests across:
 
-- **380** library unit tests (`cargo test --lib`)
-- Integration crates: `array_key_normalization` (5), `bitwise_operators` (11), `build_rust_examples` (1), `compound_assignment` (10), `comprehensive_tests` (25), `edge_cases` (13), `error_handling` (4), `example_verification` (7), `examples_runtime` (15), `exception_propagation` (18), `integer_arithmetic` (3), `integration_tests` (4), `php8x_features` (93), `php_examples` (16), `string_interpolation` (16)
+- **393** library unit tests (`cargo test --lib`)
+- Integration crates: `array_key_normalization` (5), `bitwise_operators` (11), `build_rust_examples` (1), `call_arg_expressions` (4), `compound_assignment` (10), `comprehensive_tests` (25), `edge_cases` (13), `error_handling` (4), `example_verification` (7), `examples_runtime` (15), `exception_propagation` (18), `integer_arithmetic` (3), `integration_tests` (4), `loop_control` (16), `opt_passes` (11), `php8x_features` (93), `php_examples` (16), `string_interpolation` (16), `switch_statement` (15)
 - CLI crate unit tests (`bin/phprs`): 8 (1 ignored — network-dependent packagist metadata test)
 
 ## Example entrypoints
 
-### Root PHP (`examples/*.php`) — 24 files
+### Root PHP (`examples/*.php`) — 26 files
 
 **Enforced by** `examples_root_php_scripts_all_run` in `tests/examples_runtime.rs`:
 
@@ -40,7 +40,7 @@ Roughly **628+** tests across:
 | `regex-examples.php` | `preg_*` | look-around via fancy-regex |
 | `http-stream-examples.php` | HTTP streams | `reqwest` + blocking wrapper |
 | `session-examples.php` | Session API | `session_start()` builtin + `$_SESSION` |
-| `pdo-examples.php` | PDO API shape | In-memory stub |
+| `pdo-examples.php` | PDO API shape | Real SQLite driver; other DSNs parse-only |
 | `integration-test.php` | Combined smoke | Runnable under phprs |
 | `test-streams-regex-pdo.php` | Checklist | Runnable under phprs |
 
@@ -51,7 +51,7 @@ Roughly **628+** tests across:
 ## What “100%” does not mean here
 
 - Sessions are implemented as engine builtins (`session_start`, `session_destroy`, `session_id`, `session_name`) with JSON file storage; not the full Zend session extension (no `session_set_save_handler`, custom save handlers, etc.).
-- PDO is **not** a real database driver.
+- PDO's **SQLite** driver is real (bundled `rusqlite`); MySQL/PostgreSQL DSNs parse but do not connect, and `bindParam`/`bindValue` are no-ops — use positional `execute([...])` placeholders.
 - Regex is **not** full PCRE.
 - WordPress demo is **not** production WordPress.
 

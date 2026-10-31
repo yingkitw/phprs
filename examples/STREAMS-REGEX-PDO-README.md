@@ -107,9 +107,9 @@ Database abstraction layer providing a consistent interface for database access.
 
 #### Supported Drivers
 
-- **MySQL** - `mysql:host=localhost;dbname=test`
-- **PostgreSQL** - `pgsql:host=localhost;dbname=test`
-- **SQLite** - `sqlite:/path/to/database.db`
+- **SQLite** - `sqlite:/path/to/database.db` or `sqlite::memory:` — **real** driver (bundled `rusqlite`)
+- **MySQL** - `mysql:host=localhost;dbname=test` — DSN parses, **does not connect**
+- **PostgreSQL** - `pgsql:host=localhost;dbname=test` — DSN parses, **does not connect**
 
 #### PDO Class Methods
 
@@ -241,11 +241,12 @@ The checklist script and examples validate:
 ### PDO
 
 - **Architecture**: Database-agnostic abstraction layer
-- **Drivers**: Stub implementations for MySQL, PostgreSQL, SQLite
-- **Prepared Statements**: Parameter binding with named parameters (e.g. `:id`)
-- **Transactions**: ACID transaction support (stub)
+- **Drivers**: **SQLite is real** (`src/php/sqlite.rs`, bundled `rusqlite`); MySQL/PostgreSQL are parse-only
+- **Prepared Statements**: Positional parameters via `execute([...])`. ⚠️ `bindParam`/`bindValue` are accepted but are **no-ops** — named parameters (`:id`) return no rows.
+- **Transactions**: ACID transaction support (SQLite only)
 - **Error Handling**: SQLSTATE error codes
 - **Fetch Modes**: Associative, numeric, both, object
+- **PDOStatement iteration**: `foreach` over a statement yields nothing — use `fetchAll()`
 
 ## Architecture
 
@@ -254,6 +255,7 @@ src/php/
 ├── regex.rs          - Regular expression engine
 ├── http_stream.rs    - HTTP/HTTPS stream wrapper
 ├── pdo.rs           - PDO database abstraction
+├── sqlite.rs        - Real SQLite PDO driver (bundled rusqlite)
 └── (existing files)
 
 src/engine/vm/
@@ -288,7 +290,7 @@ src/engine/vm/
 1. **Regex**: Look-around supported via `fancy-regex`; not full PCRE (no backreferences)
 2. **HTTP**: Primarily GET via `file_get_contents()` for remote URLs
 3. **Sessions**: Core builtins only — no `session_set_save_handler`, `session_status`, or `session_regenerate_id`
-4. **PDO**: Stub implementation, no real database connections
+4. **PDO**: SQLite is a real driver; MySQL/PostgreSQL DSNs parse but do not connect, and `bindParam`/`bindValue` are no-ops
 5. **Interpolation**: `"$var"`, `"$arr[key]"`, `"$obj->prop"`, and `"{$expr}"` work; an escaped `\$` inside `"..."` still interpolates, and single-quoted strings interpolate too (the lexer does not track quote type)
 
 ### Future Enhancements
@@ -296,8 +298,9 @@ src/engine/vm/
 - [ ] Full PCRE compatibility with all features
 - [ ] POST/PUT/DELETE HTTP methods
 - [ ] Stream contexts for custom headers
-- [ ] Real FTP stream wrapper implementation (a stub exists)
-- [ ] Real MySQL/PostgreSQL/SQLite drivers
+- [ ] Real FTP stream wrapper implementation
+- [ ] Real MySQL/PostgreSQL drivers
+- [ ] Named-parameter binding (`bindParam`/`bindValue` currently no-ops)
 - [ ] Connection pooling for PDO
 - [ ] Distributed session storage (Redis, Memcached)
 - [ ] Session garbage collection
@@ -330,9 +333,8 @@ All functions follow PHP error semantics:
 - Safe capture group handling
 
 ### HTTP Streams
-- HTTPS certificate validation
-- Timeout protection
-- Size limits on responses
+- HTTPS certificate validation (via `reqwest`)
+- ⚠️ **No timeout, URL allowlist, or response size cap** in `src/php/http_stream.rs` (the 10s timeout in `src/php/url.rs` applies only to `get_headers()`)
 
 ### Sessions
 - Secure session ID generation

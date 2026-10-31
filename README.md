@@ -1,13 +1,13 @@
 # phprs — PHP Interpreter, Compiler, Runtime VM & Package Manager in Rust
 
-**phprs** is an open-source **PHP interpreter, compiler, runtime VM, package manager and development server written in Rust**. It runs PHP scripts directly, compiles PHP source to an internal opcode format, and ships with tooling for CLI execution, local web serving and Composer-compatible package management — all backed by memory-safe Rust host code.
+**phprs** is an open-source **PHP interpreter, compiler, runtime VM, package manager and development playground written in Rust**. It runs PHP scripts directly, compiles PHP source to an internal opcode format, and ships with tooling for CLI execution, local PHP-snippet serving and Composer-compatible package management — all backed by memory-safe Rust host code.
 
-Use phprs to run PHP CLI scripts, serve PHP pages locally, or experiment with running PHP frameworks such as **WordPress, CodeIgniter, Laravel, Drupal and Symfony** on a Rust-based runtime.
+Use phprs to run PHP CLI scripts, try PHP snippets in a local playground, or experiment with running PHP frameworks such as **WordPress, CodeIgniter, Laravel, Drupal and Symfony** on a Rust-based runtime.
 
 [![Rust](https://img.shields.io/badge/rust-2024-orange.svg)](https://www.rust-lang.org/)
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
 [![Build Status](https://img.shields.io/badge/build-passing-brightgreen.svg)]()
-[![Tests](https://img.shields.io/badge/tests-628%2B%20passing-brightgreen.svg)]()
+[![Tests](https://img.shields.io/badge/tests-688%20passing-brightgreen.svg)]()
 
 ---
 
@@ -39,7 +39,7 @@ phprs is a from-scratch **PHP runtime written in Rust**. It includes:
 - **Virtual Machine (VM)** — executes opcodes via a direct dispatch table with 77 opcodes.
 - **Built-in PHP functions** — 279+ standard library functions covering math, strings, arrays, files, streams, sessions, regex, hashing and more.
 - **Package manager** — Composer-compatible install/update workflows powered by `semver`.
-- **Development server** — `phprs serve` runs PHP pages locally.
+- **Development playground** — `phprs serve` exposes a JSON playground/API for running PHP snippets locally (it does **not** serve `.php` files from disk).
 - **Rust library API** — embed a PHP runtime in your Rust application or call PHP builtins from Rust code.
 
 The project is primarily a research and engineering playground: it proves PHP semantics can be hosted safely in Rust while remaining useful for real scripts, demos and framework bootstraps.
@@ -48,14 +48,14 @@ The project is primarily a research and engineering playground: it proves PHP se
 
 - 🛡️ **Memory-safe PHP runtime** — host code in Rust eliminates whole classes of C/C++ interpreter bugs.
 - ⚡ **Opcode VM with JIT hooks** — direct dispatch plus optimization and tracing infrastructure.
-- 🧩 **Standard PHP library** — `echo`, `array`, `function`, `class`, `try`/`catch`, `foreach`, closures, null coalescing, match expressions and more.
+- 🧩 **Standard PHP library** — `echo`, `array`, `function`, `class`, `try`/`catch`, `foreach`, closures, null coalescing, match expressions and more. (⚠️ `match` supports single-condition arms; comma-separated conditions like `1, 2 => …` are not yet parsed.)
 - 🗄️ **SQLite PDO driver** — real database access via `rusqlite` with bundled SQLite (`new PDO("sqlite::memory:")`).
 - 📄 **SimpleXML** — `simplexml_load_string`, `simplexml_load_file`, `SimpleXMLElement` class with attribute/text/child access.
 - 🔗 **cURL & OpenSSL** — `curl_init`/`curl_exec`/`curl_setopt`, `openssl_digest`/`openssl_get_md_methods`/`openssl_random_pseudo_bytes`.
-- 🔤 **ctype & filter** — `ctype_alnum`/`ctype_alpha`/`ctype_digit`/…, `filter_var` with `FILTER_VALIDATE_*` and `FILTER_SANITIZE_*`.
-- 🌐 **Web server for PHP** — `phprs serve` for local development.
+- 🔤 **ctype & filter** — `ctype_alnum`/`ctype_alpha`/`ctype_digit`/…, `filter_var` with integer filter ids (`FILTER_VALIDATE_*` / `FILTER_SANITIZE_*` constants are **not** defined; pass the numeric id).
+- 🌐 **Development playground** — `phprs serve` for local PHP snippets over a JSON API.
 - 📦 **PHP package manager** — install packages from Packagist / private Composer repositories.
-- 🧪 **Extensive test suite** — 628+ workspace tests pass (`cargo test --workspace`); root PHP examples + framework entrypoints covered; `tests/exception_propagation.rs`, `tests/string_interpolation.rs`, and `tests/php8x_features.rs` document the recent surfaces (cross-frame try/catch, complex `"{$expr}"` / `"$arr[key]"`, final class constants, `__unset`, Fibers, SPL classes, Generators).
+- 🧪 **Extensive test suite** — 688 workspace tests pass (`cargo test --workspace`); root PHP examples + framework entrypoints covered; `tests/exception_propagation.rs`, `tests/string_interpolation.rs`, and `tests/php8x_features.rs` document the recent surfaces (cross-frame try/catch, complex `"{$expr}"` / `"$arr[key]"`, final class constants, `__unset`, Fibers, SPL classes, Generators).
 - 🔌 **Embeddable library** — use `phprs` as a crate in Rust projects.
 
 ## Why phprs? The Rust Advantage
@@ -65,7 +65,7 @@ PHP powers much of the web; many production runtimes are implemented in C and C+
 - **Safer by construction (Rust)**: Memory errors that plague C/C++ code are largely ruled out in safe Rust; the interpreter still has correctness and parity work ahead.
 - **A performance-minded design**: Opcode dispatch, JIT hooks, and LLVM for the host binary — without promising a given speedup over Zend until we publish reproducible benchmarks.
 - **Concurrency-friendly host code**: Rust’s type system helps avoid data races in the engine itself; PHP’s shared mutable runtime model is still evolving in phprs.
-- **Test-backed**: 628+ workspace tests; every root `examples/*.php` runs in `tests/examples_runtime.rs`; framework demos (WordPress, CodeIgniter, Drupal) have entrypoint tests; Rust demos compile via `build_rust_examples`.
+- **Test-backed**: 688 workspace tests; every root `examples/*.php` runs in `tests/examples_runtime.rs`; framework demos (WordPress, CodeIgniter, Drupal) have entrypoint tests; Rust demos compile via `build_rust_examples`.
 
 **phprs** brings PHP into the future by:
 
@@ -119,7 +119,7 @@ Progressive compatibility with popular PHP frameworks and CMSs (stubs and demos 
 - **PDO / JSON / regex / HTTP**: implemented or stubbed to varying degrees — see `builtin_capability_tests.rs` and tests for what is real today
 - **Sessions**: `session_start`, `session_destroy`, `session_id`, `session_name` — JSON file storage; `phprs serve` sends `PHPSESSID` cookie
 - **Package manager**: Composer-oriented workflows with `semver` for version parsing
-- **Dev server**: `phprs serve` for local tries
+- **Dev playground**: `phprs serve` for local PHP snippets
 
 There is a **huge ecosystem** of maintained Rust libraries; phprs only uses a small slice.
 
@@ -159,15 +159,19 @@ phprs run script.php
 cargo run -p phprs-cli -- run script.php
 ```
 
-### Start the PHP dev server
+### Start the PHP dev playground
 
 ```bash
-# Built-in web server on port 3080
+# Built-in playground server on port 3080
 phprs serve
 
 # Custom port
 phprs serve --port 8080
 ```
+
+The server exposes an HTML playground plus a small JSON API (`GET /api/health`,
+`GET /api/examples`, `POST /api/execute`). It is **not** a `php -S` work-alike —
+it does not serve `.php` files from disk.
 
 ### Package management
 
@@ -178,8 +182,8 @@ phprs pkg init
 # Install dependencies
 phprs pkg install
 
-# Add a package
-phprs pkg require vendor/package
+# Update dependencies to their latest versions
+phprs pkg update
 ```
 
 ### Running code written for PHP
@@ -250,13 +254,15 @@ $html = file_get_contents('https://example.com');
 ### Database with PDO
 ```php
 <?php
-// Connect to database
-$pdo = new PDO('mysql:host=localhost;dbname=myapp', 'user', 'pass');
+// SQLite is the one real driver (bundled via rusqlite).
+// Other DSNs (mysql:, pgsql:) parse but do not connect.
+$pdo = new PDO('sqlite::memory:');
 
-// Prepared statements (SQL injection safe)
-$stmt = $pdo->prepare('SELECT * FROM users WHERE email = :email');
-$stmt->bindParam(':email', $email);
-$stmt->execute();
+// Prepared statements — use positional placeholders.
+// NOTE: bindParam()/bindValue() are accepted but currently no-ops,
+// so named parameters return no rows.
+$stmt = $pdo->prepare('SELECT * FROM users WHERE email = ?');
+$stmt->execute([$email]);
 
 $user = $stmt->fetch();
 ```
@@ -264,7 +270,7 @@ $user = $stmt->fetch();
 ### Session state
 ```php
 <?php
-// session_start() is a builtin (src/php/session/); storage is JSON files
+// session_start() is a builtin (src/php/session.rs); storage is JSON files
 session_start();
 $_SESSION['user_id'] = 123;
 $_SESSION['username'] = 'john_doe';
@@ -290,7 +296,7 @@ See `examples/integration-test.php` for a short runnable script that exercises P
 - `examples/strings_and_serialize.php` - String helpers, printf precision, base conversion, fuzzy comparison, and `serialize`/`unserialize`
 - `examples/control_flow.php` - if/switch, **for**, **while**, **foreach** (see `tests/examples_runtime.rs`)
 - `examples/mbstring.php` - Multibyte string helpers (`mb_*` subset)
-- `examples/match_expression.php` - `match` expressions
+- `examples/match_expression.php` - `match` expressions (single-condition arms)
 - `examples/regex-examples.php` - Regex patterns
 - `examples/http-stream-examples.php` - HTTP streams
 - `examples/session-examples.php` - `session_start()` + `$_SESSION` patterns
@@ -311,7 +317,7 @@ phprs/
 │   │   ├── vm/          # Virtual machine, opcodes, execution
 │   │   ├── jit.rs       # JIT compiler
 │   │   └── operators.rs # PHP operators implementation
-│   └── php/             # PHP runtime & standard library (21 modules)
+│   └── php/             # PHP runtime & standard library (25 modules)
 │       ├── regex.rs     # preg_* via Rust regex
 │       ├── http_stream.rs # HTTP/HTTPS streams
 │       ├── pdo.rs       # Database abstraction
@@ -380,20 +386,20 @@ cargo run -p phprs-cli -- run examples/wordpress/index.php
 ### ✅ Core PHP Engine
 - **Types**: PHP type system (int, float, string, array, object, null, bool) — growing toward full parity
 - **Operators**: Core arithmetic, logical, comparison, and string operators (see `examples/operators.php`)
-- **Control Flow**: if/else, switch, `match`, **for**, **foreach** (value-only), **while**; legacy **`array()`** and short **`[]`** literals
+- **Control Flow**: if/else, switch, `match`, **for**, **foreach** (value and `as $key => $value`), **while**, **do-while**, `break`/`continue` (with explicit levels); legacy **`array()`** and short **`[]`** literals
 - **String Interpolation**: `"$var"`, simple accessors (`"$arr[key]"`, `"$arr[0]"`, `"$obj->prop"`), and complex syntax (`"{$arr['key']}"`, `"{$obj->prop}"`, `"{$obj->method()}"`)
 - **Functions**: User-defined functions, closures, arrow functions, variadic params (`...$args`), named arguments (`func(param: value)`)
-- **Classes**: OOP with inheritance, traits, interfaces, namespaces, static properties/methods (`ClassName::$prop`, `ClassName::method()`)
+- **Classes**: OOP with inheritance, traits, namespaces, static properties/methods (`ClassName::$prop`, `ClassName::method()`). ⚠️ The `implements` clause is **not yet parsed** — `class C implements I {}` currently fails to compile.
 - **Late Static Binding**: `static::` keyword resolved at runtime via `called_class`
 - **Magic Methods**: `__get`, `__set`, `__call`, `__callStatic` fallbacks in VM handlers
 - **Anonymous Classes**: `new class { ... }` with optional extends/implements
-- **Enums**: Pure enums and backed enums (`enum Color: string { case Red = 'red'; }`)
+- **Enums**: Pure enums and backed enums (`enum Color: string { case Red = 'red'; }`). Cases are stored as class constants — there is no enum object, so `->name` / `->value` are not available.
 - **Union / Intersection Types**: `int|string`, `Countable&ArrayAccess` parsing in params and return types
 - **Reflection API**: `ReflectionClass`, `ReflectionMethod`, `ReflectionProperty`, `ReflectionFunction`, `ReflectionParameter` (getName/getParameters/getNumberOfParameters/isBuiltin/hasMethod/hasProperty)
 - **Error Handling**: try/catch/finally, exceptions with cross-function propagation (`throw` in a callee caught by `try` in the caller — see `tests/exception_propagation.rs`)
 
 ### ✅ Standard Library (279+ functions, expanding)
-**String Functions**: `strlen`, `substr`, `str_replace`, `trim`, `strtolower`, `strtoupper`, `ucfirst`, `ucwords`, `lcfirst`, `str_repeat`, `str_pad`, `str_split`, `strrev`, `str_contains`, `str_starts_with`, `str_ends_with`, `strtr`, `str_ireplace`, `nl2br`, `chunk_split`, `addslashes`, `stripslashes`, `quotemeta`, `strip_tags`, `htmlspecialchars`/`htmlspecialchars_decode`, `wordwrap`, `number_format`, `sprintf`/`vsprintf`, `substr_count`, `substr_replace`, `strpbrk`, `substr_compare`, plus a growing **mbstring** subset (`mb_strlen`, `mb_substr`, … — see `src/php/mbstring.rs`, `examples/mbstring.php`)
+**String Functions**: `strlen`, `substr`, `str_replace`, `trim`, `strtolower`, `strtoupper`, `ucfirst`, `ucwords`, `lcfirst`, `str_repeat`, `str_split`, `strrev`, `str_contains`, `str_starts_with`, `str_ends_with`, `strtr`, `str_ireplace`, `nl2br`, `chunk_split`, `addslashes`, `stripslashes`, `quotemeta`, `strip_tags`, `htmlspecialchars`/`htmlspecialchars_decode`, `wordwrap`, `number_format`, `sprintf`/`vsprintf`, `substr_count`, `substr_replace`, `strpbrk`, `substr_compare`, plus a growing **mbstring** subset (`mb_strlen`, `mb_substr`, … — see `src/php/mbstring.rs`, `examples/mbstring.php`). ⚠️ `str_pad` and `str_shuffle` are registered but not yet implemented (they return `null`).
 
 **Callback helpers**: `call_user_func`, `call_user_func_array` (invoke builtins **and** user functions; see `src/engine/vm/callable.rs`)
 
@@ -403,15 +409,15 @@ cargo run -p phprs-cli -- run examples/wordpress/index.php
 
 **URL / query**: `parse_url`, `http_build_query`, and related helpers (`src/php/url.rs`)
 
-**Array Functions**: `array_map`, `array_filter`, `array_reduce`, `array_walk`, `array_merge`, `array_keys`, `array_values`, `array_combine`, `array_flip`, `array_search`, `array_unique`, `array_column`, `array_sum`, `array_product`, `array_chunk`, `array_diff`, `array_intersect`, `array_count_values`, `array_fill`, `array_pad`, `range`, `count`, `in_array`, `array_key_exists`
+**Array Functions**: `array_map`, `array_filter`, `array_reduce`, `array_walk` (⚠️ by-reference mutation is not propagated), `array_merge`, `array_keys`, `array_values`, `array_combine`, `array_flip`, `array_search`, `array_unique`, `array_column`, `array_sum`, `array_product`, `array_chunk`, `array_diff`, `array_intersect`, `array_count_values`, `array_fill`, `array_pad`, `range`, `count`, `in_array`, `array_key_exists`
 
 **Regular Expressions**: `preg_match`, `preg_match_all`, `preg_replace`, `preg_split` (Rust `regex` + `fancy-regex` for look-around; not full PCRE)
 
-**File System**: `file_get_contents`, `file_put_contents`, `file_exists`, `dirname`, `basename`
+**File System**: `file_get_contents`, `file_exists`, `dirname` (⚠️ `file_put_contents` and `basename` are **not** exposed as global functions yet)
 
 **HTTP Streams**: `file_get_contents('http://...')` - Full HTTP/HTTPS support
 
-**Database (PDO)**: `new PDO()`, `query()`, `prepare()`, `execute()`, `fetch()`, `fetchAll()`
+**Database (PDO)**: `new PDO()`, `query()`, `prepare()`, `execute()`, `fetch()`, `fetchAll()`. SQLite is a real driver; other DSNs parse but do not connect. `bindParam`/`bindValue` are accepted but currently no-ops — use positional `execute([...])` placeholders.
 
 **Sessions**: `session_start`, `session_destroy`, `session_id`, `session_name` builtins (JSON file storage; `phprs serve` sends `PHPSESSID` cookie)
 
@@ -428,7 +434,7 @@ cargo run -p phprs-cli -- run examples/wordpress/index.php
 - **Async I/O**: Tokio in the host for HTTP client / server paths where used
 
 ### ✅ Development Tools
-- **Built-in Web Server**: `phprs serve`
+- **Built-in Playground Server**: `phprs serve` (JSON API + HTML playground)
 - **Package Manager**: Composer-compatible
 - **REPL**: Interactive PHP shell (planned)
 - **Debugger**: Step-through debugging (planned)
@@ -525,14 +531,14 @@ cargo run -p phprs-cli -- run examples/test-streams-regex-pdo.php
 cargo run -p phprs-cli -- run examples/wordpress/test-theme-plugin.php
 ```
 
-The workspace passes `cargo build --workspace` and `cargo test --workspace`. Some `cargo clippy` style warnings remain and are being tidied incrementally.
+The workspace passes `cargo build --workspace`, `cargo clippy --workspace` (0 warnings) and `cargo test --workspace` (688 passing, 1 ignored).
 
 ## Documentation
 
 ### Core Documentation
 - **[SPEC.md](SPEC.md)** - Project specification and scope
 - **[ARCHITECTURE.md](ARCHITECTURE.md)** - Module structure and execution flow
-- **[TODO.md](TODO.md)** - Migration roadmap and statistics (195+ built-in functions, 21 PHP runtime modules)
+- **[TODO.md](TODO.md)** - Migration roadmap and statistics (279+ built-in functions, 25 PHP runtime modules)
 - **[PERFORMANCE.md](PERFORMANCE.md)** - Evidence policy and VM optimization notes (not benchmark marketing)
 
 ### Feature Documentation
@@ -560,6 +566,8 @@ The workspace passes `cargo build --workspace` and `cargo test --workspace`. Som
 - Compiled op arrays (per-run bytecode; caching story is incremental)
 - Static properties/methods, late static binding, magic methods, anonymous classes
 - Variadic functions, named arguments, union/intersection types, enums (PHP 8.1)
+- `break`/`continue` with explicit levels, `switch` with fallthrough, `do-while`
+- Post-compile optimizer passes: constant folding + dead code elimination (`src/engine/opt.rs`)
 
 ### 🚧 In Progress (v0.2.x)
 - Laravel framework support
@@ -575,6 +583,7 @@ The workspace passes `cargo build --workspace` and `cargo test --workspace`. Som
 - Distributed caching (Redis, Memcached)
 - Real database drivers (MySQL, PostgreSQL)
 - HTTP/2 and HTTP/3 support
+- `implements` clause parsing, `file_put_contents`/`basename` builtins, `str_pad`/`str_shuffle`
 
 See [TODO.md](TODO.md) for detailed roadmap.
 

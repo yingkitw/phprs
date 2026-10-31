@@ -31,11 +31,11 @@
 - [x] Type declarations (parameter types, return types, nullable)
 - [x] Function return values (`return expr;`)
 - [x] Statement parsing (echo, assign, return, include)
-- [x] Control flow (if/else, while, for, foreach)
+- [x] Control flow (if/else, while, for, foreach; `break`/`continue` with explicit levels — `break 2`, `continue 2` — since 2026-10-14; `switch` with fallthrough/first-match-wins/position-independent `default`, and `do-while`, same date)
 - [x] Function compilation and calls
 - [x] Class compilation (properties, methods, constructors)
 - [x] VM execution (77 opcodes, dispatch table)
-- [x] Built-in functions (210+ functions — see Statistics)
+- [x] Built-in functions (279+ functions — see Statistics)
 - [x] Legacy `array()` constructor syntax (`array()`, `array('k' => v)`, indexed elements)
 - [x] Foreach with key => value (`foreach ($a as $k => $v)`)
 - [x] Chained array dimension assignment (`$a['b']['c'] = $v`)
@@ -68,16 +68,16 @@
 - [x] Comprehensive examples
 
 ### Performance Optimizations
-- [x] JIT compilation system (for hot functions)
-- [x] Function optimizer (inlining, call optimization)
-- [x] Opcode cache with optimization passes
+- [x] JIT compilation system (for hot functions) — ⚠️ **scaffolding only**; not wired into the compile or VM execution path (reachable from `src/engine/benchmark.rs`)
+- [x] Function optimizer (inlining, call optimization) — ⚠️ **scaffolding only**; not wired into the compile or VM execution path
+- [x] Opcode cache with optimization passes — ⚠️ the cache's `OptimizationHints` are advisory; the real op-stream transformation lives in `src/engine/opt.rs`
 - [x] Thread-safe global state using OnceLock and RwLock
 - [x] Fixed mutable static reference issues for Rust 2024 compliance
 
 ### Language Features (Phase 2)
 - [x] Namespaces
 - [x] Traits
-- [x] Attributes (PHP 8.0)
+- [x] Attributes (PHP 8.0) — **parsed and discarded**; no attribute storage or reflection support yet
 - [x] Match expressions (PHP 8.0)
 - [x] Generators (yield → resumable Generator objects with rewind/valid/current/key/next/send/getReturn)
 
@@ -106,11 +106,11 @@
 - [x] Package installation
 
 ### Standard Library
-- [x] Stream wrappers (HTTP, FTP)
+- [x] Stream wrappers (HTTP)
   - [x] HTTP/HTTPS stream wrapper with reqwest
   - [x] file_get_contents() HTTP support
-  - [x] FTP stream wrapper (stub)
-  - [x] Custom stream contexts (basic)
+  - [ ] FTP stream wrapper — **not implemented**
+  - [ ] Custom stream contexts — **not implemented** (`stream_context_create()` does not exist)
 - [x] Regular expressions (preg_match, preg_replace)
   - [x] preg_match() with capture groups
   - [x] preg_match_all() for multiple matches
@@ -143,7 +143,7 @@
 - [x] **cURL functions** (`curl_init`, `curl_setopt`, `curl_exec`, `curl_getinfo`, `curl_close`, `curl_version`, `curl_strerror`)
 - [x] **OpenSSL functions** (`openssl_digest`, `openssl_get_md_methods`, `openssl_cipher_iv_length`, `openssl_error_string`, `openssl_random_pseudo_bytes`, `openssl_encrypt`, `openssl_decrypt`)
 - [x] **ctype functions** (`ctype_alnum`, `ctype_alpha`, `ctype_digit`, `ctype_lower`, `ctype_upper`, `ctype_space`, `ctype_xdigit`, `ctype_punct`, `ctype_print`, `ctype_graph`, `ctype_cntrl`)
-- [x] **filter functions** (`filter_var` with `FILTER_VALIDATE_INT/FLOAT/BOOL/URL/EMAIL/IP/REGEXP`, `FILTER_SANITIZE_STRING/NUMBER_INT/NUMBER_FLOAT/ENCODED`)
+- [x] **filter functions** (`filter_var` with integer filter ids for `VALIDATE_INT/FLOAT/BOOL/URL/EMAIL/IP/REGEXP`, `SANITIZE_STRING/NUMBER_INT/NUMBER_FLOAT/ENCODED`). ⚠️ The `FILTER_*` **constants are not defined** — pass the numeric id, otherwise the bare identifier resolves to its own name as a string. `FILTER_SANITIZE_STRING` does not strip tags.
 - [x] **Additional string/array functions** (`array_key_first`, `array_key_last`, `array_is_list`, `str_word_count`, `strcoll`, `quoted_printable_decode`, `levenshtein`, `similar_text`)
 
 ## Planned 📋
@@ -154,15 +154,15 @@
 - [x] Bootstrap (public/index.php → app/Config/Paths.php → system/bootstrap.php)
 - [x] Config/Paths (SYSTEM_PATH, APP_PATH, WRITEPATH)
 - [x] Constants and Autoload stubs
-- [ ] Routing (future)
-- [ ] Controllers (future)
+- [x] Routing (demo `examples/codeigniter/system/Router.php` + `app/Config/Routes.php`)
+- [x] Controllers (demo `examples/codeigniter/app/Controllers/Home.php`)
 
 #### Drupal
 - [x] Bootstrap (index.php → core/includes/bootstrap.inc.php → core/lib/Drupal.php)
 - [x] DRUPAL_ROOT and bootstrap constants
 - [x] Drupal.php kernel stub
-- [ ] Full DrupalKernel (future)
-- [ ] Module system (future)
+- [x] Full DrupalKernel (demo `examples/drupal/core/lib/DrupalKernel.php` with `boot()`)
+- [x] Module system (demo `examples/drupal/core/lib/Drupal/Core/Extension/ModuleHandler.php`)
 
 #### WordPress
 - [x] Bootstrap (index.php → wp-blog-header.php → wp-load.php → wp-config.php → wp-settings.php)
@@ -188,15 +188,21 @@
 
 ### Implementation stats (current)
 - **Engine**: types, string, hash, alloc, gc, operators, compile, vm, jit, benchmark, …
-- **PHP runtime**: modules under `src/php/` (regex, http_stream, pdo stub, math, hash, datetime, mbstring, …)
+- **PHP runtime**: 25 modules under `src/php/` (regex, http_stream, pdo, sqlite, math, hash, datetime, mbstring, …)
 - **Framework examples**: WordPress-shaped (partial), CodeIgniter 4 demo (covered by `tests/examples_runtime.rs`), Drupal demo (covered by `tests/examples_runtime.rs`)
-- **77 opcodes** (dispatch table)
-- **210+ built-in functions** — see `builtin_capability_tests.rs` for exercised surface
-- **610+ workspace tests** (`cargo test --workspace` — all passing; see `tests/exception_propagation.rs`, `tests/string_interpolation.rs`, `tests/php8x_features.rs` for the new surface)
-- **Call arguments accept full expression precedence** (2026-10-22): positional args, constructor args, array elements, and match arms parse through ternary (`parse_ternary_expr_with_initial` / `parse_expr_with_initial`), so `var_dump(1 < 2)` compiles. Covered by `tests/call_arg_expressions.rs` and `examples/call_arg_expressions.php`.
-- **24+ root PHP examples** — all run via `examples_root_php_scripts_all_run`
+- **77 opcodes** (76 have dispatch handlers; `AssignOp` is a reserved, never-emitted slot)
+- **279+ built-in functions** — see `builtin_capability_tests.rs` for exercised surface
+- **688 workspace tests** (`cargo test --workspace` — 688 passing, 1 ignored; see `tests/exception_propagation.rs`, `tests/string_interpolation.rs`, `tests/php8x_features.rs` for the new surface)
+- **`break` / `continue` implemented**: compile to `Jmp` with compile-time-resolved targets (loop head for while/foreach, increment position for for-loops — the increment still runs, per PHP). Levels (`break 2`, `continue 2`) resolve against a per-`CompileContext` loop stack; named functions/closures compile with a fresh context so a stray `break` inside a function is a compile error. Misplacement (`break` outside a loop, `break 0`) is a compile error, matching Zend. Covered by `tests/loop_control.rs` (16 cases).
+- **`switch` and `do-while` implemented**: `switch` compiles to an interleaved test/fallthrough `IsEqual`+`JmpNZ`/`Jmp` layout — subject evaluated once, first match wins, fallthrough without `break`, `default` is last resort regardless of source position, consecutive labels share a body. `switch` is a breakable level on the loop stack (`continue 1` in a switch acts like `break`). `do-while` reuses the loop stack with the condition as the continue target. No new opcodes. Covered by `tests/switch_statement.rs` (15 cases).
+- **Post-compile optimizer passes implemented** (`src/engine/opt.rs`): constant folding + dead code elimination, applied once per compilation inside `compile_string_with_functions`. Covered by `src/engine/opt.rs` unit tests + `tests/opt_passes.rs` (11 cases).
+- **Remaining newly-discovered engine gaps** (pre-existing, not caused by the new features):
+  - [x] Function-call arguments stop parsing at the relational level — **fixed**: call args / ctor args / array elements / match arms now use `parse_ternary_expr_with_initial` (full precedence through ternary). Covered by `tests/call_arg_expressions.rs` and `examples/call_arg_expressions.php`.
+  - Concat `.` shares precedence with `+`/`-` (PHP 7 style, `additive_loop`); PHP 8.0 made arithmetic bind tighter than concat.
+  - `continue` inside a `switch` has PHP's "equivalent to break" warning behavior implemented silently (no warning emitted).
+- **26 root PHP examples** — all run via `examples_root_php_scripts_all_run`
 - **Known gaps** (verified during testing — tracked, not blocking):
-  - All 77 opcodes now have dispatch handlers. The previously no-op opcodes (`AssignObj`, `TypeCheck`, `IsSet`, `Empty`, `Count`, `Keys`, `Values`, `ArrayDiff`) are wired up, and a new `Yield` opcode (76) implements generator suspension.
+  - 76 of the 77 opcodes have dispatch handlers. The previously no-op opcodes (`AssignObj`, `TypeCheck`, `IsSet`, `Empty`, `Count`, `Keys`, `Values`, `ArrayDiff`) are wired up, and a new `Yield` opcode (76) implements generator suspension. `AssignOp` (28) remains a reserved slot with no handler; it is never emitted.
   - Exception dispatch now supports cross-function propagation (throw in a callee caught by a caller) via `propagate_after_call`; `finally` blocks now run on normal completion, after catch, and during exception unwinding (pending exceptions re-dispatched after `FinallyEnd`). Covered by `tests/exception_propagation.rs` (18 cases, including 5 `finally` tests).
   - `__unset` implemented; `__serialize`/`__unserialize` implemented via `invoke_magic_method`/`invoke_magic_method_with_this` helpers in `callable.rs`.
   - `Val::clone()` is shallow for arrays/objects (creates an empty/default copy); engine code must use `clone_val` (deep) — a frequent source of subtle bugs for contributors.
@@ -204,12 +210,12 @@
 ### Standard library (honest)
 - Regex via Rust `regex` + `fancy-regex` for look-around (`preg_*`); not full PCRE
 - HTTP GET via `file_get_contents` + `reqwest`
-- PDO **stub** (in-memory)
+- PDO: **SQLite driver is real** (`src/php/sqlite.rs` via bundled `rusqlite`). Other DSNs (`mysql:`, `pgsql:`) parse but do not connect. `bindParam`/`bindValue` are accepted but currently no-ops — use positional `execute([...])` placeholders.
 - Session builtins (`session_start`, `session_destroy`, `session_id`, `session_name`) with JSON file storage; cookie support in `phprs serve`
 - Math functions (20+): abs, ceil, floor, round, sqrt, pow, trig functions, max, min, rand
 - Hash functions: md5, sha1, sha256, sha512, base64_encode, base64_decode
 - DateTime functions: time, date, strtotime, mktime, microtime
-- FTP stream wrapper (stub)
+- FTP stream wrapper — **not implemented** (no FTP code exists in the tree)
 
 - WordPress-shaped demo: hooks/filters stubs, wpdb in-memory — **not** full core
 
@@ -267,7 +273,7 @@ Rust is used for the **interpreter implementation** because of memory safety in 
 - [x] **Named arguments** (PHP 8.0) - `func(param: value)` via `SendValNamed` opcode
 - [x] **Union types** (PHP 8.0) - `int|string` parsing in params and return types
 - [x] **Intersection types** (PHP 8.1) - `Countable&ArrayAccess` parsing
-- [x] **Readonly properties** (PHP 8.1) - `T_READONLY` keyword + class body parsing
+- [x] **Readonly properties** (PHP 8.1) - `T_READONLY` keyword + class body parsing. ⚠️ Parsing only — the `readonly` flag is **not enforced** at runtime (reassignment still succeeds).
 - [x] **Enums** (PHP 8.1) - Pure and backed enums (`enum Color: string { case Red = 'red'; }`)
 - [x] **First-class callable syntax** (PHP 8.1) - `strlen(...)`, `Class::method(...)`, `$obj->method(...)`
 - [x] **Foreach with key** — `foreach ($a as $k => $v)`
@@ -278,7 +284,7 @@ Rust is used for the **interpreter implementation** because of memory safety in 
 - [x] **Never type** (PHP 8.1) - recognized in type hints
 - [x] **Final class constants** (PHP 8.1) - `final public const X = ...` (and `public final const X`); child override of a final constant is a compile error
 - [x] **Inherited class constant / static property lookup** - `execute_fetch_static_prop` walks `parent_name` chain; `Child::PARENT_CONST` and multi-level inheritance work
-- [x] **New in initializers** (PHP 8.1) - `new` in property defaults and param defaults
+- [x] **New in initializers** (PHP 8.1) - `new` in property defaults and param defaults. ⚠️ The object is constructed but the **constructor is not invoked** in these positions, and `new` in a param default yields `null`.
 
 ### Standard Library Extensions
 - [x] **DateTime/DateTimeImmutable** - Basic date/time manipulation
@@ -304,7 +310,7 @@ Rust is used for the **interpreter implementation** because of memory safety in 
 - [x] **Compression** - `gzcompress()`, `gzuncompress()`, `gzencode()`, `gzdecode()`, `gzdeflate()`, `gzinflate()`
 - [ ] **Image processing** - GD library basics (create, resize, crop, filters)
 - [ ] **Mail functions** - `mail()` with SMTP support
-- [ ] **Crypt functions** - `openssl_encrypt()`, `openssl_decrypt()`
+- [x] **Crypt functions** — `openssl_encrypt()`/`openssl_decrypt()` are implemented via `src/php/openssl.rs` (`openssl_encrypt`, `openssl_decrypt` builtins in `builtins.rs`)
   - [x] `random_bytes()`, `random_int()`
 
 ### Advanced Features
@@ -317,25 +323,25 @@ Rust is used for the **interpreter implementation** because of memory safety in 
   - [x] DirectoryIterator (construction, valid/current/getFilename/getPathname/getPath/key/next/rewind)
   - [x] Exceptions (SPL exception hierarchy — RuntimeException, LogicException, InvalidArgumentException, BadMethodCallException, OutOfBoundsException, OverflowException, UnderflowException, UnexpectedValueException, RangeException, DomainException, LengthException, BadFunctionCallException)
   - [x] File handling (SplFileInfo — getPath/getFilename/getPathname/getRealPath/getSize/isFile/isDir/isReadable/isWritable; SplFileObject — fgets/fread/fwrite/feof/rewind)
-- [x] **Autoloading** - `spl_autoload_register()`, `spl_autoload_unregister()`, `spl_autoload_functions()` (runtime registration); PSR-4 autoloader generation (package manager)
+- [x] **Autoloading** - `spl_autoload_register()`, `spl_autoload_unregister()`, `spl_autoload_functions()` (runtime registration); PSR-4 autoloader generation (package manager). ⚠️ Registered autoloaders are **never invoked** by class resolution.
 - [x] **Error handling improvements**
-  - [x] Custom error handlers (`set_error_handler()`)
-  - [x] Exception handlers (`set_exception_handler()`)
-  - [x] Shutdown functions (`register_shutdown_function()`)
+  - [x] Custom error handlers (`set_error_handler()`) — ⚠️ the callback is **recorded but never invoked**
+  - [x] Exception handlers (`set_exception_handler()`) — ⚠️ the callback is **recorded but never invoked**
+  - [x] Shutdown functions (`register_shutdown_function()`) — ⚠️ the callback is **recorded but never invoked**
 - [x] **Output buffering enhancements**
-  - [x] `ob_start()` with callbacks (builtin callback invocation on `ob_end_flush`/`ob_get_flush`)
+  - [x] `ob_start()` with callbacks (builtin callback invocation on `ob_end_flush`/`ob_get_flush`) — ⚠️ only **builtin** callbacks resolve; user-defined PHP functions are silently ignored
   - [x] `ob_get_clean()`, `ob_get_flush()`, `ob_get_level()`
   - [x] Multiple buffer levels
 
 ### Performance & Optimization
 - [ ] **LLVM-based JIT** - Replace custom JIT with LLVM for better optimization
-- [ ] **Opcode optimization passes**
-  - [ ] Constant propagation
-  - [ ] Dead code elimination
+- [ ] **Opcode optimization passes** — constant folding and DCE are done; loop unrolling and TCO remain
+  - [x] **Constant propagation / constant folding** (`src/engine/opt.rs`) — pure ops over literal operands are evaluated at compile time by running the real dispatch handlers on a scratch `ExecuteData` (zero semantic duplication), rewritten op-count-neutrally to `QmAssign <literal> -> <result slot>`; folded temp values propagate into later foldable ops within a basic block (`2 + 3 * 4` → one literal). `ConstantAst` operands (bare identifiers, may be `define()`d later) and division/modulo by zero are never folded. Covers script bodies, functions, closures, and class methods.
+  - [x] **Dead code elimination** (`src/engine/opt.rs`) — ops unreachable from entry or any jump target are removed; `extended_value` targets on `Jmp`/`JmpZ`/`JmpNZ`/`JmpNullZ`/`FeFetch`/`TryCatchBegin` are renumbered; exception structural markers are always kept (runtime derives catch/finally bodies from their positions).
   - [ ] Loop unrolling
   - [ ] Tail call optimization
 - [ ] **Memory pool improvements** - Better allocation strategies
-- [x] **String interning** - `src/engine/string_intern.rs` (`StringInterner` / global `intern()`); dedup-by-content with pointer-equality handles. Building block; not yet forced into every hot path
+- [x] **String interning** - `src/engine/string_intern.rs` (`StringInterner` / global `intern()`); dedup-by-content with pointer-equality handles. ⚠️ The interner is **not yet called from the engine** — it is currently unreferenced outside its own module.
 - [ ] **Copy-on-write arrays** - Optimize array copying
 - [ ] **Lazy evaluation** - Defer computation until needed
 - [ ] **Parallel execution** - Multi-threaded script execution
