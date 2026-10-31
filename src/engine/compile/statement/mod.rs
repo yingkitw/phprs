@@ -144,6 +144,15 @@ pub fn parse_statement(
         TokenType::T_ENUM => oop::compile_enum(lexer, context),
         TokenType::T_TRAIT => oop::compile_trait(lexer, context),
         TokenType::T_INTERFACE => oop::compile_interface(lexer, context),
+        // Expression statement: `new U(args);` with the object discarded. The
+        // constructor still runs during expression evaluation. Without this
+        // arm the `new` token was skipped and the class name compiled as a
+        // function call ("Call to undefined function u()").
+        TokenType::T_NEW => {
+            let (_, after) =
+                crate::engine::compile::expression::helpers::compile_new_obj(lexer, context)?;
+            skip_semicolon(lexer, after)
+        }
         TokenType::T_RETURN => compile_return(lexer, context),
         TokenType::T_GLOBAL => compile_global(lexer, context),
         TokenType::T_YIELD => compile_yield(lexer, context),

@@ -50,23 +50,30 @@ fn is_type_hint(token: &Token) -> bool {
 }
 
 /// Parsed parameter list for a user-defined function: `param_names`,
-/// `variadic_param_name` (`...$rest`), and `ref_flags` (pass-by-reference
-/// for each param).
-pub(crate) type ParamList = (Vec<String>, Option<String>, Vec<bool>);
+/// `variadic_param_name` (`...$rest`), `ref_flags` (pass-by-reference
+/// for each param), and `param_defaults` — one entry per parameter,
+/// `Some(val)` when the parameter was declared with a (compile-time
+/// constant) default value.
+pub(crate) type ParamList = (
+    Vec<String>,
+    Option<String>,
+    Vec<bool>,
+    Vec<Option<crate::engine::types::Val>>,
+);
 
 /// Parse parameter list (the opening '(' has already been consumed)
-/// Returns (param_names, variadic_param_name, ref_flags).
 pub(crate) fn parse_params(
     lexer: &mut Lexer,
     context: &mut CompileContext,
 ) -> Result<ParamList, String> {
     let mut params = Vec::new();
     let mut ref_flags = Vec::new();
+    let mut param_defaults: Vec<Option<crate::engine::types::Val>> = Vec::new();
     let mut variadic = None;
     let mut current_token = lexer.next_token()?;
 
     if is_punct(&current_token, ")") {
-        return Ok((params, variadic, ref_flags));
+        return Ok((params, variadic, ref_flags, param_defaults));
     }
 
     loop {
@@ -136,11 +143,18 @@ pub(crate) fn parse_params(
 
         current_token = lexer.next_token()?;
 
-        // Check for default value assignment
-        if current_token.token_type == TokenType::T_EQUAL {
-            let (_, next_token) = super::expression::parse_expression(lexer, context)?;
+        // Capture default value assignment: `$param = <const expr>`. The
+        // expression is evaluated at compile time into a materialized Val (via
+        // the same scratch-context evaluation used for class member defaults),
+        // so only constant expressions are supported.
+        let default_val = if current_token.token_type == TokenType::T_EQUAL {
+            let (val, next_token) = super::const_eval::eval_class_default_expr(lexer, context)?;
             current_token = next_token;
-        }
+            Some(val)
+        } else {
+            None
+        };
+        param_defaults.push(default_val);
 
         if is_punct(&current_token, ")") {
             break;
@@ -153,12 +167,12 @@ pub(crate) fn parse_params(
         current_token = lexer.next_token()?;
     }
 
-    Ok((params, variadic, ref_flags))
+    Ok((params, variadic, ref_flags, param_defaults))
 }
 
 /// Skip return type declaration after ')' if present: ): type
 /// Returns the next meaningful token (either '{' or whatever follows)
-fn skip_return_type(lexer: &mut Lexer) -> Result<Token, String> {
+pub(crate) fn skip_return_type(lexer: &mut Lexer) -> Result<Token, String> {
     let token = lexer.next_token()?;
     if is_punct(&token, ":") {
         let mut type_token = lexer.next_token()?;
@@ -277,6 +291,7 @@ pub fn compile_function(lexer: &mut Lexer, context: &mut CompileContext) -> Resu
         .collect();
     func_op_array.variadic_param = params.1;
     func_op_array.ref_params = params.2;
+    func_op_array.param_defaults = params.3;
 
     context
         .function_table

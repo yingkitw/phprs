@@ -88,6 +88,11 @@ pub fn invoke_user_function(
             cloned.function_name = func_op_array.function_name.clone();
             cloned.ref_params = func_op_array.ref_params.clone();
             cloned.variadic_param = func_op_array.variadic_param.clone();
+            cloned.param_defaults = func_op_array
+                .param_defaults
+                .iter()
+                .map(|d| d.as_ref().map(clone_val))
+                .collect();
             for op in &func_op_array.ops {
                 cloned.add_op(Op::new(
                     op.opcode,
@@ -107,6 +112,7 @@ pub fn invoke_user_function(
     let arg_names: Vec<Option<String>> = vec![None; args.len()];
     let arg_by_ref: Vec<bool> = vec![false; args.len()];
     let ref_params = func_op_array.ref_params.clone();
+    let param_defaults = func_op_array.param_defaults.clone();
 
     // Save current execution state (mirrors the DoFCall handler).
     let saved_op = execute_data.current_op;
@@ -138,6 +144,7 @@ pub fn invoke_user_function(
         &variadic_param,
         &ref_params,
         &arg_by_ref,
+        &param_defaults,
     );
 
     let saved_script_dir = execute_data.current_script_dir.clone();
@@ -256,6 +263,7 @@ pub fn invoke_magic_method(
         &variadic_param,
         &ref_params,
         &arg_by_ref,
+        &[],
     );
 
     let mut method_op_array = OpArray::new(format!("{}::{}", obj.class_name, method_name));
@@ -356,6 +364,7 @@ pub fn invoke_magic_method_with_this(
         &variadic_param,
         &ref_params,
         &arg_by_ref,
+        &[],
     );
 
     let mut method_op_array = OpArray::new(format!("{}::{}", obj.class_name, method_name));

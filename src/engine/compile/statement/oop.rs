@@ -535,15 +535,14 @@ fn parse_interface_body(
         if !token_is_punct(&open_paren, "(") {
             return Err("Expected '(' after method name".to_string());
         }
-        let (param_names, variadic, ref_flags) = parse_params(lexer, context)?;
+        let (param_names, variadic, ref_flags, param_defaults) = parse_params(lexer, context)?;
         let params: Vec<String> = param_names
             .iter()
             .map(|p| p.strip_prefix('$').unwrap_or(p).to_string())
             .collect();
 
-        // A bodyless declaration ends with `;`; a default implementation has
-        // a `{ ... }` body.
-        let after_params = lexer.next_token()?;
+        // Skip an optional return type before the `;` / `{`.
+        let after_params = crate::engine::compile::function::skip_return_type(lexer)?;
         if token_is_punct(&after_params, ";") {
             let mut method = ClassMethod {
                 name: method_name.clone(),
@@ -554,6 +553,7 @@ fn parse_interface_body(
             };
             method.op_array.variadic_param = variadic;
             method.op_array.ref_params = ref_flags;
+            method.op_array.param_defaults = param_defaults;
             ce.methods.insert(method_name, method);
             next = lexer.next_token()?;
             continue;
@@ -595,6 +595,7 @@ fn parse_interface_body(
         };
         method.op_array.variadic_param = variadic;
         method.op_array.ref_params = ref_flags;
+        method.op_array.param_defaults = param_defaults;
         ce.methods.insert(method_name, method);
         next = lexer.next_token()?;
     }
@@ -701,14 +702,15 @@ fn compile_class_method(
         return Err("Expected '(' after method name".to_string());
     }
 
-    let (param_names, variadic, ref_flags) = parse_params(lexer, context)?;
+    let (param_names, variadic, ref_flags, param_defaults) = parse_params(lexer, context)?;
     let params: Vec<String> = param_names
         .iter()
         .map(|p| p.strip_prefix('$').unwrap_or(p).to_string())
         .collect();
 
-    // Parse method body: { ... }
-    let open_brace = lexer.next_token()?;
+    // Skip an optional return type (`): ?type`, unions/intersections included)
+    // before the body — same handling as plain functions.
+    let open_brace = crate::engine::compile::function::skip_return_type(lexer)?;
     if !token_is_punct(&open_brace, "{") {
         return Err("Expected '{' after method parameters".to_string());
     }
@@ -745,6 +747,7 @@ fn compile_class_method(
     };
     method.op_array.variadic_param = variadic;
     method.op_array.ref_params = ref_flags;
+    method.op_array.param_defaults = param_defaults;
     ce.methods.insert(method_name, method);
     lexer.next_token()
 }

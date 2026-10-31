@@ -578,34 +578,42 @@ pub(crate) fn compile_new_obj(
         Vec::new()
     };
 
-    if !args.is_empty() {
-        // Emit InitMethodCall for __construct
-        let obj_temp = temp_var_ref(slot);
-        context.emit_opcode(
-            Opcode::InitMethodCall,
-            crate::engine::facade::clone_val(&obj_temp),
-            facade::string_val("__construct"),
-            facade::null_val(),
-        );
+    // Emit the __construct dispatch — ALWAYS, even with zero arguments. PHP
+// invokes `new B()`'s zero-arg constructor too; skipping it silently never
+// ran side-effecting constructors. Classes without a __construct are fine:
+// DoMethodCall's not-found path just stores null and continues.
+let obj_temp = temp_var_ref(slot);
+context.emit_opcode(
+    Opcode::InitMethodCall,
+    crate::engine::facade::clone_val(&obj_temp),
+    facade::string_val("__construct"),
+    facade::null_val(),
+);
 
-        // Emit SendVal for each argument
-        for arg in args {
-            context.emit_opcode(Opcode::SendVal, arg, facade::null_val(), facade::null_val());
-        }
+// Emit SendVal for each argument (if any)
+for arg in args {
+    context.emit_opcode(Opcode::SendVal, arg, facade::null_val(), facade::null_val());
+}
 
-        // Emit DoMethodCall for __construct
-        let construct_slot = context.alloc_temp();
-        context.emit_opcode(
-            Opcode::DoMethodCall,
-            facade::string_val("__construct"),
-            obj_temp,
-            temp_var_ref(construct_slot),
-        );
+// Emit DoMethodCall for __construct
+let construct_slot = context.alloc_temp();
+context.emit_opcode(
+    Opcode::DoMethodCall,
+    facade::string_val("__construct"),
+    obj_temp,
+    temp_var_ref(construct_slot),
+);
 
-        Ok((temp_var_ref(slot), lexer.next_token()?))
-    } else {
-        Ok((temp_var_ref(slot), peek))
-    }
+// The token to hand back to the caller: if an argument-paren group was
+// present it has been consumed, so advance; otherwise `peek` is still the
+// unconsumed token (it may be the `)` of an enclosing group, as in
+// `$x = (new C);`).
+let after = if token_is_punct(&peek, "(") {
+    lexer.next_token()?
+} else {
+    peek
+};
+Ok((temp_var_ref(slot), after))
 }
 
 /// Compile `clone $obj` — emits CloneObj opcode

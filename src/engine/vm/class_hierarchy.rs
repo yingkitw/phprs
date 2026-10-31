@@ -45,6 +45,7 @@ pub struct MethodInfo {
     pub file_label: String,
     pub variadic_param: Option<String>,
     pub ref_params: Vec<bool>,
+    pub param_defaults: Vec<Option<crate::engine::types::Val>>,
 }
 
 /// Copy a method's executable parts.
@@ -75,6 +76,12 @@ pub fn method_info(method: &crate::engine::types::ClassMethod, class_name: &str)
         file_label,
         variadic_param: method.op_array.variadic_param.clone(),
         ref_params: method.op_array.ref_params.clone(),
+        param_defaults: method
+            .op_array
+            .param_defaults
+            .iter()
+            .map(|d| d.as_ref().map(crate::engine::vm::execute_data::clone_val))
+            .collect(),
     }
 }
 

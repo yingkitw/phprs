@@ -130,6 +130,12 @@ pub struct OpArray {
     pub variadic_param: Option<String>,
     /// Per-parameter pass-by-reference flags (aligned with `vars`).
     pub ref_params: Vec<bool>,
+    /// Per-parameter default values (aligned with the parameter list, when the
+    /// caller supplies one). `Some(val)` when the parameter was declared with a
+    /// default (`function f($b = 0)`); the entry is absent when the parameter
+    /// is required. Defaults are evaluated at compile time, so only constant
+    /// expressions are supported (literals, literal arithmetic, arrays).
+    pub param_defaults: Vec<Option<Val>>,
     /// True if the function body contains `yield` (makes it a generator).
     pub is_generator: bool,
 }
@@ -146,6 +152,7 @@ impl OpArray {
             function_name: None,
             variadic_param: None,
             ref_params: Vec::new(),
+            param_defaults: Vec::new(),
             is_generator: false,
         }
     }
@@ -162,6 +169,7 @@ impl OpArray {
             function_name: None,
             variadic_param: None,
             ref_params: Vec::new(),
+            param_defaults: Vec::new(),
             is_generator: false,
         }
     }

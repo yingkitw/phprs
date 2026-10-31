@@ -667,46 +667,23 @@ fn fcc_invoke_static_method(
     arg_by_ref: Vec<bool>,
 ) -> Result<Option<Val>, String> {
     let resolved_class = class_name.to_string();
-    let method_info = execute_data
-        .class_table
-        .get(&resolved_class)
-        .and_then(|ce| ce.methods.get(method_name))
-        .map(|m| {
-            let params = m.params.clone();
-            let ops: Vec<Op> = m
-                .op_array
-                .ops
-                .iter()
-                .map(|op| {
-                    Op::new(
-                        op.opcode,
-                        clone_val(&op.op1),
-                        clone_val(&op.op2),
-                        clone_val(&op.result),
-                        op.extended_value,
-                    )
-                })
-                .collect();
-            let file_label = m
-                .op_array
-                .filename
-                .clone()
-                .filter(|f| !f.is_empty())
-                .unwrap_or_else(|| format!("{resolved_class}::{method_name}"));
-            (
-                params,
-                ops,
-                file_label,
-                m.op_array.variadic_param.clone(),
-                m.op_array.ref_params.clone(),
-            )
-        });
+    let method_info = crate::engine::vm::class_hierarchy::resolve_method(
+        &execute_data.class_table,
+        &resolved_class,
+        method_name,
+    );
 
-    let Some((params, ops, oparray_filename, variadic, ref_params)) = method_info else {
+    let Some(info) = method_info else {
         return Err(format!(
             "Call to undefined static method {resolved_class}::{method_name}()"
         ));
     };
+    let params = info.params;
+    let ops = info.ops;
+    let oparray_filename = info.file_label;
+    let variadic = info.variadic_param.clone();
+    let ref_params = info.ref_params.clone();
+    let param_defaults = info.param_defaults.clone();
 
     let saved_current_op = execute_data.current_op;
     let saved_op_array = execute_data.op_array.take();
@@ -722,6 +699,7 @@ fn fcc_invoke_static_method(
         &variadic,
         &ref_params,
         &arg_by_ref,
+        &param_defaults,
     );
 
     let saved_try_depth = execute_data.try_stack.len();
@@ -755,46 +733,23 @@ fn fcc_invoke_instance_method(
     };
     let class_name = obj.class_name.clone();
 
-    let method_info = execute_data
-        .class_table
-        .get(&class_name)
-        .and_then(|ce| ce.methods.get(method_name))
-        .map(|m| {
-            let params = m.params.clone();
-            let ops: Vec<Op> = m
-                .op_array
-                .ops
-                .iter()
-                .map(|op| {
-                    Op::new(
-                        op.opcode,
-                        clone_val(&op.op1),
-                        clone_val(&op.op2),
-                        clone_val(&op.result),
-                        op.extended_value,
-                    )
-                })
-                .collect();
-            let file_label = m
-                .op_array
-                .filename
-                .clone()
-                .filter(|f| !f.is_empty())
-                .unwrap_or_else(|| format!("{class_name}::{method_name}"));
-            (
-                params,
-                ops,
-                file_label,
-                m.op_array.variadic_param.clone(),
-                m.op_array.ref_params.clone(),
-            )
-        });
+    let method_info = crate::engine::vm::class_hierarchy::resolve_method(
+        &execute_data.class_table,
+        &class_name,
+        method_name,
+    );
 
-    let Some((params, ops, oparray_filename, variadic, ref_params)) = method_info else {
+    let Some(info) = method_info else {
         return Err(format!(
             "Call to undefined method {class_name}::{method_name}()"
         ));
     };
+    let params = info.params;
+    let ops = info.ops;
+    let oparray_filename = info.file_label;
+    let variadic = info.variadic_param.clone();
+    let ref_params = info.ref_params.clone();
+    let param_defaults = info.param_defaults.clone();
 
     let saved_current_op = execute_data.current_op;
     let saved_op_array = execute_data.op_array.take();
@@ -811,6 +766,7 @@ fn fcc_invoke_instance_method(
         &variadic,
         &ref_params,
         &arg_by_ref,
+        &param_defaults,
     );
 
     let saved_try_depth = execute_data.try_stack.len();
@@ -992,6 +948,11 @@ pub fn execute_do_fcall(op: &Op, execute_data: &mut ExecuteData) -> Result<ExecR
                         cloned.function_name = func_op_array.function_name.clone();
                         cloned.ref_params = func_op_array.ref_params.clone();
                         cloned.variadic_param = func_op_array.variadic_param.clone();
+                        cloned.param_defaults = func_op_array
+                            .param_defaults
+                            .iter()
+                            .map(|d| d.as_ref().map(clone_val))
+                            .collect();
                         cloned.is_generator = func_op_array.is_generator;
                         for op in &func_op_array.ops {
                             cloned.add_op(super::opcodes::Op::new(
@@ -1105,6 +1066,7 @@ pub fn execute_do_fcall(op: &Op, execute_data: &mut ExecuteData) -> Result<ExecR
                     &variadic_param,
                     &ref_params,
                     &arg_by_ref,
+                    &func_op_array.param_defaults,
                 );
 
                 let saved_script_dir = execute_data.current_script_dir.clone();
@@ -1898,6 +1860,7 @@ pub fn execute_fetch_obj_prop(
                     &None,
                     &[],
                     &[false],
+                    &[],
                 );
 
                 let mut method_op_array = OpArray::with_capacity(ops.len(), oparray_filename);
@@ -2006,6 +1969,7 @@ pub fn execute_fetch_obj_prop(
                     &None,
                     &[],
                     &[false],
+                    &[],
                 );
 
                 let mut method_op_array = OpArray::with_capacity(ops.len(), oparray_filename);
@@ -2178,6 +2142,7 @@ pub fn execute_assign_obj_prop(
                 &None,
                 &[],
                 &[false, false],
+                &[],
             );
 
             let mut method_op_array = OpArray::with_capacity(ops.len(), oparray_filename);
@@ -2804,6 +2769,7 @@ pub fn execute_do_method_call(
                         &variadic_opt,
                         &ref_params,
                         &init_arg_by_ref,
+                        &[],
                     );
                 }
 
@@ -3057,6 +3023,11 @@ pub fn execute_do_method_call(
                                 cloned.function_name = func_op_array.function_name.clone();
                                 cloned.ref_params = func_op_array.ref_params.clone();
                                 cloned.variadic_param = func_op_array.variadic_param.clone();
+                                cloned.param_defaults = func_op_array
+                                    .param_defaults
+                                    .iter()
+                                    .map(|d| d.as_ref().map(clone_val))
+                                    .collect();
                                 cloned.is_generator = func_op_array.is_generator;
                                 for op in &func_op_array.ops {
                                     cloned.add_op(super::opcodes::Op::new(
@@ -3073,9 +3044,10 @@ pub fn execute_do_method_call(
                         let arg_names: Vec<Option<String>> = vec![None; args.len()];
                         let arg_by_ref: Vec<bool> = vec![false; args.len()];
                         let ref_params = func_op_array.ref_params.clone();
+                        let param_defaults = func_op_array.param_defaults.clone();
                         super::dispatch_handlers::bind_call_args(
                             execute_data, &param_names, &args, &arg_names,
-                            &variadic_param, &ref_params, &arg_by_ref,
+                            &variadic_param, &ref_params, &arg_by_ref, &param_defaults,
                         );
                         let (_status, return_val) = super::execute::execute_ex_returning(execute_data, &func_op_array);
                         if execute_data.fiber_suspend_requested.is_some() {
@@ -4892,6 +4864,7 @@ pub fn execute_do_method_call(
                 &variadic,
                 &ref_params,
                 &arg_by_ref,
+                &info.param_defaults,
             );
 
             // Execute method
@@ -5028,6 +5001,7 @@ pub fn execute_do_method_call(
                 &None,
                 &[],
                 &[false, false],
+                &[],
             );
 
             let mut method_op_array = OpArray::with_capacity(ops.len(), oparray_filename);
@@ -5275,6 +5249,7 @@ pub fn execute_do_static_call(
             &variadic,
             &ref_params,
             &arg_by_ref,
+            &info.param_defaults,
         );
 
         let mut method_op_array = OpArray::with_capacity(ops.len(), oparray_filename);
@@ -5570,6 +5545,7 @@ pub fn execute_unset_obj_prop(
                     &None,
                     &[],
                     &[false],
+                    &[],
                 );
 
                 let mut method_op_array = OpArray::with_capacity(ops.len(), file_label);
@@ -5620,6 +5596,7 @@ pub(crate) fn bind_call_args(
     variadic_param: &Option<String>,
     ref_params: &[bool],
     arg_by_ref: &[bool],
+    param_defaults: &[Option<Val>],
 ) {
     let regular_count = if variadic_param.is_some() {
         param_names.len().saturating_sub(1)
@@ -5705,6 +5682,20 @@ pub(crate) fn bind_call_args(
         let arr_val = Val::new(PhpValue::Array(Box::new(arr)), PhpType::Array);
         let clean = var_name.strip_prefix('$').unwrap_or(var_name);
         execute_data.set_var(clean, arr_val);
+    }
+
+    // Final pass: fill unbound parameters from their declared defaults. A
+    // parameter with neither a bound argument nor a default is left unset —
+    // reading it yields the usual empty value (PHP would fatal here; that
+    // strictness is a separate gap).
+    for (pos, name) in param_names.iter().enumerate().take(regular_count) {
+        if bound[pos] {
+            continue;
+        }
+        if let Some(Some(default)) = param_defaults.get(pos) {
+            let clean = name.strip_prefix('$').unwrap_or(name);
+            execute_data.set_var(clean, clone_val(default));
+        }
     }
 }
 

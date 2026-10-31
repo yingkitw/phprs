@@ -414,6 +414,14 @@ pub fn execute_ex(execute_data: &mut ExecuteData, op_array: &OpArray) -> PhpResu
                         )
                     })
                     .collect();
+                new_op_arr.variadic_param = method.op_array.variadic_param.clone();
+                new_op_arr.ref_params = method.op_array.ref_params.clone();
+                new_op_arr.param_defaults = method
+                    .op_array
+                    .param_defaults
+                    .iter()
+                    .map(|d| d.as_ref().map(clone_val))
+                    .collect();
                 new_ce.methods.insert(
                     method_name.clone(),
                     crate::engine::types::ClassMethod {
