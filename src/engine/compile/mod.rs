@@ -46,8 +46,12 @@ pub fn compile_string_with_functions(
         token = parse_statement(&mut lexer, &mut context, token)?;
     }
 
-    let ft = std::mem::take(&mut context.function_table);
-    Ok((context.finalize(), ft))
+    let mut ft = std::mem::take(&mut context.function_table);
+    let mut op_array = context.finalize();
+    // Post-compile optimization: constant folding + dead code elimination.
+    // Runs once per compilation on the ops the VM will actually execute.
+    crate::engine::opt::optimize_script(&mut op_array, &mut ft);
+    Ok((op_array, ft))
 }
 
 /// Compile file to opcodes

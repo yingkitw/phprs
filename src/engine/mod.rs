@@ -17,6 +17,7 @@ pub mod jit;
 pub mod lexer;
 pub mod opcode_cache;
 pub mod operators;
+pub mod opt;
 pub mod perf;
 pub mod perf_alloc;
 pub mod string;

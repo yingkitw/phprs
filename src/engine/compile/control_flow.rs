@@ -8,7 +8,7 @@ use super::expression::helpers::{
 };
 use super::expression::operators::parse_comparison_expr_with_token;
 use super::expression::{parse_additive_expr_with_initial, parse_expression};
-use super::statement::parse_statement_block;
+use super::statement::{parse_statement, parse_statement_block};
 use crate::engine::facade::{clone_val, null_val, result_val, string_val, zero_val};
 use crate::engine::lexer::{Lexer, Token, TokenType};
 use crate::engine::types::Val;
@@ -99,6 +99,8 @@ pub fn compile_while(lexer: &mut Lexer, context: &mut CompileContext) -> Result<
 
     // Condition must be re-evaluated each iteration: loop head starts *before* condition ops.
     let loop_start_index = context.current_op_index();
+    // `continue` re-evaluates the condition: jump back to the loop head.
+    context.push_loop(Some(loop_start_index as u32));
 
     // Parse condition; parse_expression returns the next token (should be ')')
     let (condition, paren_token) = parse_expression(lexer, context)?;
@@ -136,6 +138,10 @@ pub fn compile_while(lexer: &mut Lexer, context: &mut CompileContext) -> Result<
 
     // Update JmpZ to jump to after the loop
     context.update_jump_target(jmpz_index, context.current_op_index() as u32);
+
+    // Patch `break` jumps (and finish break/continue bookkeeping) to here.
+    let after_while = context.current_op_index() as u32;
+    context.pop_loop(after_while);
 
     // After while loop, get the next token
     lexer.next_token()
@@ -194,6 +200,9 @@ pub fn compile_for(lexer: &mut Lexer, context: &mut CompileContext) -> Result<To
 
     // Loop head: condition is checked before each body (PHP: for (init; cond; incr) { body }).
     let loop_head_index = context.current_op_index();
+    // `continue` in a for loop jumps to the increment, which is emitted after
+    // the body — the target is only known once the body finishes compiling.
+    context.push_loop(None);
 
     let cond_token = lexer.next_token()?;
     let (condition, cond_next_token) = if token_is_punct(&cond_token, ";") {
@@ -244,6 +253,11 @@ pub fn compile_for(lexer: &mut Lexer, context: &mut CompileContext) -> Result<To
 
     parse_statement_block(lexer, context)?;
 
+    // `continue` lands on the first increment op (which still runs — PHP
+    // semantics), then the back-jump re-checks the condition.
+    let continue_target = context.current_op_index() as u32;
+    context.set_continue_target(continue_target);
+
     context.op_array.ops.extend(incr_ops);
 
     let back_z1 = zero_val();
@@ -254,6 +268,7 @@ pub fn compile_for(lexer: &mut Lexer, context: &mut CompileContext) -> Result<To
 
     let after_loop = context.current_op_index() as u32;
     context.update_jump_target(jmpz_exit_index, after_loop);
+    context.pop_loop(after_loop);
 
     lexer.next_token()
 }
@@ -314,6 +329,8 @@ pub fn compile_foreach(lexer: &mut Lexer, context: &mut CompileContext) -> Resul
 
     // Loop head: re-enter here (not before FeReset, or the iterator would reset every iteration).
     let loop_start_index = context.current_op_index();
+    // `continue` advances the iterator via FeFetch: jump back to the loop head.
+    context.push_loop(Some(loop_start_index as u32));
 
     let end_jmp_idx = context.emit_opcode_with_index(
         Opcode::FeFetch,
@@ -364,8 +381,102 @@ pub fn compile_foreach(lexer: &mut Lexer, context: &mut CompileContext) -> Resul
     // FeFetch jumps here when the iterator is exhausted (must be *after* the back-jmp).
     let after_foreach = context.current_op_index() as u32;
     context.update_jump_target(end_jmp_idx, after_foreach);
+    context.pop_loop(after_foreach);
 
     lexer.next_token()
+}
+
+/// Compile `break;` / `break N;` — jump out of N enclosing loops.
+pub fn compile_break(lexer: &mut Lexer, context: &mut CompileContext) -> Result<Token, String> {
+    compile_break_or_continue(lexer, context, true)
+}
+
+/// Compile `continue;` / `continue N;` — skip to the next iteration of the
+/// Nth enclosing loop (for-loops: to the increment, which still runs).
+pub fn compile_continue(lexer: &mut Lexer, context: &mut CompileContext) -> Result<Token, String> {
+    compile_break_or_continue(lexer, context, false)
+}
+
+fn compile_break_or_continue(
+    lexer: &mut Lexer,
+    context: &mut CompileContext,
+    is_break: bool,
+) -> Result<Token, String> {
+    let kw = if is_break { "break" } else { "continue" };
+
+    // Optional positive integer level: `break;` means `break 1;`
+    let mut tok = lexer.next_token()?;
+    let level: usize = match tok.token_type {
+        TokenType::T_LNUMBER => {
+            let text = tok.value.as_ref().map(|s| s.as_str()).unwrap_or("");
+            let n: usize = text
+                .parse()
+                .map_err(|_| format!("{kw} level must be an integer literal"))?;
+            if n == 0 {
+                return Err(format!("{kw} operator accepts only positive integers"));
+            }
+            tok = lexer.next_token()?;
+            n
+        }
+        TokenType::T_DNUMBER => {
+            return Err(format!("{kw} level must be an integer literal"));
+        }
+        _ => 1,
+    };
+
+    // Resolve the loop `level` levels out before emitting, so the emitted
+    // `Jmp` never overlaps a mutable borrow of the context.
+    let depth = context.loop_stack.len();
+    if level > depth {
+        return Err(if depth == 0 {
+            format!("'{kw}' outside of loop")
+        } else {
+            format!("Cannot {kw} {level} levels")
+        });
+    }
+    // Stack slot of the target loop (innermost last). Fixups must be pushed
+    // to THIS slot, not to the innermost loop.
+    let slot = depth - level;
+    enum Resolution {
+        BreakFixup,
+        ContinueFixup,
+        ContinueTo(u32),
+    }
+    let resolution = {
+        let loop_ctx = &mut context.loop_stack[slot];
+        if is_break {
+            Resolution::BreakFixup
+        } else {
+            match loop_ctx.continue_target {
+                Some(target) => Resolution::ContinueTo(target),
+                None => Resolution::ContinueFixup,
+            }
+        }
+    };
+
+    let jmp_z1 = zero_val();
+    let jmp_z2 = zero_val();
+    let jmp_r = zero_val();
+    let jmp_index =
+        context.emit_opcode_with_index(Opcode::Jmp, jmp_z1, jmp_z2, jmp_r);
+    match resolution {
+        Resolution::BreakFixup => {
+            context.loop_stack[slot].break_fixups.push(jmp_index);
+        }
+        Resolution::ContinueFixup => {
+            context.loop_stack[slot].continue_fixups.push(jmp_index);
+        }
+        Resolution::ContinueTo(target) => {
+            context.update_jump_target(jmp_index, target);
+        }
+    }
+
+    // Expect `;` (already fetched as `tok` when no level was given).
+    if token_is_punct(&tok, ";") {
+        lexer.next_token()
+    } else {
+        Ok(tok)
+    }
 }
 
 /// Compile try-catch-finally: try { body } catch (ExceptionClass $e) { body } [finally { body }]
@@ -542,6 +653,247 @@ pub fn compile_try_catch(lexer: &mut Lexer, context: &mut CompileContext) -> Res
     context.update_jump_target(try_begin_index, (try_end_index + 2) as u32);
 
     Ok(next_token)
+}
+
+/// Compile a `switch` statement.
+///
+/// Layout (interleaved, no op reordering needed — `case` expressions may
+/// contain calls with side effects and must evaluate in source order):
+///
+/// ```text
+///   QmAssign <switch expr> -> Ts        (evaluate once, PHP semantics)
+///   test1: IsEqual(Ts, v1) -> T; JmpNZ T -> body1; Jmp -> test2
+///   body1: stmts...; Jmp -> body2       (fallthrough; DCE removes when dead)
+///   test2: IsEqual(Ts, v2) -> T; JmpNZ T -> body2; Jmp -> test3|default|end
+///   body2: ...
+///   after_switch:
+/// ```
+///
+/// First match wins; unmatched execution reaches `default` regardless of its
+/// source position; consecutive labels share one body; fallthrough runs the
+/// next body directly. `switch` is a breakable level: `break` and `continue`
+/// inside a case both jump to `after_switch` (PHP: `continue` targeting a
+/// switch acts like `break`), so a `LoopContext` is pushed with its continue
+/// target resolved at the end.
+pub fn compile_switch(lexer: &mut Lexer, context: &mut CompileContext) -> Result<Token, String> {
+    let next_token = lexer.next_token()?;
+    if next_token.token_type != TokenType::T_STRING
+        || next_token.value.as_ref().map(|s| s.as_str()) != Some("(")
+    {
+        return Err("Expected '(' after 'switch'".to_string());
+    }
+
+    let (switch_expr, paren_token) = parse_expression(lexer, context)?;
+    if paren_token.token_type != TokenType::T_STRING
+        || paren_token.value.as_ref().map(|s| s.as_str()) != Some(")")
+    {
+        return Err("Expected ')' after switch expression".to_string());
+    }
+
+    let brace_token = lexer.next_token()?;
+    if brace_token.token_type != TokenType::T_STRING
+        || brace_token.value.as_ref().map(|s| s.as_str()) != Some("{")
+    {
+        return Err("Expected '{' after switch expression".to_string());
+    }
+
+    // Evaluate the subject expression exactly once.
+    let subject_slot = context.alloc_temp();
+    context.emit_opcode(
+        Opcode::QmAssign,
+        switch_expr,
+        null_val(),
+        temp_var_ref(subject_slot),
+    );
+
+    // switch is a breakable level; `continue` resolves to after_switch too
+    // (set at the end, like a for-loop's increment).
+    context.push_loop(None);
+
+    let subject_ref = temp_var_ref(subject_slot);
+    // Case-test match jumps (JmpNZ) and body-end fallthrough jumps awaiting
+    // the next body's start index.
+    let mut body_start_fixups: Vec<usize> = Vec::new();
+    // No-match `Jmp`s after each case test. PHP checks ALL cases before
+    // `default`, so these are patched at the next CASE label's test — never
+    // at a default body — or at switch end (default body if present, else
+    // after_switch).
+    let mut nomatch_fixups: Vec<usize> = Vec::new();
+    // Position of the default body (for end-of-chain no-match routing).
+    let mut default_body_start: Option<usize> = None;
+
+    let mut current_token = lexer.next_token()?;
+    loop {
+        if current_token.token_type == TokenType::T_EOF {
+            return Err("Unexpected EOF inside switch".to_string());
+        }
+
+        let is_case = current_token.token_type == TokenType::T_CASE;
+        let is_default = current_token.token_type == TokenType::T_DEFAULT;
+        let closing = token_is_punct(&current_token, "}");
+
+        if is_case || is_default {
+            if is_case {
+                // The no-match chain continues with the next case test.
+                let here = context.current_op_index();
+                for idx in nomatch_fixups.drain(..) {
+                    context.update_jump_target(idx, here as u32);
+                }
+
+                // case <expr>:
+                let (case_val, after_val) = parse_expression(lexer, context)?;
+                if !token_is_punct(&after_val, ":") {
+                    return Err("Expected ':' after case value".to_string());
+                }
+                let cmp_slot = context.alloc_temp();
+                let cmp_ref = temp_var_ref(cmp_slot);
+                context.emit_opcode(
+                    Opcode::IsEqual,
+                    clone_val(&subject_ref),
+                    case_val,
+                    clone_val(&cmp_ref),
+                );
+                let jnz_z = zero_val();
+                let jnz_index = context.emit_opcode_with_index(
+                    Opcode::JmpNZ,
+                    cmp_ref,
+                    jnz_z,
+                    zero_val(),
+                );
+                body_start_fixups.push(jnz_index);
+                // No match: continue with the next case test (or, at switch
+                // end, the default body / after_switch).
+                let nomatch = context.emit_opcode_with_index(
+                    Opcode::Jmp,
+                    zero_val(),
+                    zero_val(),
+                    zero_val(),
+                );
+                nomatch_fixups.push(nomatch);
+            } else {
+                // default:
+                let colon = lexer.next_token()?;
+                if !token_is_punct(&colon, ":") {
+                    return Err("Expected ':' after 'default'".to_string());
+                }
+                // Recorded for end-of-chain routing; the no-match fixups are
+                // NOT patched here — cases after a default still get tested.
+                default_body_start = Some(context.current_op_index());
+            }
+
+            // Parse statements until the next case/default/'}'.
+            current_token = lexer.next_token()?;
+            let mut first_stmt = true;
+            while !matches!(current_token.token_type, TokenType::T_CASE | TokenType::T_DEFAULT)
+                && !token_is_punct(&current_token, "}")
+                && current_token.token_type != TokenType::T_EOF
+            {
+                if first_stmt {
+                    // The body begins here: all pending match-jumps
+                    // (including consecutive labels' JmpNZ) land here.
+                    let body_start = context.current_op_index();
+                    for idx in body_start_fixups.drain(..) {
+                        context.update_jump_target(idx, body_start as u32);
+                    }
+                    first_stmt = false;
+                }
+                current_token = parse_statement(lexer, context, current_token)?;
+            }
+
+            // Fallthrough (or a redundant jump after `break` — DCE cleans it).
+            // Targets the NEXT BODY's start — the same thing a match-jump
+            // wants — so it joins body_start_fixups (patched when the next
+            // body's first statement begins, or to after_switch at the end).
+            if !token_is_punct(&current_token, "}")
+                && !matches!(current_token.token_type, TokenType::T_CASE | TokenType::T_DEFAULT)
+            {
+                return Err("Unexpected end of switch case body".to_string());
+            }
+            let fallthrough = context.emit_opcode_with_index(
+                Opcode::Jmp,
+                zero_val(),
+                zero_val(),
+                zero_val(),
+            );
+            body_start_fixups.push(fallthrough);
+            continue;        }
+
+        if closing {
+            break;
+        }
+
+        // Statements before the first label are unreachable in PHP; parse
+        // and keep them (the DCE pass will drop unreachable ops).
+        current_token = parse_statement(lexer, context, current_token)?;
+    }
+
+    let after_switch = context.current_op_index();
+    // Unmatched after the last case test: default body (any position) or,
+    // without default, straight past the switch.
+    let end_of_chain = default_body_start.unwrap_or(after_switch);
+    for idx in nomatch_fixups.drain(..) {
+        context.update_jump_target(idx, end_of_chain as u32);
+    }
+    for idx in body_start_fixups.drain(..) {
+        context.update_jump_target(idx, after_switch as u32);
+    }
+    context.set_continue_target(after_switch as u32);
+    context.pop_loop(after_switch as u32);
+
+    lexer.next_token()
+}
+
+/// Compile `do { body } while (cond);` — body runs at least once; `continue`
+/// jumps to the condition.
+pub fn compile_do_while(lexer: &mut Lexer, context: &mut CompileContext) -> Result<Token, String> {
+    let brace_token = lexer.next_token()?;
+    if brace_token.token_type != TokenType::T_STRING
+        || brace_token.value.as_ref().map(|s| s.as_str()) != Some("{")
+    {
+        return Err("Expected '{' after 'do'".to_string());
+    }
+
+    context.push_loop(None);
+    let body_start = context.current_op_index();
+
+    parse_statement_block(lexer, context)?;
+
+    // Expect `while (cond)` followed by `;`
+    let while_token = lexer.next_token()?;
+    if while_token.token_type != TokenType::T_WHILE {
+        return Err("Expected 'while' after do block".to_string());
+    }
+    let paren_token = lexer.next_token()?;
+    if paren_token.token_type != TokenType::T_STRING
+        || paren_token.value.as_ref().map(|s| s.as_str()) != Some("(")
+    {
+        return Err("Expected '(' after 'while' in do-while".to_string());
+    }
+
+    let cond_index = context.current_op_index();
+    context.set_continue_target(cond_index as u32);
+
+    let (condition, close_paren) = parse_expression(lexer, context)?;
+    if !token_is_punct(&close_paren, ")") {
+        return Err("Expected ')' after do-while condition".to_string());
+    }
+
+    // Condition true → back to body start.
+    let cond_result = result_val(crate::engine::types::PhpType::Bool);
+    let jnz_index =
+        context.emit_opcode_with_index(Opcode::JmpNZ, condition, zero_val(), cond_result);
+    context.update_jump_target(jnz_index, body_start as u32);
+
+    let after_loop = context.current_op_index() as u32;
+    context.pop_loop(after_loop);
+
+    // Optional trailing `;`
+    let semi = lexer.next_token()?;
+    if token_is_punct(&semi, ";") {
+        lexer.next_token()
+    } else {
+        Ok(semi)
+    }
 }
 
 /// Compile throw statement: throw new ExceptionClass("message");

@@ -9,7 +9,8 @@ pub(crate) mod oop;
 
 use super::context::CompileContext;
 use super::control_flow::{
-    compile_for, compile_foreach, compile_if, compile_throw, compile_try_catch, compile_while,
+    compile_do_while, compile_for, compile_foreach, compile_if, compile_break, compile_continue,
+    compile_switch, compile_throw, compile_try_catch, compile_while,
 };
 use super::expression::helpers::token_is_punct;
 use super::expression::{parse_additive_expr_with_initial, parse_expression};
@@ -132,6 +133,10 @@ pub fn parse_statement(
         TokenType::T_WHILE => compile_while(lexer, context),
         TokenType::T_FOR => compile_for(lexer, context),
         TokenType::T_FOREACH => compile_foreach(lexer, context),
+        TokenType::T_BREAK => compile_break(lexer, context),
+        TokenType::T_CONTINUE => compile_continue(lexer, context),
+        TokenType::T_SWITCH => compile_switch(lexer, context),
+        TokenType::T_DO => compile_do_while(lexer, context),
         TokenType::T_TRY => compile_try_catch(lexer, context),
         TokenType::T_THROW => compile_throw(lexer, context),
         TokenType::T_FUNCTION => compile_function(lexer, context),

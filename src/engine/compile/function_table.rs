@@ -48,6 +48,13 @@ impl FunctionTable {
             self.functions.entry(name).or_insert(op_array);
         }
     }
+
+    /// Apply an in-place transform to every stored function/closure op array.
+    pub fn for_each_op_array_mut(&mut self, mut f: impl FnMut(&mut OpArray)) {
+        for op_array in self.functions.values_mut() {
+            f(op_array);
+        }
+    }
 }
 
 /// Merge compiled functions from an include/require into the running script's table.

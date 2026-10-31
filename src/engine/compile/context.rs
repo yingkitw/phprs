@@ -27,6 +27,23 @@ pub struct CompileContext {
     pub yield_slot: Option<u32>,
     /// True if the function body contains `yield` (makes it a generator).
     pub is_generator: bool,
+    /// Stack of enclosing loops for `break` / `continue` resolution
+    /// (innermost last). Named functions and closures compile with a fresh
+    /// `CompileContext`, so a `break` inside a function body can never
+    /// resolve against a loop outside it.
+    pub loop_stack: Vec<LoopContext>,
+}
+
+/// One enclosing loop while its body is being compiled.
+pub struct LoopContext {
+    /// Jump target for `continue`. `Some` when known at push time (while /
+    /// foreach loop heads); `None` for `for` loops, whose increment ops are
+    /// emitted after the body and only become addressable then.
+    pub continue_target: Option<u32>,
+    /// `break` `Jmp` op indices awaiting patch to the after-loop index.
+    pub break_fixups: Vec<usize>,
+    /// `continue` `Jmp` op indices awaiting the not-yet-known continue target.
+    pub continue_fixups: Vec<usize>,
 }
 
 impl CompileContext {
@@ -43,6 +60,7 @@ impl CompileContext {
             use_imports: std::collections::HashMap::new(),
             yield_slot: None,
             is_generator: false,
+            loop_stack: Vec::new(),
         }
     }
 
@@ -51,6 +69,49 @@ impl CompileContext {
         let idx = self.next_temp_var;
         self.next_temp_var += 1;
         idx
+    }
+
+    /// Begin compiling a loop body. `continue_target` is `Some(loop head)`
+    /// for while/foreach, `None` for for-loops (increment ops are only
+    /// addressable after the body is compiled).
+    pub fn push_loop(&mut self, continue_target: Option<u32>) {
+        self.loop_stack.push(LoopContext {
+            continue_target,
+            break_fixups: Vec::new(),
+            continue_fixups: Vec::new(),
+        });
+    }
+
+    /// Record the `continue` target for the innermost loop (for-loops: the
+    /// increment position) and patch `continue` jumps emitted so far.
+    pub fn set_continue_target(&mut self, target: u32) {
+        let fixups = match self.loop_stack.last_mut() {
+            Some(loop_ctx) => {
+                loop_ctx.continue_target = Some(target);
+                std::mem::take(&mut loop_ctx.continue_fixups)
+            }
+            None => return,
+        };
+        for idx in fixups {
+            self.update_jump_target(idx, target);
+        }
+    }
+
+    /// Finish the innermost loop: patch `break` jumps to `after_loop` and
+    /// any leftover `continue` fixups to the (known) continue target.
+    pub fn pop_loop(&mut self, after_loop: u32) {
+        let loop_ctx = match self.loop_stack.pop() {
+            Some(ctx) => ctx,
+            None => return,
+        };
+        for idx in loop_ctx.break_fixups {
+            self.update_jump_target(idx, after_loop);
+        }
+        if let Some(target) = loop_ctx.continue_target {
+            for idx in loop_ctx.continue_fixups {
+                self.update_jump_target(idx, target);
+            }
+        }
     }
 
     /// Ensure generator yield array exists and return its temp ref
